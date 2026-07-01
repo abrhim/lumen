@@ -11,13 +11,14 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "PLACEHOLDER_RUN_WRANGLER_HYPERDRIVE_CREATE"
+      "id": "c5dc0aceb15744f4af6eee28dcfbb22b"
     }
   ],
   "vars": {
     "NEO4J_URI": "neo4j+s://842e98b2.databases.neo4j.io",
     "NEO4J_USER": "842e98b2",
     "NEO4J_DATABASE": "842e98b2",
-    "SUPABASE_URL": "https://dsoekevnjqjfdntxhdhd.supabase.co"
+    "SUPABASE_URL": "https://dsoekevnjqjfdntxhdhd.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-"
   }
 }
