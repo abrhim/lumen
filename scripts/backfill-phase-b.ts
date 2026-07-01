@@ -199,110 +199,6 @@ async function main(): Promise<void> {
     console.log(`Loaded env from ${envPath}`);
   }
 
-  // ── Read and filter nodes ──────────────────────────────────────────
-
-  console.log('\n=== Reading nodes.json ===\n');
-  const allNodes: Record<string, any>[] = JSON.parse(
-    fs.readFileSync(NODES_PATH, 'utf-8'),
-  );
-  console.log(`  Total nodes in export: ${allNodes.length}`);
-
-  // Filter to Phase B entity types
-  const entityRows: EntityRow[] = [];
-  const countsByType: Record<string, number> = {};
-  let skippedCount = 0;
-
-  for (const node of allNodes) {
-    const labels: string[] = node._labels || [];
-    const primaryLabel = labels[0];
-
-    if (!primaryLabel) continue;
-
-    if (SKIP_LABELS.has(primaryLabel)) {
-      skippedCount++;
-      continue;
-    }
-
-    const entityType = LABEL_MAP[primaryLabel];
-    if (!entityType) {
-      // Unknown label — skip silently
-      continue;
-    }
-
-    const name = extractName(node, primaryLabel);
-    const description = extractDescription(node, primaryLabel);
-    const metadata = extractMetadata(node, primaryLabel);
-
-    entityRows.push({
-      id: node.id,
-      entityType,
-      name,
-      description,
-      metadata,
-      source: 'anthropic-batch',
-      collectionId: 'phase-b',
-    });
-
-    countsByType[entityType] = (countsByType[entityType] || 0) + 1;
-  }
-
-  // Deduplicate by ID (Neo4j export can have multiple labels per node)
-  const seenIds = new Set<string>();
-  const dedupedRows: EntityRow[] = [];
-  for (const row of entityRows) {
-    if (!seenIds.has(row.id)) {
-      seenIds.add(row.id);
-      dedupedRows.push(row);
-    }
-  }
-  const dupeCount = entityRows.length - dedupedRows.length;
-  entityRows.length = 0;
-  entityRows.push(...dedupedRows);
-
-  console.log(`  Skipped (Phase A types): ${skippedCount}`);
-  if (dupeCount > 0) console.log(`  Deduplicated: ${dupeCount} duplicate IDs removed`);
-  console.log(`  Phase B entities to insert: ${entityRows.length}`);
-  console.log('  By type:');
-  for (const [type, count] of Object.entries(countsByType).sort((a, b) => b[1] - a[1])) {
-    console.log(`    ${type}: ${count}`);
-  }
-
-  // ── Read edges ─────────────────────────────────────────────────────
-
-  console.log('\n=== Reading edges.json ===\n');
-  const allEdges: Record<string, any>[] = JSON.parse(
-    fs.readFileSync(EDGES_PATH, 'utf-8'),
-  );
-  console.log(`  Total edges in export: ${allEdges.length}`);
-
-  const edgeRows: EdgeRow[] = allEdges.map((edge) => ({
-    fromId: edge.from_id,
-    toId: edge.to_id,
-    relType: edge.rel_type,
-    collectionId: 'phase-b',
-    metadata: edge.props || {},
-    source: 'anthropic-batch',
-  }));
-
-  const edgesByType: Record<string, number> = {};
-  for (const edge of allEdges) {
-    edgesByType[edge.rel_type] = (edgesByType[edge.rel_type] || 0) + 1;
-  }
-  console.log('  By rel_type:');
-  for (const [type, count] of Object.entries(edgesByType).sort((a, b) => b[1] - a[1])) {
-    console.log(`    ${type}: ${count}`);
-  }
-
-  // ── Dry run: stop here ─────────────────────────────────────────────
-
-  if (dryRun) {
-    console.log('\n=== Dry Run Summary ===\n');
-    console.log(`  Would insert ${entityRows.length} entities`);
-    console.log(`  Would insert ${edgeRows.length} edges`);
-    console.log('\n  Run with --write to execute.');
-    return;
-  }
-
   // ── Build pool and connect ─────────────────────────────────────────
 
   let poolConfig: pg.PoolConfig;
@@ -333,6 +229,146 @@ async function main(): Promise<void> {
   const pool = new pg.Pool(poolConfig);
 
   try {
+  // ── Fetch IDs already owned by Phase A data ────────────────────────
+  // Neo4j namespaces ids by label (LM_Person {id:'alma-2'} coexists with
+  // LM_Chapter {id:'alma-2'}); the entities table has a global id PK, so
+  // colliding Phase B ids must be namespaced as `{type}:{id}`.
+
+  const takenIds = new Set<string>();
+  const ownedRes = await pool.query(
+    `SELECT id FROM lumen.entities WHERE collection_id IS DISTINCT FROM 'phase-b'`,
+  );
+  for (const r of ownedRes.rows) takenIds.add(r.id);
+  const verseRes = await pool.query(`SELECT id FROM lumen.verses`);
+  for (const r of verseRes.rows) takenIds.add(r.id);
+  console.log(`\nLoaded ${takenIds.size} Phase A ids for collision detection.`);
+
+  // ── Read and filter nodes ──────────────────────────────────────────
+
+  console.log('\n=== Reading nodes.json ===\n');
+  const allNodes: Record<string, any>[] = JSON.parse(
+    fs.readFileSync(NODES_PATH, 'utf-8'),
+  );
+  console.log(`  Total nodes in export: ${allNodes.length}`);
+
+  // Filter to Phase B entity types, assigning collision-free final ids.
+  // finalIdByLabelId maps `${label}|${neo4jId}` → the id stored in PG, so
+  // edge endpoints (which carry from_label/to_label) can be remapped exactly.
+  const entityRows: EntityRow[] = [];
+  const countsByType: Record<string, number> = {};
+  const finalIdByLabelId = new Map<string, string>();
+  const usedFinalIds = new Set<string>();
+  let skippedCount = 0;
+  let namespacedCount = 0;
+  let trueDupeCount = 0;
+
+  for (const node of allNodes) {
+    const labels: string[] = node._labels || [];
+    const primaryLabel = labels[0];
+
+    if (!primaryLabel) continue;
+
+    const key = `${primaryLabel}|${node.id}`;
+
+    if (SKIP_LABELS.has(primaryLabel)) {
+      skippedCount++;
+      finalIdByLabelId.set(key, node.id); // Phase A rows keep their ids
+      continue;
+    }
+
+    const entityType = LABEL_MAP[primaryLabel];
+    if (!entityType) {
+      // Unknown label — skip silently
+      continue;
+    }
+
+    if (finalIdByLabelId.has(key)) {
+      trueDupeCount++; // same label + same id exported twice
+      continue;
+    }
+
+    let finalId = node.id;
+    if (takenIds.has(finalId) || usedFinalIds.has(finalId)) {
+      finalId = `${entityType}:${node.id}`;
+      namespacedCount++;
+      while (takenIds.has(finalId) || usedFinalIds.has(finalId)) finalId += '+';
+    }
+    finalIdByLabelId.set(key, finalId);
+    usedFinalIds.add(finalId);
+
+    const name = extractName(node, primaryLabel);
+    const description = extractDescription(node, primaryLabel);
+    const metadata = extractMetadata(node, primaryLabel);
+    if (finalId !== node.id) metadata.neo4j_id = node.id;
+
+    entityRows.push({
+      id: finalId,
+      entityType,
+      name,
+      description,
+      metadata,
+      source: 'anthropic-batch',
+      collectionId: 'phase-b',
+    });
+
+    countsByType[entityType] = (countsByType[entityType] || 0) + 1;
+  }
+
+  console.log(`  Skipped (Phase A types): ${skippedCount}`);
+  if (trueDupeCount > 0) console.log(`  True duplicates (same label+id) skipped: ${trueDupeCount}`);
+  if (namespacedCount > 0) console.log(`  Namespaced (id collision with another type): ${namespacedCount}`);
+  console.log(`  Phase B entities to insert: ${entityRows.length}`);
+  console.log('  By type:');
+  for (const [type, count] of Object.entries(countsByType).sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${type}: ${count}`);
+  }
+
+  // ── Read edges ─────────────────────────────────────────────────────
+
+  console.log('\n=== Reading edges.json ===\n');
+  const allEdges: Record<string, any>[] = JSON.parse(
+    fs.readFileSync(EDGES_PATH, 'utf-8'),
+  );
+  console.log(`  Total edges in export: ${allEdges.length}`);
+
+  // Remap endpoints through the (label, id) → final id map and keep the
+  // Neo4j labels in metadata — with colliding ids they are the only way to
+  // tell which entity an endpoint refers to.
+  let remappedEndpoints = 0;
+  const edgeRows: EdgeRow[] = allEdges.map((edge) => {
+    const fromFinal = finalIdByLabelId.get(`${edge.from_label}|${edge.from_id}`) ?? edge.from_id;
+    const toFinal = finalIdByLabelId.get(`${edge.to_label}|${edge.to_id}`) ?? edge.to_id;
+    if (fromFinal !== edge.from_id || toFinal !== edge.to_id) remappedEndpoints++;
+    return {
+      fromId: fromFinal,
+      toId: toFinal,
+      relType: edge.rel_type,
+      collectionId: 'phase-b',
+      metadata: { ...(edge.props || {}), from_label: edge.from_label, to_label: edge.to_label },
+      source: 'anthropic-batch',
+    };
+  });
+  if (remappedEndpoints > 0) console.log(`  Edges with remapped endpoints: ${remappedEndpoints}`);
+
+  const edgesByType: Record<string, number> = {};
+  for (const edge of allEdges) {
+    edgesByType[edge.rel_type] = (edgesByType[edge.rel_type] || 0) + 1;
+  }
+  console.log('  By rel_type:');
+  for (const [type, count] of Object.entries(edgesByType).sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${type}: ${count}`);
+  }
+
+  // ── Dry run: stop here ─────────────────────────────────────────────
+
+  if (dryRun) {
+    console.log('\n=== Dry Run Summary ===\n');
+    console.log(`  Would insert ${entityRows.length} entities`);
+    console.log(`  Would insert ${edgeRows.length} edges`);
+    console.log('\n  Run with --write to execute.');
+    return;
+  }
+
     // Ensure the phase-b collection row exists
     await pool.query(`
       INSERT INTO lumen.collections (id, name, description, tier, category, provenance, license, storage)
@@ -343,6 +379,11 @@ async function main(): Promise<void> {
     // ── Insert entities ────────────────────────────────────────────────
 
     console.log(`\n=== Inserting ${entityRows.length} entities ===\n`);
+    console.log('  Deleting existing phase-b entities...');
+    const delEntities = await pool.query(
+      `DELETE FROM lumen.entities WHERE collection_id = 'phase-b'`,
+    );
+    console.log(`  Deleted ${delEntities.rowCount} existing entities.`);
     await batchInsertEntities(pool, entityRows);
 
     // ── Insert edges (delete-then-insert for idempotent re-runs) ──────

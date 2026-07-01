@@ -448,6 +448,14 @@ async function importCanon(pool: pg.Pool, dryRun: boolean): Promise<void> {
       source: 'lds-doc-project',
       collectionId: 'canon',
     };
+  }).filter((b) => {
+    // A book slug that equals a volume id (e.g. 'dc') would upsert over the
+    // volume entity; the verses-derived fallback in getBooksByVolume covers it.
+    if (Object.values(VOLUME_MAP).includes(b.id)) {
+      console.log(`  Skipping book entity "${b.name}" (id "${b.id}" collides with volume id)`);
+      return false;
+    }
+    return true;
   });
 
   console.log(`  Writing ${bookEntities.length} books...`);
