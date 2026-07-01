@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.wrangler
+.react-router
+.dev.vars
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+.turbo
+coverage
+.DS_Store
+data/
+*.tfplan
