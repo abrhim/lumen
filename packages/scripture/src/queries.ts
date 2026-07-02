@@ -99,6 +99,18 @@ export async function getBooksByVolume(db: Db, volumeId: string) {
   );
 }
 
+export async function getAllBooks(db: Db) {
+  return db.execute(
+    sql`SELECT id, name,
+           metadata->>'volume_id' AS volume_id,
+           (metadata->>'sort_order')::int AS sort_order,
+           (metadata->>'chapter_count')::int AS chapter_count
+        FROM lumen.entities
+        WHERE entity_type = 'book'
+        ORDER BY (metadata->>'sort_order')::int`,
+  );
+}
+
 export async function getVolumeList(db: Db) {
   return db.execute(
     sql`SELECT id, name, description, metadata FROM lumen.entities

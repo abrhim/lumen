@@ -14,6 +14,12 @@
       "id": "c5dc0aceb15744f4af6eee28dcfbb22b"
     }
   ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "77e62af9bb0b40c6a194a4cbeb070c58"
+    }
+  ],
   "vars": {
     "NEO4J_URI": "neo4j+s://842e98b2.databases.neo4j.io",
     "NEO4J_USER": "842e98b2",

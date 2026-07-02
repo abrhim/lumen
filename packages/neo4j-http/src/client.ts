@@ -27,6 +27,7 @@ export function createNeo4jClient(config: Neo4jHttpClientConfig): Neo4jClient {
     'Basic ' + btoa(`${config.username}:${config.password}`);
   const layers = config.layers ?? {};
   const entityTypes = config.entityTypes ?? [];
+  const timeoutMs = config.timeoutMs ?? 20_000;
 
   for (const [name, prefix] of Object.entries(layers)) {
     if (!LAYER_PREFIX_RE.test(prefix)) {
@@ -51,7 +52,7 @@ export function createNeo4jClient(config: Neo4jHttpClientConfig): Neo4jClient {
         statement: cypher,
         parameters: params ?? {},
       }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     const text = await res.text();

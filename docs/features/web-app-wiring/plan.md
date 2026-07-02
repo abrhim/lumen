@@ -158,3 +158,23 @@ Resolution labels per adversarial synthesis (tie-break: human > panel-2 > panel-
 
 ### Panel-2 dissent rates
 security 7/10, correctness 5/10, performance 8/10, observability 5/10, ux 6/10, api-contract 5/10 — aggregate 60% (healthy skepticism, well above the 20% rubber-stamp floor).
+
+## Plan amendment 1 — per-request postgres client (Workers I/O isolation)
+
+Live verification failed: `Cannot perform I/O on behalf of a different request` —
+Workers prohibits reusing sockets across requests, so the module-scoped
+singleton (failure mode 8, COR-2) is invalid on this platform. Cloudflare's
+documented Hyperdrive pattern is a per-request client with
+`ctx.waitUntil(sql.end())`; per-request setup is cheap because Hyperdrive
+pools upstream at the edge.
+
+Changes:
+- db.server.ts: `createDb(env)` constructs a fresh client per request and
+  returns `{ db, end }`; worker calls `ctx.waitUntil(end())`.
+- Failure mode 8 REPLACED: "postgres client constructed per request with
+  `prepare: false` and `fetch_types: false`; `end` closes the client; init
+  failure propagates to the error boundary."
+- COR-2 (singleton race) and COR-9 (wedged singleton) are mooted by design.
+- Harness revision: db.server.test.ts rewritten to the per-request contract
+  (explicit harness-revision event, panel re-run scoped to this amendment at
+  small-tier size: security, correctness, performance).

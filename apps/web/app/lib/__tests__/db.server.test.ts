@@ -1,48 +1,53 @@
 import { describe, it, expect, vi } from "vitest";
-import { makeGetDb } from "../db.server";
+import { makeCreateDb } from "../db.server";
 
 const env = { HYPERDRIVE: { connectionString: "postgresql://u:p@host:5432/db" } } as any;
 
-function mockPostgresFactory() {
-	// postgres() returns a tagged-template client; drizzle only needs an object
+function mockClient() {
 	const client: any = () => {};
-	client.unsafe = vi.fn();
+	client.end = vi.fn(async () => {});
 	client.options = { parsers: {}, serializers: {} };
-	return vi.fn(() => client);
+	return client;
 }
 
-describe("getDb singleton", () => {
-	it("constructs the postgres client exactly once across calls", () => {
-		const factory = mockPostgresFactory();
-		const getDb = makeGetDb(factory as any);
-		const a = getDb(env);
-		const b = getDb(env);
-		expect(factory).toHaveBeenCalledTimes(1);
-		expect(a).toBe(b);
+describe("createDb (per-request — Workers forbids cross-request I/O reuse)", () => {
+	it("constructs a fresh postgres client on every call", () => {
+		const factory = vi.fn(() => mockClient());
+		const createDb = makeCreateDb(factory as any);
+		const a = createDb(env);
+		const b = createDb(env);
+		expect(factory).toHaveBeenCalledTimes(2);
+		expect(a.db).not.toBe(b.db);
 	});
 
-	it("passes prepare: false (Hyperdrive does not support prepared statements)", () => {
-		const factory = mockPostgresFactory();
-		const getDb = makeGetDb(factory as any);
-		getDb(env);
+	it("passes prepare: false (Hyperdrive does not support prepared statements) and fetch_types: false", () => {
+		const factory = vi.fn(() => mockClient());
+		const createDb = makeCreateDb(factory as any);
+		createDb(env);
 		expect(factory).toHaveBeenCalledWith(
 			env.HYPERDRIVE.connectionString,
-			expect.objectContaining({ prepare: false }),
+			expect.objectContaining({ prepare: false, fetch_types: false }),
 		);
 	});
 
-	it("retries construction on next call after an init failure", () => {
-		const client: any = () => {};
-		client.options = { parsers: {}, serializers: {} };
+	it("end() closes the underlying client", async () => {
+		const client = mockClient();
+		const factory = vi.fn(() => client);
+		const createDb = makeCreateDb(factory as any);
+		const { end } = createDb(env);
+		await end();
+		expect(client.end).toHaveBeenCalledTimes(1);
+	});
+
+	it("propagates construction failure (next request constructs fresh anyway)", () => {
 		const factory = vi
 			.fn()
 			.mockImplementationOnce(() => {
 				throw new Error("boom");
 			})
-			.mockImplementation(() => client);
-		const getDb = makeGetDb(factory as any);
-		expect(() => getDb(env)).toThrow("boom");
-		expect(() => getDb(env)).not.toThrow();
-		expect(factory).toHaveBeenCalledTimes(2);
+			.mockImplementation(() => mockClient());
+		const createDb = makeCreateDb(factory as any);
+		expect(() => createDb(env)).toThrow("boom");
+		expect(() => createDb(env)).not.toThrow();
 	});
 });

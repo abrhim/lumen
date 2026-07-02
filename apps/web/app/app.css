@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* Palette + type from docs/design/lumen-study-v11.jsx (study surface sketch) */
+@theme {
+	--color-paper: #f3ede1;
+	--color-panel: #faf6ee;
+	--color-panel2: #f0e8d8;
+	--color-ink: #2a251f;
+	--color-muted: #776a57;
+	--color-faint: #9b8e78;
+	--color-rule: #e3d9c6;
+	--color-rule2: #d8ccb5;
+	--color-accent: #2f3a56;
+	--color-sel: #f6e9c8;
+	--color-selbar: #b07d2b;
+	--color-cites: #3a4a7a;
+	--color-citedby: #80395f;
+
+	--font-display: "Fraunces", Georgia, serif;
+	--font-reading: "Newsreader", Georgia, serif;
+	--font-ui: "Archivo", system-ui, sans-serif;
+}
+
 html {
-	font-family: "Inter", system-ui, sans-serif;
+	font-family: var(--font-ui);
+	background: var(--color-paper);
+	color: var(--color-ink);
 }

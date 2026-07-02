@@ -6,6 +6,8 @@ export interface Neo4jHttpConfig {
   layers?: Record<string, string>;
   entityTypes?: string[];
   logger?: Neo4jLogger;
+  /** Per-request timeout in ms. Defaults to 20_000. */
+  timeoutMs?: number;
 }
 
 export interface Neo4jHttpClientConfig extends Neo4jHttpConfig {

@@ -9,7 +9,10 @@ const env = {
 } as any;
 
 function okFetch(body: unknown = { data: { fields: [], values: [] } }) {
-	return vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+	return vi.fn(
+		async (_url: string, _init?: RequestInit) =>
+			new Response(JSON.stringify(body), { status: 200 }),
+	);
 }
 
 describe("makeNeo4j", () => {
