@@ -129,7 +129,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					<a href="/" className="hover:text-ink">Lumen</a>
 				</p>
 				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">{reference}</h1>
-				<nav aria-label="Chapter navigation" className="mt-3 flex gap-3 font-ui text-sm font-semibold text-accent">
+				<nav aria-label="Chapter navigation" className="mt-3 flex gap-3 font-ui text-sm font-semibold text-primary">
 					{chapter > 1 && (
 						<a href={`/scripture/${bookId}/${chapter - 1}`} className="hover:underline">
 							← Chapter {chapter - 1}
@@ -192,20 +192,20 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							</h2>
 							<a
 								href={chapterUrl}
-								className="font-ui text-xs font-bold uppercase tracking-wide text-muted hover:text-ink"
+								className="font-ui text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-ink"
 							>
 								Close ✕
 							</a>
 						</div>
 
 						{selected && (
-							<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted">
+							<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
 								{selected.text}
 							</blockquote>
 						)}
 
 						{graphDegraded ? (
-							<p className="mt-5 font-reading text-sm italic text-muted">
+							<p className="mt-5 font-reading text-sm italic text-muted-foreground">
 								Graph features are unavailable right now — cross-references for this verse
 								couldn't be loaded. The chapter text above is unaffected.
 							</p>
@@ -246,7 +246,7 @@ function CrossRefGroup({
 				{refs.map((x) => (
 					<li key={`${x.direction}-${x.verse_id}`} className="rounded-lg border border-rule2 bg-white p-3">
 						<p className="font-ui text-xs font-semibold text-ink">{x.reference}</p>
-						<p className="mt-1 line-clamp-3 font-reading text-[13px] leading-snug text-muted">
+						<p className="mt-1 line-clamp-3 font-reading text-[13px] leading-snug text-muted-foreground">
 							{x.text}
 						</p>
 						<p className="mt-1.5 font-ui text-[9px] font-bold uppercase tracking-wide text-faint">
@@ -268,9 +268,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	return (
 		<main className="mx-auto max-w-2xl px-6 py-16">
 			<h1 className="font-display text-3xl font-medium">{is404 ? "Not found" : "Error"}</h1>
-			<p className="mt-3 font-reading text-muted">{detail}</p>
+			<p className="mt-3 font-reading text-muted-foreground">{detail}</p>
 			<p className="mt-6">
-				<a href="/" className="font-ui text-sm font-semibold text-accent underline">
+				<a href="/" className="font-ui text-sm font-semibold text-primary underline">
 					← Back to the library
 				</a>
 			</p>

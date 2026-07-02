@@ -66,9 +66,9 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	return (
 		<main className="pt-16 p-4 container mx-auto">
 			<h1 className="font-display text-3xl">{message}</h1>
-			<p className="mt-2 text-muted">{details}</p>
+			<p className="mt-2 text-muted-foreground">{details}</p>
 			<p className="mt-4">
-				<a href="/" className="text-accent underline">
+				<a href="/" className="text-primary underline">
 					Back to the library
 				</a>
 			</p>

@@ -60,7 +60,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 				<h1 className="mt-2 font-display text-4xl font-medium tracking-tight">
 					The Library
 				</h1>
-				<p className="mt-2 font-reading italic text-muted">
+				<p className="mt-2 font-reading italic text-muted-foreground">
 					Choose a book to begin reading.
 				</p>
 			</header>
@@ -78,7 +78,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 							<li key={book.id}>
 								<a
 									href={`/scripture/${book.id}/1`}
-									className="inline-block rounded-md border border-rule2 bg-panel px-3 py-1.5 font-ui text-sm font-medium text-ink transition hover:border-accent hover:text-accent"
+									className="inline-block rounded-md border border-rule2 bg-panel px-3 py-1.5 font-ui text-sm font-medium text-ink transition hover:border-primary hover:text-primary"
 								>
 									{book.name}
 								</a>
