@@ -1,0 +1,107 @@
+
+> @lumen/web@ test /Users/abram/code/lumen/apps/web
+> vitest run
+
+
+ RUN  v3.2.6 /Users/abram/code/lumen/apps/web
+
+ ❯ app/routes/__tests__/home.loader.test.ts (1 test | 1 failed) 3ms
+   × home loader > returns volumes ordered by metadata.sort_order with their books 2ms
+     → loader is not a function
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  app/lib/__tests__/cache.server.test.ts [ app/lib/__tests__/cache.server.test.ts ]
+Error: Cannot find module '../cache.server' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/cache.server.test.ts'
+ ❯ app/lib/__tests__/cache.server.test.ts:2:1
+      1| import { describe, it, expect, vi } from "vitest";
+      2| import { cachedJson } from "../cache.server";
+       | ^
+      3| 
+      4| function kvWith(overrides: Partial<{ get: any; put: any }> = {}) {
+
+Caused by: Error: Failed to load url ../cache.server (resolved id: ../cache.server) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/cache.server.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  app/lib/__tests__/db.server.test.ts [ app/lib/__tests__/db.server.test.ts ]
+Error: Cannot find module '../db.server' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/db.server.test.ts'
+ ❯ app/lib/__tests__/db.server.test.ts:2:1
+      1| import { describe, it, expect, vi } from "vitest";
+      2| import { makeGetDb } from "../db.server";
+       | ^
+      3| 
+      4| const env = { HYPERDRIVE: { connectionString: "postgresql://u:p@host:5…
+
+Caused by: Error: Failed to load url ../db.server (resolved id: ../db.server) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/db.server.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  app/lib/__tests__/headers.server.test.ts [ app/lib/__tests__/headers.server.test.ts ]
+Error: Cannot find module '../headers.server' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/headers.server.test.ts'
+ ❯ app/lib/__tests__/headers.server.test.ts:2:1
+      1| import { describe, it, expect } from "vitest";
+      2| import { applySecurityHeaders } from "../headers.server";
+       | ^
+      3| 
+      4| describe("applySecurityHeaders", () => {
+
+Caused by: Error: Failed to load url ../headers.server (resolved id: ../headers.server) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/headers.server.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  app/lib/__tests__/neo4j.server.test.ts [ app/lib/__tests__/neo4j.server.test.ts ]
+Error: Cannot find module '../neo4j.server' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/neo4j.server.test.ts'
+ ❯ app/lib/__tests__/neo4j.server.test.ts:2:1
+      1| import { describe, it, expect, vi } from "vitest";
+      2| import { makeNeo4j } from "../neo4j.server";
+       | ^
+      3| 
+      4| const env = {
+
+Caused by: Error: Failed to load url ../neo4j.server (resolved id: ../neo4j.server) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/neo4j.server.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  app/routes/__tests__/scripture.loader.test.ts [ app/routes/__tests__/scripture.loader.test.ts ]
+Error: Cannot find module '../scripture' imported from '/Users/abram/code/lumen/apps/web/app/routes/__tests__/scripture.loader.test.ts'
+ ❯ app/routes/__tests__/scripture.loader.test.ts:19:1
+     17|  findCrossReferences,
+     18| } from "@lumen/scripture";
+     19| import { loader } from "../scripture";
+       | ^
+     20| 
+     21| const mockVerses = [
+
+Caused by: Error: Failed to load url ../scripture (resolved id: ../scripture) in /Users/abram/code/lumen/apps/web/app/routes/__tests__/scripture.loader.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  app/routes/__tests__/home.loader.test.ts > home loader > returns volumes ordered by metadata.sort_order with their books
+TypeError: loader is not a function
+ ❯ app/routes/__tests__/home.loader.test.ts:29:22
+     27| describe("home loader", () => {
+     28|  it("returns volumes ordered by metadata.sort_order with their books",…
+     29|   const data = await loader({
+       |                      ^
+     30|    params: {},
+     31|    request: new Request("http://localhost/"),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  6 failed (6)
+      Tests  1 failed (1)
+   Start at  17:55:36
+   Duration  551ms (transform 169ms, setup 0ms, collect 261ms, tests 3ms, environment 1ms, prepare 330ms)
+
+ ELIFECYCLE  Test failed. See above for more details.
+harness exit: 1
