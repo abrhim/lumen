@@ -106,7 +106,9 @@ export function parseReference(input: string): ParsedReference {
   const lower = raw.toLowerCase();
 
   if (VOLUME_IDS.includes(lower as any)) {
-    return { level: 'volume', volumeId: lower, raw };
+    // D&C is a volume that is also a single book ("dc" appears in both
+    // namespaces) — carry the bookId so book-shaped consumers can accept it.
+    return { level: 'volume', volumeId: lower, bookId: BOOK_SLUGS[lower], raw };
   }
 
   if (BOOK_SLUGS[lower]) {

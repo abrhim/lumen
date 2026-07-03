@@ -100,6 +100,10 @@ export async function getBooksByVolume(db: Db, volumeId: string) {
 }
 
 export async function getAllBooks(db: Db) {
+  // Single-book volumes (D&C) can't have a book entity — entities share one id
+  // namespace and the volume row already owns the id. A volume whose own id
+  // appears as a verses.book_id IS its own book; that test stays correct even
+  // if the volume later gains sibling book children (Official Declarations).
   return db.execute(
     sql`SELECT id, name,
            metadata->>'volume_id' AS volume_id,
@@ -107,7 +111,17 @@ export async function getAllBooks(db: Db) {
            (metadata->>'chapter_count')::int AS chapter_count
         FROM lumen.entities
         WHERE entity_type = 'book'
-        ORDER BY (metadata->>'sort_order')::int`,
+        UNION ALL
+        SELECT v.id, v.name,
+           v.id AS volume_id,
+           0 AS sort_order,
+           NULL::int AS chapter_count
+        FROM lumen.entities v
+        WHERE v.entity_type = 'volume'
+          AND EXISTS (
+            SELECT 1 FROM lumen.verses vs WHERE vs.book_id = v.id
+          )
+        ORDER BY sort_order`,
   );
 }
 

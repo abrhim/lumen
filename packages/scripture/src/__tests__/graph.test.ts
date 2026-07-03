@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { findCrossReferences } from '../graph/find-cross-references';
+import { getVerseConnections } from '../graph/get-verse-connections';
 import { getPrinciple } from '../graph/get-principle';
 import { getPerson } from '../graph/get-person';
 import { searchByPrinciple } from '../graph/search-by-principle';
@@ -36,6 +37,55 @@ describe('findCrossReferences', () => {
     const result = await findCrossReferences(neo4j, 'nonexistent');
     expect(result.cross_reference_count).toBe(0);
     expect(result.cross_references).toEqual([]);
+  });
+});
+
+describe('getVerseConnections', () => {
+  it('returns cross references, principles, and people in one shape', async () => {
+    const neo4j = mockNeo4j(vi.fn().mockResolvedValue([{
+      cross_references: [
+        { verse_id: 'john-3-16', reference: 'John 3:16', text: 'For God so loved...', relationship: 'CROSS_REF', direction: 'outgoing', source: 'curated' },
+      ],
+      principles: [{ id: 'obedience', name: 'Obedience' }],
+      people: [{ id: 'nephi-1', name: 'Nephi' }],
+    }]));
+
+    const result = await getVerseConnections(neo4j, '1-ne-3-7');
+    expect(result.verse_id).toBe('1-ne-3-7');
+    expect(result.cross_references).toHaveLength(1);
+    expect(result.principles).toEqual([{ id: 'obedience', name: 'Obedience' }]);
+    expect(result.people).toEqual([{ id: 'nephi-1', name: 'Nephi' }]);
+  });
+
+  it('dedupes parallel same-direction edges to the same verse (real ingest data has them)', async () => {
+    const edge = { verse_id: 'ether-12-27', reference: 'Ether 12:27', text: 'weak things become strong...', relationship: 'CROSS_REF', direction: 'outgoing', source: 'anthropic-batch' };
+    const neo4j = mockNeo4j(vi.fn().mockResolvedValue([{
+      cross_references: [edge, { ...edge }, { ...edge, direction: 'incoming' }],
+      principles: [],
+      people: [],
+    }]));
+
+    const result = await getVerseConnections(neo4j, '1-cor-1-27');
+    expect(result.cross_references).toHaveLength(2); // one per direction
+  });
+
+  it('filters the null placeholder rows OPTIONAL MATCH collects on empty patterns', async () => {
+    const neo4j = mockNeo4j(vi.fn().mockResolvedValue([{
+      cross_references: [{ verse_id: null, reference: null, text: null, relationship: null, direction: null, source: null }],
+      principles: [{ id: null, name: null }],
+      people: [{ id: null, name: null }],
+    }]));
+
+    const result = await getVerseConnections(neo4j, '1-ne-3-1');
+    expect(result.cross_references).toEqual([]);
+    expect(result.principles).toEqual([]);
+    expect(result.people).toEqual([]);
+  });
+
+  it('returns an empty result (not an error) when the verse is missing from the graph', async () => {
+    const neo4j = mockNeo4j(vi.fn().mockResolvedValue([]));
+    const result = await getVerseConnections(neo4j, 'nonexistent');
+    expect(result).toEqual({ verse_id: 'nonexistent', cross_references: [], principles: [], people: [] });
   });
 });
 

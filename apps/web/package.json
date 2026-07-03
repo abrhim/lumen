@@ -6,7 +6,7 @@
   "scripts": {
     "build": "react-router build",
     "cf-typegen": "wrangler types && react-router typegen",
-    "deploy": "wrangler deploy",
+    "deploy": "pnpm build && wrangler deploy",
     "dev": "react-router dev",
     "preview": "pnpm build && vite preview",
     "test": "vitest run",

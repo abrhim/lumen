@@ -7,14 +7,14 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		...actual,
 		getVersesByChapter: vi.fn(),
 		getChapterSummary: vi.fn(),
-		findCrossReferences: vi.fn(),
+		getVerseConnections: vi.fn(),
 	};
 });
 
 import {
 	getVersesByChapter,
 	getChapterSummary,
-	findCrossReferences,
+	getVerseConnections,
 } from "@lumen/scripture";
 import { loader } from "../scripture";
 
@@ -22,6 +22,15 @@ const mockVerses = [
 	{ id: "1-ne-3-1", verse_number: 1, text: "And it came to pass...", reference: "1 Nephi 3:1" },
 	{ id: "1-ne-3-7", verse_number: 7, text: "I will go and do...", reference: "1 Nephi 3:7" },
 ];
+
+const mockConnections = {
+	verse_id: "1-ne-3-7",
+	cross_references: [
+		{ verse_id: "john-3-16", reference: "John 3:16", text: "For God so loved...", relationship: "CROSS_REF", direction: "outgoing", source: "curated" },
+	],
+	principles: [{ id: "obedience", name: "Obedience" }],
+	people: [{ id: "nephi-1", name: "Nephi" }],
+};
 
 function kvNoop() {
 	return { get: vi.fn(async () => null), put: vi.fn(async () => {}) } as any;
@@ -43,13 +52,7 @@ function makeArgs(book: string, chapter: string, search = "", cache = kvNoop()) 
 beforeEach(() => {
 	vi.mocked(getVersesByChapter).mockResolvedValue(mockVerses as any);
 	vi.mocked(getChapterSummary).mockResolvedValue({ description: "Nephi obtains the plates." } as any);
-	vi.mocked(findCrossReferences).mockResolvedValue({
-		verse_id: "1-ne-3-7",
-		cross_reference_count: 1,
-		cross_references: [
-			{ verse_id: "john-3-16", reference: "John 3:16", text: "For God so loved...", relationship: "CROSS_REF", direction: "outgoing", source: "curated" },
-		],
-	} as any);
+	vi.mocked(getVerseConnections).mockResolvedValue(mockConnections as any);
 });
 
 describe("scripture loader — happy paths", () => {
@@ -59,38 +62,48 @@ describe("scripture loader — happy paths", () => {
 		expect(data.chapter).toBe(3);
 		expect(data.verses).toHaveLength(2);
 		expect(data.summary).toBe("Nephi obtains the plates.");
-		expect(data.graphDegraded).toBe(false);
-		expect(data.crossRefs).toBeNull();
+		expect(data.connections).toBeNull();
 	});
 
 	it("accepts human-style book names in the URL slug (1-nephi is not valid; 1-ne is)", async () => {
-		const data = await loader(makeArgs("1-ne", "3"));
+		await loader(makeArgs("1-ne", "3"));
 		expect(getVersesByChapter).toHaveBeenCalledWith(expect.anything(), "1-ne", 3);
 	});
 
-	it("loads cross-references for ?verse=7", async () => {
-		const data = await loader(makeArgs("1-ne", "3", "?verse=7"));
-		expect(data.selectedVerse).toBe(7);
-		expect(data.crossRefs).toHaveLength(1);
-		expect(findCrossReferences).toHaveBeenCalledWith(expect.anything(), "1-ne-3-7");
+	it("accepts dc even though it parses as a volume (D&C is a single-book volume)", async () => {
+		const data = await loader(makeArgs("dc", "4"));
+		expect(data.bookId).toBe("dc");
+		expect(getVersesByChapter).toHaveBeenCalledWith(expect.anything(), "dc", 4);
 	});
 
-	it("serves cross-references from cache without calling Neo4j", async () => {
-		const cached = {
-			verse_id: "1-ne-3-7",
-			cross_reference_count: 1,
-			cross_references: [{ verse_id: "ps-23-1", reference: "Psalm 23:1", text: "The Lord is my shepherd", relationship: "CROSS_REF", direction: "incoming", source: "curated" }],
-		};
-		const kv = { get: vi.fn(async () => JSON.stringify(cached)), put: vi.fn() } as any;
+	it("streams connections for ?verse=7 as an unawaited promise", async () => {
+		const data = await loader(makeArgs("1-ne", "3", "?verse=7"));
+		expect(data.selectedVerse).toBe(7);
+		expect(data.connections).toBeInstanceOf(Promise);
+		const panel = await data.connections!;
+		expect(panel.degraded).toBe(false);
+		if (!panel.degraded) {
+			expect(panel.crossRefs).toHaveLength(1);
+			expect(panel.principles[0].name).toBe("Obedience");
+			expect(panel.people[0].name).toBe("Nephi");
+		}
+		expect(getVerseConnections).toHaveBeenCalledWith(expect.anything(), "1-ne-3-7");
+	});
+
+	it("serves connections from cache without calling Neo4j", async () => {
+		const kv = { get: vi.fn(async () => JSON.stringify(mockConnections)), put: vi.fn() } as any;
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
-		expect(findCrossReferences).not.toHaveBeenCalled();
-		expect(data.crossRefs?.[0].verse_id).toBe("ps-23-1");
+		const panel = await data.connections!;
+		expect(getVerseConnections).not.toHaveBeenCalled();
+		expect(panel.degraded).toBe(false);
+		if (!panel.degraded) expect(panel.crossRefs[0].verse_id).toBe("john-3-16");
 	});
 
 	it("uses a versioned cache key built from the canonical verse id", async () => {
 		const kv = kvNoop();
-		await loader(makeArgs("1-ne", "3", "?verse=7", kv));
-		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^xrefs:v1:1-ne-3-7$/));
+		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
+		await data.connections;
+		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v1:1-ne-3-7$/));
 	});
 
 	it("includes reference on every verse in the loader data", async () => {
@@ -127,13 +140,13 @@ describe("scripture loader — failure modes", () => {
 		await expect(loader(makeArgs("1-ne", "99"))).rejects.toMatchObject({ status: 404 });
 	});
 
-	it("degrades gracefully when Neo4j fails: verses intact, graphDegraded set, no throw", async () => {
-		vi.mocked(findCrossReferences).mockRejectedValue(new Error("Neo4j timeout"));
+	it("degrades gracefully when Neo4j fails: verses intact, panel resolves degraded, no throw", async () => {
+		vi.mocked(getVerseConnections).mockRejectedValue(new Error("Neo4j timeout"));
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7"));
 		expect(data.verses).toHaveLength(2);
-		expect(data.graphDegraded).toBe(true);
-		expect(data.crossRefs).toBeNull();
+		const panel = await data.connections!;
+		expect(panel.degraded).toBe(true);
 		// OBS-1: degradation must not be silent — one structured log line with the event
 		expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("neo4j_degraded"));
 		errorSpy.mockRestore();
@@ -143,9 +156,17 @@ describe("scripture loader — failure modes", () => {
 		for (const bad of ["?verse=abc", "?verse=-1", "?verse=0"]) {
 			const data = await loader(makeArgs("1-ne", "3", bad));
 			expect(data.selectedVerse).toBeNull();
-			expect(data.crossRefs).toBeNull();
+			expect(data.connections).toBeNull();
 		}
-		expect(findCrossReferences).not.toHaveBeenCalled();
+		expect(getVerseConnections).not.toHaveBeenCalled();
+	});
+
+	it("treats a ?verse not present in the chapter as absent (no phantom panel)", async () => {
+		const data = await loader(makeArgs("1-ne", "3", "?verse=999"));
+		expect(data.selectedVerse).toBeNull();
+		// The graph fetch is kicked off before the verses arrive (latency overlap),
+		// but a verse outside the chapter must still discard the panel promise.
+		expect(data.connections).toBeNull();
 	});
 
 	it("missing summary renders as null, not an error", async () => {
@@ -154,10 +175,11 @@ describe("scripture loader — failure modes", () => {
 		expect(data.summary).toBeNull();
 	});
 
-	it("KV get failure still serves cross-refs from live Neo4j", async () => {
+	it("KV get failure still serves connections from live Neo4j", async () => {
 		const kv = { get: vi.fn(async () => { throw new Error("kv down"); }), put: vi.fn(async () => {}) } as any;
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
-		expect(data.crossRefs).toHaveLength(1);
-		expect(data.graphDegraded).toBe(false);
+		const panel = await data.connections!;
+		expect(panel.degraded).toBe(false);
+		if (!panel.degraded) expect(panel.crossRefs).toHaveLength(1);
 	});
 });

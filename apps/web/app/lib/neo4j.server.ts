@@ -24,8 +24,13 @@ const ENTITY_TYPES = [
 	"Symbol",
 ];
 
-/** 5s interactive budget — Aura cold-resume must degrade fast, not hang the page. */
-const INTERACTIVE_TIMEOUT_MS = 5_000;
+/**
+ * Interactive budget — Aura cold-resume must degrade fast, not hang the page.
+ * Must stay below React Router's turbo-stream abort (default streamTimeout
+ * 4950ms): the loader's degraded-fallback has to win that race, otherwise the
+ * streamed promise rejects client-side instead of resolving degraded.
+ */
+const INTERACTIVE_TIMEOUT_MS = 4_500;
 
 /** Per-request factory. The client is stateless config + fetch; ~0ms to build. */
 export function makeNeo4j(env: Neo4jEnv, fetchImpl?: typeof globalThis.fetch): Neo4jClient {

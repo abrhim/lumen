@@ -8,6 +8,12 @@ describe('parseReference', () => {
     expect(parseReference('pgp')).toEqual({ level: 'volume', volumeId: 'pgp', raw: 'pgp' });
   });
 
+  it('carries bookId only for D&C, the single-book volume whose slug is also a book', () => {
+    // multi-book volumes stay book-less
+    expect(parseReference('bom').bookId).toBeUndefined();
+    expect(parseReference('pgp').bookId).toBeUndefined();
+  });
+
   it('parses book slugs', () => {
     expect(parseReference('1-ne')).toEqual({ level: 'book', bookId: '1-ne', raw: '1-ne' });
     expect(parseReference('gen')).toEqual({ level: 'book', bookId: 'gen', raw: 'gen' });
@@ -48,8 +54,8 @@ describe('parseReference', () => {
     expect(parseReference('1 Corinthians 13:4')).toEqual({ level: 'verse', bookId: '1-cor', chapter: 13, verse: 4, raw: '1 Corinthians 13:4' });
   });
 
-  it('handles D&C references', () => {
-    expect(parseReference('dc')).toEqual({ level: 'volume', volumeId: 'dc', raw: 'dc' });
+  it('handles D&C references (volume that is also a single book)', () => {
+    expect(parseReference('dc')).toEqual({ level: 'volume', volumeId: 'dc', bookId: 'dc', raw: 'dc' });
   });
 
   it('falls back to unknown for unrecognized input', () => {
