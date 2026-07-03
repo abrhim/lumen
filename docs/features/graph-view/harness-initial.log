@@ -32,3 +32,12 @@ web exit: 0
 
 Node.js v26.4.0
 smoke exit: 0
+
+=== correction (2026-07-03, recorded at step 15) ===
+The "exit: 0" lines above are erroneous shell bookkeeping (PIPESTATUS read
+after `tail` in a pipeline). The true initial exits, evidenced by the output
+above ("Failed to load url ../graph/get-neighborhood", "Test Files 1 failed",
+"Tests 7 failed (7)", smoke script missing):
+scripture suite EXIT=1
+web suite EXIT=1  (fail: 7)
+smoke script EXIT=1

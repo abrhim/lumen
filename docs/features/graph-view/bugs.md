@@ -36,6 +36,8 @@ raised by a tagger (B15). One finding empirically benchmarked against prod Neo4j
 | B23 | d3 stack ships to radial-only/reduced-motion users (no layout chunk split) | med | perf | CPERF-5 | React.lazy both layouts inside overlay |
 | B24 | Recenter ring too faint (UX-5 intent) + depth-1 impossible truncation advice + faint-token contrast | low | ux/a11y | CUX-3 + CUX-4 + CA11Y-7 | stroke up; copy varies by depth; text-muted-foreground swaps |
 
+All 24 fixed in cbe0be0 (B10 in the NUL-replacement edit within the same commit).
+
 Repro tests: loader (B8, B9, B19-cache-hit), package harness (B3 single-pass, B4 edge LIMIT), graph-model (B6 filterVM), backfill node:test (B11 partition, B13 ORDER BY, B20 scrub). UI-interaction bugs B1, B5, B7, B16–B18, B24: **repro-deferred** — no component-test infra in apps/web; manual recipes recorded below; logic extracted to pure functions where feasible (B6).
 
 Manual recipes (repro-deferred): B1 recenter on hub, observe no dim until data lands · B5 toggle legend, sim restarts · B7 recenter to >220-node hub with force selected · B16 open graph from chip, Esc, observe focus · B17 tab through controls while pending · B18 VoiceOver announce on load.

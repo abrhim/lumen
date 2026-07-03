@@ -18,6 +18,13 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 
 -->
 
+## 2026-07-03 · feature: graph-view · tier: large
+- Variable-length Cypher paths explode before LIMIT; expand layer-by-layer with per-layer caps (bench-verified on prod hub).
+- Unlabeled MATCH can't use per-label indexes on shared instances; label-union every node group, including scripts.
+- Adversarial taggers refuted 6 findings (React remount, crash-boundary) by tracing vendored framework source — require traces before refactoring.
+- Verify data-shape claims against the live store; ingest source can predate the graph (chapter id format).
+- UI-heavy features need component-test infra up front; 6/24 bugs shipped repro-deferred without it.
+
 ## 2026-07-03 · feature: web-app-wiring · tier: standard
 - Portals escape CSS-hidden wrappers; mount-gate portaled components with matchMedia, never `lg:hidden` classes.
 - Mock-only loader tests hid every data-shape bug (D&C id collision, parallel edges); add real-data smoke assertions.
