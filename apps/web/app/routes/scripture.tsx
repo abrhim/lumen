@@ -377,7 +377,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				</p>
 				<div className="mt-2 flex items-center gap-3">
 					<h1 className="font-display text-3xl font-medium tracking-tight">{reference}</h1>
-					{graphButton(`${bookId}-${chapter}`, `Open the local graph for ${reference}`)}
+					{/* the summary node is the semantically rich chapter center: it FEATURES
+					    principles/people/places and COVERS the verses (bare chapter nodes
+					    carry only structural CONTAINS edges) */}
+					{graphButton(`summary-${bookId}-${chapter}`, `Open the local graph for ${reference}`)}
 				</div>
 				<nav
 					aria-label="Chapter navigation"

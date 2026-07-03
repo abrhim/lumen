@@ -200,6 +200,29 @@ Panel-2 dissent rate: **(43 material + 19 risky) / 76 = 0.816.** One safety carv
 | OBS-9 | rejected-with-rationale | "Sole-developer script; timestamp + dryRun flag suffice" (both retained) |
 | OBS-10 | incorporated | cachedJson reused unchanged |
 
+## Plan amendment 2 (implementation-stage, step 8)
+
+Conflicts and live-data discoveries, logged per the harness-conflict protocol:
+
+1. **PERF-4 (incorporated → unimplementable as stated).** `shouldRevalidate` skipping chapter
+   refetch on graph-only param changes would also skip the loader that produces the new
+   graph promise — the single-route architecture can't split them. Deferred to the
+   nested-route follow-up, same bucket as the identical `?verse` trade-off. No harness change.
+2. **Chapter entry point** centers on `summary-<book>-<chapter>` rather than the chapter
+   node: live probe shows chapter nodes carry only structural `CONTAINS` edges, while the
+   summary node FEATURES principles/people/places and COVERS the verses (46 semantic
+   connections for 1 Ne 3). Verified live.
+3. **Cross-type id collisions are real in Neo4j** (dry-run: principle stamping matched 280
+   nodes for 262 ids). COR-4 was rejected on Postgres-PK grounds; the graph side does
+   collide. Recorded for the bug filter — `getNeighborhood`'s center `LIMIT 1` makes the
+   pick deterministic-per-plan but arbitrary; backfill stamps every match (uniform
+   phase-b today, harmless).
+4. **Backfill required label-union index seeks**: per-label id indexes exist, but unlabeled
+   `MATCH (n {id})` can't use them on the shared instance (edge phase crawled). Both stamp
+   queries now enumerate the LM label union.
+5. **Verses aren't entities**: `lumen.verses` has no collection_id column; the 38k `LM_Verse`
+   nodes are stamped `canon` by construction from `lumen.verses` directly.
+
 ## Drift baseline (filled at end of step 6)
 - plan-hash: d0def7e1168f38a8 (sha256/16 of plan.md at synthesis, pre-hash-stamp)
 - harness-hash: 27639124f5cb7277 (sha256/16; amended post-synthesis: PERF-2, SEC-2, COR-1, API-1 assertions)
