@@ -67,12 +67,22 @@ function parseVerseParam(search: string): number | null {
 	return n > 0 ? n : null;
 }
 
-/** Resolved shape of the streamed graph promise — degradation is a value, not a rejection. */
+/** Resolved shape of the streamed graph promise — degradation is a value, not a
+ * rejection. Echoes the request (entityId/depth) so the overlay can tell a
+ * freshly-resolved graph from a held-over stale one during transitions. */
 export type GraphPanelData =
-	| { degraded: false; neighborhood: NeighborhoodResult }
-	| { degraded: true };
+	| { degraded: false; neighborhood: NeighborhoodResult; entityId: string; depth: 1 | 2 | 3 }
+	| { degraded: true; entityId: string; depth: 1 | 2 | 3 };
 
-const GRAPH_ID_RE = /^[A-Za-z0-9:._&' -]{1,128}$/;
+const GRAPH_ID_RE = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/;
+
+const GRAPH_NOT_FOUND: NeighborhoodResult = {
+	found: false,
+	center: null,
+	nodes: [],
+	edges: [],
+	truncated: { shown: 0, total: 0 },
+};
 
 /** Depth clamps (unlike ?verse's treat-as-absent): the picker always needs a renderable value. */
 function clampDepth(raw: string | null): 1 | 2 | 3 {
@@ -80,36 +90,70 @@ function clampDepth(raw: string | null): 1 | 2 | 3 {
 	return Math.min(3, Math.max(1, parseInt(raw, 10))) as 1 | 2 | 3;
 }
 
-/** Never rejects — turbo-stream aborts and Neo4j failures both resolve degraded. */
+/**
+ * Never rejects — turbo-stream aborts and Neo4j failures both resolve degraded.
+ * Cache discipline (B9): only `found:true` results earn the 7-day KV entry —
+ * junk ids must not consume the KV write budget (free tier: 1,000 writes/day).
+ * Logging happens at origin fetches only, never on cache hits (B19).
+ */
 async function loadGraph(
 	context: Route.LoaderArgs["context"],
 	entityId: string,
 	depth: 1 | 2 | 3,
 	collections: string[] | undefined,
 ): Promise<GraphPanelData> {
+	const startedAt = Date.now();
 	const collKey = (collections ?? []).slice().sort().join(",");
+	const cacheKey = `graph:v1:${entityId}:${depth}:${collKey}`;
 	try {
-		const neighborhood = await cachedJson<NeighborhoodResult>(
-			context.cache,
-			`graph:v1:${entityId}:${depth}:${collKey}`,
-			CONNECTIONS_TTL_SECONDS,
-			() =>
-				getNeighborhood(context.neo4j, entityId, {
-					depth,
-					collections: collections && collections.length > 0 ? collections : undefined,
-				}),
-		);
-		if (!neighborhood.found) {
-			logEvent("graph_not_found", { entityId });
-		} else if (neighborhood.truncated.shown < neighborhood.truncated.total) {
-			logEvent("graph_truncated", {
-				entityId,
-				depth,
-				shown: neighborhood.truncated.shown,
-				total: neighborhood.truncated.total,
-			});
+		if (context.cache) {
+			try {
+				const hit = await context.cache.get(cacheKey);
+				if (hit != null) {
+					return { degraded: false, neighborhood: JSON.parse(hit) as NeighborhoodResult, entityId, depth };
+				}
+			} catch (error) {
+				logEvent("kv_cache_error", {
+					op: "get",
+					key: cacheKey,
+					message: error instanceof Error ? error.message : String(error),
+				});
+			}
 		}
-		return { degraded: false, neighborhood };
+
+		const neighborhood = await getNeighborhood(context.neo4j, entityId, {
+			depth,
+			collections: collections && collections.length > 0 ? collections : undefined,
+		});
+		const elapsedMs = Date.now() - startedAt;
+
+		if (!neighborhood.found) {
+			logEvent("graph_not_found", { entityId, depth, collections: collKey, elapsedMs });
+		} else {
+			if (neighborhood.truncated.shown < neighborhood.truncated.total) {
+				logEvent("graph_truncated", {
+					entityId,
+					depth,
+					shown: neighborhood.truncated.shown,
+					total: neighborhood.truncated.total,
+					elapsedMs,
+				});
+			}
+			if (context.cache) {
+				try {
+					await context.cache.put(cacheKey, JSON.stringify(neighborhood), {
+						expirationTtl: CONNECTIONS_TTL_SECONDS,
+					});
+				} catch (error) {
+					logEvent("kv_cache_error", {
+						op: "put",
+						key: cacheKey,
+						message: error instanceof Error ? error.message : String(error),
+					});
+				}
+			}
+		}
+		return { degraded: false, neighborhood, entityId, depth };
 	} catch (error) {
 		logEvent("graph_degraded", {
 			name: error instanceof Error ? error.name : "unknown",
@@ -117,8 +161,9 @@ async function loadGraph(
 			entityId,
 			depth,
 			collections: collKey,
+			elapsedMs: Date.now() - startedAt,
 		});
-		return { degraded: true };
+		return { degraded: true, entityId, depth };
 	}
 }
 
@@ -192,8 +237,12 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const pendingConnections =
 		requestedVerse !== null ? loadConnections(context, bookId, chapter, requestedVerse) : null;
 
+	// An invalid-charset id still opens the overlay in its not-found state
+	// (contract: "Invalid/unknown entityId → overlay not-found") — it just
+	// never touches Neo4j or KV (B8/B9).
 	const rawGraphId = url.searchParams.get("graph");
-	const graphId = rawGraphId !== null && GRAPH_ID_RE.test(rawGraphId) ? rawGraphId : null;
+	const graphId = rawGraphId !== null ? rawGraphId.slice(0, 128) : null;
+	const graphIdValid = rawGraphId !== null && GRAPH_ID_RE.test(rawGraphId);
 	const graphDepth = clampDepth(url.searchParams.get("depth"));
 
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
@@ -202,7 +251,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const [verses, summary, publicCollections] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
-		graphId !== null
+		graphIdValid
 			? (getPublicCollectionIds(context.db) as Promise<string[]>).catch(() => undefined)
 			: Promise.resolve(undefined),
 	]);
@@ -220,7 +269,17 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const connections = selectedVerse !== null ? pendingConnections : null;
 
 	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
-	const graph = graphId !== null ? loadGraph(context, graphId, graphDepth, publicCollections) : null;
+	const graph: Promise<GraphPanelData> | null =
+		graphId === null
+			? null
+			: graphIdValid
+				? loadGraph(context, graphId, graphDepth, publicCollections)
+				: Promise.resolve({
+						degraded: false,
+						neighborhood: GRAPH_NOT_FOUND,
+						entityId: graphId,
+						depth: graphDepth,
+					});
 
 	// "1 Nephi 3:1" → "1 Nephi 3"
 	const reference = verses[0].reference.replace(/:\d+$/, "");
@@ -334,12 +393,23 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 		q.set("depth", String(depth));
 		return `${chapterUrl}?${q.toString()}`;
 	};
-	const openGraph = (id: string, depth: 1 | 2 | 3 = 1) =>
+	// Focus returns to whichever control opened the overlay (B16/UX-10).
+	const graphInvoker = useRef<HTMLElement | null>(null);
+	const openGraph = (id: string, depth: 1 | 2 | 3 = 1) => {
+		if (document.activeElement instanceof HTMLElement && graphInvoker.current === null) {
+			graphInvoker.current = document.activeElement;
+		}
 		navigate(graphUrl(id, depth), { preventScrollReset: true });
-	const closeGraph = () =>
+	};
+	const closeGraph = () => {
 		navigate(selectedVerse !== null ? `${chapterUrl}?verse=${selectedVerse}` : chapterUrl, {
 			preventScrollReset: true,
 		});
+		// consumed by the overlay's onCloseAutoFocus; reset for the next open
+		queueMicrotask(() => {
+			graphInvoker.current = null;
+		});
+	};
 	const readVerse = (t: { book: string; chapter: number; verse: number }) => {
 		scrollIntent.current = t.verse;
 		navigate(`/scripture/${t.book}/${t.chapter}?verse=${t.verse}`, { preventScrollReset: true });
@@ -519,6 +589,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 						depth={effectiveDepth}
 						graph={graph ?? PENDING_FOREVER}
 						isPending={graphNavPending}
+						invoker={graphInvoker}
 						onNavigate={openGraph}
 						onClose={closeGraph}
 						onReadVerse={readVerse}

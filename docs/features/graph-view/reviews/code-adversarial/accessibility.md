@@ -1,0 +1,31 @@
+# CODE-ADVERSARIAL / accessibility — graph-view
+
+Evaluating `docs/features/graph-view/reviews/code-panel/accessibility.md` (CA11Y-1..9) against `apps/web/app/components/graph/{GraphOverlay,ForceLayout,RadialLayout}.tsx`. All line citations in the source doc were verified directly against current source and are accurate (one minor exception noted at CA11Y-8). Tags: material / risky / noise / out-of-scope, precedence material > risky > out-of-scope > noise. High-severity a11y findings do not get an automatic safety carve-out (that carve-out is reserved for security/data-loss/correctness) — tagged on merits.
+
+| ID | Tag | Rationale (≤ 25 words) |
+|---|---|---|
+| CA11Y-1 | risky | Real gap, but the fix is oversized: switch to aria-pressed toggle buttons (already the pattern for type filters) instead of full roving-tabindex radio semantics. |
+| CA11Y-2 | material | Confirmed: 4 aria-live regions mount with final text already baked in; known SR pitfall. Mount-empty-then-fill fix is small and low-risk. |
+| CA11Y-3 | out-of-scope | Plan already deferred full canvas keyboard-nav (A11Y-1/A11Y-7), banking on List view; header controls remain fully tabbable, so "zero access" overstates the gap. |
+| CA11Y-4 | material | Verified: native `disabled` drops the focused Segmented option from the tab order mid-click. Standard, low-risk `aria-disabled` swap fixes it cleanly. |
+| CA11Y-5 | material | Confirmed: Title stays the raw entityId forever, never syncing to `vm.center.label`. Cheap fix — generic pre-load title + existing aria-live channel. |
+| CA11Y-6 | risky | Math checks out, but this is a transient, non-essential, mouse-only de-emphasis over already-seen content; clamping opacity to 3:1 would gut the effect's purpose. |
+| CA11Y-7 | material | Token is pre-existing, but its use here is new-code; 2.6–3.0:1 confirmed via calc. Swap to `text-muted-foreground` is a trivial, scoped fix. |
+| CA11Y-8 | noise | Real but inert: d3-drag's own window listeners self-clean on mouseup regardless; no visible symptom. Fix adds real complexity for near-zero impact. |
+| CA11Y-9 | material | Confirmed: no focus move or announcement on graph→list switch. Cheap fix (reuse existing aria-live or `.focus()`) for a real SR wayfinding gap. |
+
+## Detail on the five flagged calls
+
+**CA11Y-1** — `Segmented` (`GraphOverlay.tsx:270-291`) genuinely has `role="radio"`/`aria-checked` with zero `onKeyDown` and zero tabindex management; verified. But the doc's own footer type-filter buttons (`GraphOverlay.tsx:227-250`) already solve an equivalent single/multi-toggle UI with plain `<button aria-pressed>` and no arrow-key requirement at all. Re-skinning `Segmented` the same way removes the ARIA APG radiogroup obligation entirely instead of satisfying it with new keyboard-handling code — cheaper *and* correct. The code-panel fix (build roving tabindex + arrow keys from scratch) is heavier machinery than the problem needs → risky, not material.
+
+**CA11Y-2** — Verified all four cited spots (`GraphOverlay.tsx:79-81`, `96`, `141`, `198-200`): each `aria-live` region's DOM node is created with its final text already present on first mount (Suspense fallback swap, or first render post-resolve), never updated in place. This is a well-documented AT pitfall (a live region's *initial* content, inserted as part of a larger subtree mount, frequently isn't announced because no in-place mutation occurs inside an already-registered region). The fix — mount the region empty once, set text via `useEffect` a tick later — is small, standard, and doesn't touch layout or introduce new state machinery. Material.
+
+**CA11Y-5** — Verified: `DialogPrimitive.Title` (`GraphOverlay.tsx:36-38`) is `Local graph for {entityId}`, static, rendered before `Suspense`, and never reconciled against `vm.center.label` (line 161) after the neighborhood resolves. The dialog's accessible name is therefore a raw slug (e.g. `summary-1-ne-3-7`) for its entire lifetime, not just during loading. Fix is cheap (generic placeholder + reuse the existing `aria-live` channel to announce the resolved label). Material.
+
+**CA11Y-6** — Contrast math is right (opacity 0.25 does crater to ~1.4:1). But the question worth asking: is a mouse-only, transient, self-resetting hover state even the kind of thing SC 1.4.11 is meant to gate hard on? It conveys no information that wasn't already fully visible before the hover; the hovered node and its direct neighbors stay at full contrast throughout, so nothing becomes newly *inaccessible* — the de-emphasized nodes are simply less loud, not hidden, and revert on mouseout. This mirrors Obsidian's own dim-on-hover pattern (cited in the component's doc comment) and is gated to `hover: hover` devices, so keyboard/touch users never see it. The suggested fix (opacity floor ≥0.55 for 3:1) would flatten the dim effect to the point of not reading as de-emphasis anymore — trading a working, intentional affordance for marginal, debatable conformance on a non-essential decorative state. Risky, not material.
+
+**CA11Y-7** — `--color-faint` is a pre-existing global token, but flagging it isn't about redefining the design system — it's about a decision made *inside this diff*: five new spots in `GraphOverlay.tsx` (158-160, 214-215, 243, 319, 336) lean on it for 10-11px text. Recomputed contrast independently: `#9b8e78` vs. `--paper`/`--panel`/`--panel2` lands at 2.64-2.98:1, well under the 4.5:1 needed — confirms the doc's numbers. The fix is a same-file Tailwind class swap (`text-faint` → `text-muted-foreground`), not a token-definition change, so it's in-scope for this diff and cheap. Material (though note: recompute shows `--muted-foreground` itself only clears ~4.3:1 against `--panel2`, marginally short of 4.5:1 — worth a follow-up spot-check when this lands, but doesn't change the tag here).
+
+## Stance
+
+The code-panel specialist is mostly signal: every line citation checked out against source, and CA11Y-2/4/5/7/9 are real, cheaply-fixable gaps worth incorporating as-is. Where it loses points is prescribing the costliest correct fix rather than the cheapest one (CA11Y-1, CA11Y-6) and, once, re-opening a keyboard-access scope call the plan had already deliberately closed (CA11Y-3, A11Y-1/A11Y-7 deferred-out-of-scope). Net: high-precision, low-frugality — good at finding real bugs, weaker at right-sizing the fix.

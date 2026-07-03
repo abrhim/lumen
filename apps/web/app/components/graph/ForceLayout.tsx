@@ -32,10 +32,13 @@ const H = 800;
  */
 export default function ForceLayout({
 	vm,
+	hiddenTypes,
 	positions,
 	onRecenter,
 }: {
+	/** The FULL vm — type filtering happens via visibility (B5), not remounting. */
 	vm: GraphVM;
+	hiddenTypes: ReadonlySet<string>;
 	/** Position memory across depth/center changes (UX-9). Mutated in place. */
 	positions: Map<string, { x: number; y: number }>;
 	onRecenter: (id: string) => void;
@@ -45,6 +48,27 @@ export default function ForceLayout({
 	const nodeRefs = useRef(new Map<string, SVGGElement>());
 	const edgeRefs = useRef(new Map<number, SVGLineElement>());
 	const simRef = useRef<Simulation<SimNode, undefined> | null>(null);
+
+	// Legend toggles hide elements without touching the simulation (B5). The
+	// edgeRefs index space is the same vm.edges array used below — keep it that
+	// way (CCOR-2): indices are shared between render, tick, and this effect.
+	const typeOf = useRef(new Map<string, string>());
+	useEffect(() => {
+		typeOf.current = new Map(vm.nodes.map((n) => [n.id, n.type]));
+	}, [vm]);
+	useEffect(() => {
+		const hiddenNode = (id: string) => {
+			const t = typeOf.current.get(id);
+			return t !== undefined && hiddenTypes.has(t) && vm.center.id !== id;
+		};
+		for (const [id, el] of nodeRefs.current) {
+			el.style.display = hiddenNode(id) ? "none" : "";
+		}
+		vm.edges.forEach((e, i) => {
+			const el = edgeRefs.current.get(i);
+			if (el) el.style.display = hiddenNode(e.from) || hiddenNode(e.to) ? "none" : "";
+		});
+	}, [hiddenTypes, vm]);
 
 	useEffect(() => {
 		const nodes: SimNode[] = vm.nodes.map((n) => {
@@ -59,8 +83,9 @@ export default function ForceLayout({
 		const center = nodes[0];
 		center.fx = W / 2;
 		center.fy = H / 2;
+		const nodeIds = new Set(vm.nodes.map((n) => n.id));
 		const links: SimulationLinkDatum<SimNode>[] = vm.edges
-			.filter((e) => vm.nodes.some((n) => n.id === e.from) && vm.nodes.some((n) => n.id === e.to))
+			.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to))
 			.map((e) => ({ source: e.from, target: e.to }));
 
 		const sim = forceSimulation<SimNode>(nodes)
@@ -185,9 +210,9 @@ export default function ForceLayout({
 							stroke={n.hop === 0 ? "#ffffff" : "var(--color-paper)"}
 							strokeWidth={n.hop === 0 ? 3 : 2}
 						/>
-						{/* persistent recenter affordance, not hover-only (UX-5) */}
+						{/* persistent recenter affordance, not hover-only (UX-5/B24) */}
 						{n.hop !== 0 && (
-							<circle r={n.hop === 1 ? 17 : 13} fill="none" stroke={n.color} strokeOpacity={0.35} strokeWidth={1} />
+							<circle r={n.hop === 1 ? 17 : 13} fill="none" stroke={n.color} strokeOpacity={0.6} strokeWidth={1.5} />
 						)}
 						<text
 							y={(n.hop === 0 ? 24 : n.hop === 1 ? 14 : 10) + 14}

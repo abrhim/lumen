@@ -15,6 +15,11 @@ export const GRAPH_NODE_TYPES = [
   'Verse', 'Principle', 'Person', 'Place', 'Symbol', 'NaveTopic', 'Era', 'Event',
 ] as const;
 
+/** Types a graph can CENTER on — word-study surfaces are out of scope (plan). */
+const GRAPH_CENTER_TYPES = GRAPH_ENTITY_TYPES.filter(
+  (t) => t !== 'StrongsWord' && t !== 'JstReading',
+);
+
 /** Semantic relationship allowlist for the graph view (structural containment excluded). */
 export const GRAPH_REL_TYPES = [
   'CROSS_REF', 'TEACHES', 'MENTIONS', 'LOCATED_AT',
@@ -27,6 +32,7 @@ const DEFAULT_PER_DEPTH_CAP = 75;
 const DEFAULT_TOTAL_CAP = 400;
 const MAX_PER_DEPTH_CAP = 150;
 const MAX_TOTAL_CAP = 600;
+const EDGE_CAP = 1500;
 
 export interface NeighborhoodNode {
   id: string;
@@ -47,6 +53,12 @@ export interface NeighborhoodResult {
   center: NeighborhoodNode | null;
   nodes: NeighborhoodNode[];
   edges: NeighborhoodEdge[];
+  /**
+   * `shown` = distinct nodes returned (post-dedupe). `total` is exact at
+   * depth 1; at depth ≥2 it's a LOWER BOUND — each layer counts expansion
+   * from the already-capped previous frontier, so counting work stays
+   * bounded on hub entities. UIs should render "N+" beyond depth 1.
+   */
   truncated: { shown: number; total: number };
 }
 
@@ -131,13 +143,15 @@ export async function getNeighborhood(
   // Everything interpolated below is allowlist-validated or a clamped integer;
   // entityId and collections travel as bound parameters.
   const rels = relTypes.join('|');
-  const centerUnion = labelUnion(GRAPH_ENTITY_TYPES);
+  const centerUnion = labelUnion(GRAPH_CENTER_TYPES);
   const nodeUnion = labelUnion(nodeTypes);
   // Fail-open on missing collection_id: pre-backfill data stays visible (FM-6).
   const filter = (rel: string, node: string) =>
     `($collections IS NULL OR ${rel}.collection_id IN $collections OR ${rel}.collection_id IS NULL)
      AND ($collections IS NULL OR ${node}.collection_id IN $collections OR ${node}.collection_id IS NULL)`;
 
+  // One traversal per layer (not count+collect twice — benchmarked equal-or-
+  // faster on prod hubs): collect distinct once, total = size, layer = slice.
   const layers: string[] = [];
   const layerVars: string[] = [];
   const totalVars: string[] = [];
@@ -150,18 +164,15 @@ export async function getNeighborhood(
         ? 'WITH c, c AS s' // carry c too — a plain `WITH c AS s` drops it from scope
         : `UNWIND l${d - 1} AS s`;
     const exclude = ['s <> n', 'n <> c', ...layerVars.map((v) => `NOT n IN ${v}`)].join(' AND ');
-    const body = `
+    layers.push(`CALL {
       WITH ${carried}
       ${source}
       MATCH (s)-[r${d}:${rels}]-(n:${nodeUnion})
-      WHERE ${exclude} AND ${filter(`r${d}`, 'n')}`;
-    layers.push(`CALL {${body}
-      RETURN count(DISTINCT n) AS ${tv}
+      WHERE ${exclude} AND ${filter(`r${d}`, 'n')}
+      WITH DISTINCT n
+      RETURN collect(n) AS ${lv}_all
     }
-    CALL {${body}
-      WITH DISTINCT n LIMIT ${perDepthCap}
-      RETURN collect(n) AS ${lv}
-    }`);
+    WITH *, ${lv}_all[0..${perDepthCap}] AS ${lv}, size(${lv}_all) AS ${tv}`);
     layerVars.push(lv);
     totalVars.push(tv);
   }
@@ -179,7 +190,7 @@ export async function getNeighborhood(
       MATCH (a)-[r:${rels}]-(b:${nodeUnion})
       WHERE b IN visited
         AND ($collections IS NULL OR r.collection_id IN $collections OR r.collection_id IS NULL)
-      WITH DISTINCT r
+      WITH DISTINCT r LIMIT ${EDGE_CAP}
       RETURN collect({
         from: startNode(r).id,
         to: endNode(r).id,

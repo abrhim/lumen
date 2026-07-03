@@ -1,0 +1,24 @@
+# CODE-ADVERSARIAL correctness — graph-view
+
+Adjudicates `docs/features/graph-view/reviews/code-panel/correctness.md` against the actual code
+(`packages/scripture/src/graph/get-neighborhood.ts`, `apps/web/app/components/graph/{GraphOverlay,ForceLayout,RadialLayout,graph-model}.tsx`,
+`apps/web/app/routes/scripture.tsx`) and `docs/features/graph-view/plan.md`.
+
+| ID | Tag | Rationale (≤ 25 words) |
+|---|---|---|
+| CCOR-1 | material | Confirmed: RR7 wraps loaderData commits in `startTransition`, so the dim overlay clears exactly when Suspense would otherwise mask a stale graph. |
+| CCOR-2 | risky | Index misalignment is real in `ForceLayout` alone, but the only caller (`GraphOverlay`) always pre-filters edges to match nodes — currently inert. |
+| CCOR-3 | material | Undercount confirmed in the Cypher; contradicts plan's own "reported accurately" criterion for the exact hub-entity depth≥2 case; harness mocks `total`, never catches it. |
+| CCOR-4 | material | Confirmed and reproducible via ordinary recenter/depth-change to a >220-node hub; also mis-states `aria-checked`, a real a11y-truth defect. |
+| CCOR-5 | risky | Plausible SSR/hydration divergence confirmed (streaming SSR + `startTransition`), but needs deferred-resolves-before-flush timing plus reduced-motion — narrow, self-healing flicker. |
+| CCOR-6 | noise | No multi-labeled LM nodes exist; ingestion deliberately creates separate same-id nodes per label specifically to avoid this ambiguity. |
+| CCOR-7 | material | Confirmed and trivially reproducible: toggling off every legend type leaves a near-blank canvas with no "no connections" message. |
+| CCOR-8 | noise | Query's prefix-slice/layer-concatenation order provably guarantees every returned node's discovery edge survives — the `?? 1` fallback is unreachable dead code. |
+
+## Stance
+
+**CCOR-1** is the most consequential finding in the set and panel-1/2 underrated it. I traced the actual mechanics: React Router 7.9.6's internal state setters (`chunk-AMVS5XVJ.js`) wrap loaderData commits in `React.startTransition`, and `Await` throws the unresolved promise via the standard `use()`-style pending check. The combination means that the instant a graph navigation commits (critical loaderData — verses/summary/publicCollections — resolves), `navHere` clears and `graphNavPending` goes false in the *same* commit that hands `GraphOverlay` a brand-new, unresolved `graph` promise; because that render is inside a transition, React keeps the last-committed (stale) graph on screen with no fallback and no dim overlay until the deferred promise resolves. This is not a corner case — it happens on every recenter and every depth change, the feature's core interaction loop — so it clears the "high-severity survives" bar on its own merits, independent of the carve-out.
+
+**CCOR-3** holds up as material despite the trade-off framing in the code comment. That comment is the implementer's own rationale, not a plan directive — `plan.md` never specifies "count from the capped prior frontier"; it only asks that the count subquery carry identical label/collection constraints and that failure mode #2 ("`truncated.shown < truncated.total` reported accurately") pass for hub entities at depth 3, which is precisely the scenario where `t2`/`t3` structurally undercount. The vitest harness (`get-neighborhood.test.ts` FM-2) only asserts that a mocked `total` field passes through unchanged — it never exercises the real Cypher's counting behavior, so this defect is currently invisible to CI. Documenting `total` as a lower-bound estimate is a one-line, high-value fix.
+
+**CCOR-2**, **CCOR-5**, and **CCOR-8** all involve premises that don't survive contact with the actual call graph: CCOR-2's index misalignment is real code but currently dead because `GraphOverlay` always pre-filters edges before handing them to `ForceLayout`; CCOR-5's SSR path is real (confirmed streaming SSR + the same `startTransition` mechanic as CCOR-1) but needs a narrower timing coincidence and self-heals after hydration; CCOR-8 is disproved outright — the query's `others[0..totalCap]` slice over a `l1+l2+l3` concatenation mathematically guarantees layer-prefix completeness, so a node from a deeper layer can never survive slicing without its discovering parent (and thus its connecting edge) also surviving, making the BFS-unreachable case impossible given the current query shape. CCOR-6 is unsupported by the codebase: the backfill/export scripts explicitly document and defend against *same-id, different-label, separate-node* collisions rather than multi-label nodes, so `labels()` ordering instability has no node to act on today. CCOR-4 and CCOR-7 are both plain, fully reproducible logic bugs with no masking caller in between, confirmed directly against `GraphOverlay.tsx`'s own state/render logic.

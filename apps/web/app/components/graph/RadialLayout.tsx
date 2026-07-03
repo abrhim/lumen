@@ -71,7 +71,7 @@ export default function RadialLayout({
 						>
 							<circle r={r + 8} fill="transparent" />
 							<circle r={r} fill={n.color} stroke={n.hop === 0 ? "#ffffff" : "var(--color-paper)"} strokeWidth={n.hop === 0 ? 3 : 2} />
-							{n.hop !== 0 && <circle r={r + 3} fill="none" stroke={n.color} strokeOpacity={0.35} strokeWidth={1} />}
+							{n.hop !== 0 && <circle r={r + 3} fill="none" stroke={n.color} strokeOpacity={0.6} strokeWidth={1.5} />}
 							<text
 								y={r + 14}
 								textAnchor="middle"

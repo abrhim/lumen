@@ -112,6 +112,23 @@ describe('getNeighborhood — public contract (graph-view harness)', () => {
     expect(captured[0].query).toMatch(/LIMIT\s+\d+/);
   });
 
+  it('traverses each layer once — no separate count pass (B3), edges capped in Cypher (B4)', async () => {
+    const { client, captured } = capturingNeo4j([NEIGHBORHOOD_ROW]);
+    await getNeighborhood(client, '1-ne-3-7', { depth: 2 });
+    const q = captured[0].query;
+    expect(q).not.toMatch(/count\(DISTINCT n\)/);
+    expect(q).toMatch(/size\(l\d_all\)/);
+    expect(q).toMatch(/WITH DISTINCT r LIMIT \d+/);
+  });
+
+  it('cannot center on word-study nodes — StrongsWord/JstReading excluded (B21)', async () => {
+    const { client, captured } = capturingNeo4j([NEIGHBORHOOD_ROW]);
+    await getNeighborhood(client, 'H6680', { depth: 1 });
+    const centerMatch = captured[0].query.match(/MATCH \(c:([^)]+) \{id/);
+    expect(centerMatch?.[1]).not.toContain('{StrongsWord}');
+    expect(centerMatch?.[1]).not.toContain('{JstReading}');
+  });
+
   it('label-constrains the depth-1 traversal too, written fresh — never the unlabeled explore pattern (SEC-2)', async () => {
     const { client, captured } = capturingNeo4j([NEIGHBORHOOD_ROW]);
     await getNeighborhood(client, '1-ne-3-7', { depth: 1 });

@@ -128,4 +128,58 @@ describe("scripture loader — ?graph param (graph-view harness)", () => {
 		expect(data.connections).toBeInstanceOf(Promise);
 		expect(data.graph).toBeInstanceOf(Promise);
 	});
+
+	it("charset-invalid ?graph resolves the overlay's not-found state without querying or caching (B8/B9)", async () => {
+		const kv = kvNoop();
+		const data = await loader(makeArgs(`?graph=${encodeURIComponent("bad$id!'")}`, kv));
+		const g = await data.graph!;
+		expect(g.degraded).toBe(false);
+		if (!g.degraded) expect(g.neighborhood.found).toBe(false);
+		expect(getNeighborhood).not.toHaveBeenCalled();
+		expect(kv.put).not.toHaveBeenCalled();
+	});
+
+	it("not-found results are never written to KV — junk ids can't burn the write budget (B9)", async () => {
+		vi.mocked(getNeighborhood).mockResolvedValue({
+			found: false, center: null, nodes: [], edges: [], truncated: { shown: 0, total: 0 },
+		} as any);
+		const kv = kvNoop();
+		const data = await loader(makeArgs("?graph=stale-old-id", kv));
+		await data.graph;
+		expect(kv.put).not.toHaveBeenCalled();
+	});
+
+	it("KV cache hits neither re-query nor re-log (B19)", async () => {
+		const cachedNeighborhood = { ...mockNeighborhood.nodes, ...{} };
+		const kv = {
+			get: vi.fn(async () => JSON.stringify({
+				found: true,
+				center: { id: "obedience", name: "Obedience", labels: ["Principle"], collection_id: "phase-b" },
+				nodes: [], edges: [], truncated: { shown: 5, total: 500 },
+			})),
+			put: vi.fn(async () => {}),
+		} as any;
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const data = await loader(makeArgs("?graph=obedience&depth=2", kv));
+		const g = await data.graph!;
+		expect(g.degraded).toBe(false);
+		expect(getNeighborhood).not.toHaveBeenCalled();
+		expect(kv.put).not.toHaveBeenCalled();
+		const graphLogs = errorSpy.mock.calls.filter((c) => String(c[0]).includes("graph_"));
+		expect(graphLogs).toHaveLength(0);
+		errorSpy.mockRestore();
+	});
+
+	it("graph logs carry elapsedMs and full dimensions (B19/OBS-1)", async () => {
+		vi.mocked(getNeighborhood).mockRejectedValue(new Error("boom"));
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const data = await loader(makeArgs("?graph=obedience&depth=2"));
+		await data.graph;
+		const line = errorSpy.mock.calls.map((c) => String(c[0])).find((s) => s.includes("graph_degraded"));
+		expect(line).toBeDefined();
+		const parsed = JSON.parse(line!);
+		expect(parsed).toMatchObject({ entityId: "obedience", depth: 2 });
+		expect(typeof parsed.elapsedMs).toBe("number");
+		errorSpy.mockRestore();
+	});
 });

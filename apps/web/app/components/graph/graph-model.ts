@@ -130,5 +130,23 @@ export function buildGraphVM(neighborhood: NeighborhoodResult): GraphVM | null {
 	};
 }
 
-/** Above this many nodes the force simulation is too heavy — fall back to radial (PERF-7). */
+/** Above these sizes the force simulation is too heavy — fall back to radial (PERF-7, B4). */
 export const FORCE_NODE_LIMIT = 220;
+export const FORCE_EDGE_LIMIT = 800;
+
+/**
+ * Client-side type filter (legend toggles). Center always survives. Pure so
+ * the all-hidden state is testable (B6); ForceLayout intentionally does NOT
+ * consume this — it hides elements via refs to keep the simulation stable (B5).
+ */
+export function filterVM(vm: GraphVM, hiddenTypes: ReadonlySet<string>): GraphVM {
+	if (hiddenTypes.size === 0) return vm;
+	const keep = new Set(
+		vm.nodes.filter((n) => n.hop === 0 || !hiddenTypes.has(n.type)).map((n) => n.id),
+	);
+	return {
+		...vm,
+		nodes: vm.nodes.filter((n) => keep.has(n.id)),
+		edges: vm.edges.filter((e) => keep.has(e.from) && keep.has(e.to)),
+	};
+}

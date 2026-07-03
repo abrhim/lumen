@@ -6,8 +6,38 @@ import {
   resolveGraphId,
   chunk,
   findConflictingEdgeRows,
+  partitionEdgeRows,
   reconcile,
+  scrub,
+  VERIFY_NODE_PAGE_QUERY,
+  VERIFY_EDGE_PAGE_QUERY,
 } from '../backfill-neo4j-collections.mjs';
+
+test('B11: conflicting edge rows are EXCLUDED from the stampable set, not last-write-wins', () => {
+  const rows = [
+    { from: 'a', to: 'b', rel_type: 'CROSS_REF', cid: 'phase-b' },
+    { from: 'a', to: 'b', rel_type: 'CROSS_REF', cid: 'canon' },
+    { from: 'x', to: 'y', rel_type: 'TEACHES', cid: 'phase-b' },
+  ];
+  const { clean, conflicts } = partitionEdgeRows(rows);
+  assert.equal(conflicts.length, 1);
+  assert.deepEqual(clean, [{ from: 'x', to: 'y', rel_type: 'TEACHES', cid: 'phase-b' }]);
+});
+
+test('B13: verify pagination is ORDER BY-stable', () => {
+  assert.match(VERIFY_NODE_PAGE_QUERY(0), /ORDER BY id SKIP/);
+  assert.match(VERIFY_EDGE_PAGE_QUERY(10000), /ORDER BY elementId\(r\) SKIP 10000/);
+});
+
+test('B20: scrub strips credentials from connection strings and password params', () => {
+  assert.equal(
+    scrub('connect failed: postgresql://user:s3cret@db.host:5432/postgres'),
+    'connect failed: postgresql://<redacted>@db.host:5432/postgres',
+  );
+  assert.equal(scrub('neo4j+s://abc:pw@x.databases.neo4j.io'), 'neo4j+s://<redacted>@x.databases.neo4j.io');
+  assert.equal(scrub('retry with password=hunter2&ssl=on'), 'retry with password=<redacted>&ssl=on');
+  assert.equal(scrub('plain message'), 'plain message');
+});
 
 test('resolveGraphId prefers metadata.neo4j_id for namespaced phase-b entities (DATA-2)', () => {
   assert.equal(resolveGraphId('person:nephi-1', { neo4j_id: 'nephi-1' }), 'nephi-1');
