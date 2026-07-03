@@ -464,6 +464,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
 						Chapter {chapter + 1} →
 					</Link>
+					<Link to={`/scripture/${bookId}`} className="text-muted-foreground hover:underline">
+						All chapters
+					</Link>
 				</nav>
 			</header>
 

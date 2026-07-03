@@ -77,7 +77,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 						{volume.books.map((book) => (
 							<li key={book.id}>
 								<a
-									href={`/scripture/${book.id}/1`}
+									href={`/scripture/${book.id}`}
 									className="inline-block rounded-md border border-rule2 bg-panel px-3 py-1.5 font-ui text-sm font-medium text-ink transition hover:border-primary hover:text-primary"
 								>
 									{book.name}
