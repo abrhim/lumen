@@ -40,6 +40,25 @@ describe('findCrossReferences', () => {
   });
 });
 
+describe('exploreGraph — LM-layer isolation (graph-view plan, API-1)', () => {
+  it('label-constrains the depth-1 center and connected nodes', async () => {
+    const queryFn = vi.fn().mockResolvedValue([]);
+    const neo4j = mockNeo4j(queryFn);
+    await exploreGraph(neo4j, '1-ne-3-7', 1);
+    const q = queryFn.mock.calls[0][0] as string;
+    expect(q).toContain(':{Verse}');
+    expect(/\]\s*-\s*\(\s*\w+\s*\)/.test(q)).toBe(false);
+  });
+
+  it('constrains every hop of deep traversals, not just endpoints', async () => {
+    const queryFn = vi.fn().mockResolvedValue([]);
+    const neo4j = mockNeo4j(queryFn);
+    await exploreGraph(neo4j, '1-ne-3-7', 2);
+    const q = queryFn.mock.calls[0][0] as string;
+    expect(q).toMatch(/ALL\(\w+ IN nodes\(path\)/);
+  });
+});
+
 describe('getVerseConnections', () => {
   it('returns cross references, principles, and people in one shape', async () => {
     const neo4j = mockNeo4j(vi.fn().mockResolvedValue([{

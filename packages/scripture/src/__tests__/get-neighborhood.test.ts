@@ -104,6 +104,34 @@ describe('getNeighborhood — public contract (graph-view harness)', () => {
     expect(/WHERE[\s\S]*labels\(/.test(q) || !/\]\s*-\s*\(\s*\w+\s*\)/.test(q)).toBe(true);
   });
 
+  // --- synthesis-mandated extensions (plan ## Decisions: PERF-2, SEC-2, COR-1) ---
+
+  it('expresses caps as Cypher LIMIT, not only post-fetch truncation (PERF-2)', async () => {
+    const { client, captured } = capturingNeo4j([NEIGHBORHOOD_ROW]);
+    await getNeighborhood(client, '1-ne-3-7', { depth: 3 });
+    expect(captured[0].query).toMatch(/LIMIT\s+\d+/);
+  });
+
+  it('label-constrains the depth-1 traversal too, written fresh — never the unlabeled explore pattern (SEC-2)', async () => {
+    const { client, captured } = capturingNeo4j([NEIGHBORHOOD_ROW]);
+    await getNeighborhood(client, '1-ne-3-7', { depth: 1 });
+    const q = captured[0].query;
+    expect(q).toMatch(/\{Verse\}/);
+    // no unlabeled node group in any relationship pattern
+    expect(/\]\s*-\s*\(\s*\w+\s*\)/.test(q)).toBe(false);
+  });
+
+  it('collapses exact-duplicate and reciprocal edges to one rendered link (COR-1)', async () => {
+    const edge = { from: '1-ne-3-7', to: 'obedience', rel_type: 'TEACHES', collection_id: 'phase-b' };
+    const row = {
+      ...NEIGHBORHOOD_ROW,
+      edges: [edge, { ...edge }, { from: 'obedience', to: '1-ne-3-7', rel_type: 'TEACHES', collection_id: 'phase-b' }],
+    };
+    const { client } = capturingNeo4j([row]);
+    const result = await getNeighborhood(client, '1-ne-3-7', { depth: 1 });
+    expect(result.edges).toHaveLength(1);
+  });
+
   it('survives a KV-style JSON round trip without shape loss (FM-7)', async () => {
     const { client } = capturingNeo4j([NEIGHBORHOOD_ROW]);
     const result = await getNeighborhood(client, '1-ne-3-7', { depth: 1 });

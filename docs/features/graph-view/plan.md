@@ -202,4 +202,4 @@ Panel-2 dissent rate: **(43 material + 19 risky) / 76 = 0.816.** One safety carv
 
 ## Drift baseline (filled at end of step 6)
 - plan-hash: d0def7e1168f38a8 (sha256/16 of plan.md at synthesis, pre-hash-stamp)
-- harness-hash: 5adccb65d68fce80 (sha256/16 of both harness files concatenated)
+- harness-hash: 27639124f5cb7277 (sha256/16; amended post-synthesis: PERF-2, SEC-2, COR-1, API-1 assertions)
