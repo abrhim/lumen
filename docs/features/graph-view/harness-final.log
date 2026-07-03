@@ -1,0 +1,30 @@
+=== harness-final run: 2026-07-03T19:54:26Z ===
+--- packages/scripture ---
+ Test Files  3 passed (3)
+      Tests  45 passed (45)
+   Start at  12:54:26
+   Duration  187ms (transform 83ms, setup 0ms, collect 110ms, tests 10ms, environment 0ms, prepare 101ms)
+
+--- apps/web ---
+      Tests  39 passed (39)
+   Start at  12:54:27
+   Duration  569ms (transform 223ms, setup 0ms, collect 1.45s, tests 27ms, environment 1ms, prepare 255ms)
+
+--- backfill unit (node:test) ---
+ℹ tests 5
+ℹ pass 5
+ℹ fail 0
+--- live smoke ---
+✓ hub verse found
+✓ caps hold — 142 nodes
+✓ truncation accurate — shown 142 of 2444
+✓ edges collected (incl. siblings) — 221 edges
+✓ cross-tenant isolation (FM-8) — no KB_*/DS_* labels
+✓ depth-2 latency sane — 1037ms
+✓ principle center resolves
+✓ principle has verse neighbors
+✓ unknown entity is found:false
+✓ no duplicate edge keys on real data
+SMOKE PASS
+--- typecheck ---
+ Tasks:    4 successful, 4 total
