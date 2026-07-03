@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import {
 	Await,
 	Link,
@@ -7,14 +7,17 @@ import {
 	useNavigation,
 	useNavigationType,
 } from "react-router";
-import { XIcon } from "lucide-react";
+import { WaypointsIcon, XIcon } from "lucide-react";
 import {
 	parseReference,
 	buildVerseId,
 	getVersesByChapter,
 	getChapterSummary,
 	getVerseConnections,
+	getNeighborhood,
+	getPublicCollectionIds,
 	type CrossReference,
+	type NeighborhoodResult,
 	type VerseConnectionsResult,
 	type VerseEntityRef,
 } from "@lumen/scripture";
@@ -32,6 +35,12 @@ import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
 
 const CONNECTIONS_TTL_SECONDS = 7 * 24 * 60 * 60; // scripture graph is immutable between ingests
+
+// The overlay (d3 + dialog) loads only when a graph is opened.
+const GraphOverlay = lazy(() => import("~/components/graph/GraphOverlay"));
+
+// Stable stand-in while an optimistic first open waits for the loader's promise.
+const PENDING_FOREVER = new Promise<never>(() => {});
 
 interface VerseRow {
 	id: string;
@@ -56,6 +65,61 @@ function parseVerseParam(search: string): number | null {
 	if (raw === null || !/^\d+$/.test(raw)) return null;
 	const n = parseInt(raw, 10);
 	return n > 0 ? n : null;
+}
+
+/** Resolved shape of the streamed graph promise — degradation is a value, not a rejection. */
+export type GraphPanelData =
+	| { degraded: false; neighborhood: NeighborhoodResult }
+	| { degraded: true };
+
+const GRAPH_ID_RE = /^[A-Za-z0-9:._&' -]{1,128}$/;
+
+/** Depth clamps (unlike ?verse's treat-as-absent): the picker always needs a renderable value. */
+function clampDepth(raw: string | null): 1 | 2 | 3 {
+	if (raw === null || !/^\d+$/.test(raw)) return 1;
+	return Math.min(3, Math.max(1, parseInt(raw, 10))) as 1 | 2 | 3;
+}
+
+/** Never rejects — turbo-stream aborts and Neo4j failures both resolve degraded. */
+async function loadGraph(
+	context: Route.LoaderArgs["context"],
+	entityId: string,
+	depth: 1 | 2 | 3,
+	collections: string[] | undefined,
+): Promise<GraphPanelData> {
+	const collKey = (collections ?? []).slice().sort().join(",");
+	try {
+		const neighborhood = await cachedJson<NeighborhoodResult>(
+			context.cache,
+			`graph:v1:${entityId}:${depth}:${collKey}`,
+			CONNECTIONS_TTL_SECONDS,
+			() =>
+				getNeighborhood(context.neo4j, entityId, {
+					depth,
+					collections: collections && collections.length > 0 ? collections : undefined,
+				}),
+		);
+		if (!neighborhood.found) {
+			logEvent("graph_not_found", { entityId });
+		} else if (neighborhood.truncated.shown < neighborhood.truncated.total) {
+			logEvent("graph_truncated", {
+				entityId,
+				depth,
+				shown: neighborhood.truncated.shown,
+				total: neighborhood.truncated.total,
+			});
+		}
+		return { degraded: false, neighborhood };
+	} catch (error) {
+		logEvent("graph_degraded", {
+			name: error instanceof Error ? error.name : "unknown",
+			message: error instanceof Error ? error.message : String(error),
+			entityId,
+			depth,
+			collections: collKey,
+		});
+		return { degraded: true };
+	}
 }
 
 /** Never rejects: failures resolve to `{degraded: true}` so the streamed panel can't crash the page. */
@@ -128,9 +192,19 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const pendingConnections =
 		requestedVerse !== null ? loadConnections(context, bookId, chapter, requestedVerse) : null;
 
-	const [verses, summary] = await Promise.all([
+	const rawGraphId = url.searchParams.get("graph");
+	const graphId = rawGraphId !== null && GRAPH_ID_RE.test(rawGraphId) ? rawGraphId : null;
+	const graphDepth = clampDepth(url.searchParams.get("depth"));
+
+	// Public collection ids resolve in the critical path (COR-2): the Postgres
+	// connection closes via waitUntil once the handler returns, so deferred
+	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
+	const [verses, summary, publicCollections] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
+		graphId !== null
+			? (getPublicCollectionIds(context.db) as Promise<string[]>).catch(() => undefined)
+			: Promise.resolve(undefined),
 	]);
 
 	if (verses.length === 0) {
@@ -144,6 +218,9 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			? requestedVerse
 			: null;
 	const connections = selectedVerse !== null ? pendingConnections : null;
+
+	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
+	const graph = graphId !== null ? loadGraph(context, graphId, graphDepth, publicCollections) : null;
 
 	// "1 Nephi 3:1" → "1 Nephi 3"
 	const reference = verses[0].reference.replace(/:\d+$/, "");
@@ -161,6 +238,9 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		})),
 		selectedVerse,
 		connections,
+		graphId,
+		graphDepth,
+		graph,
 	};
 }
 
@@ -169,7 +249,8 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, connections } = loaderData;
+	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, graphId, graphDepth, graph } =
+		loaderData;
 	const navigation = useNavigation();
 	const navigationType = useNavigationType();
 	const navigate = useNavigate();
@@ -231,13 +312,59 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	if (selected) lastSelectedRef.current = selected;
 	const sheetVerse = selected ?? lastSelectedRef.current;
 
+	// ---- graph overlay wiring ----
+	// Optimistic like verse selection: the overlay opens (skeleton) the moment a
+	// ?graph navigation starts; recenter/depth changes dim the current graph.
+	let pendingGraph: { id: string; depth: 1 | 2 | 3 } | null | undefined;
+	if (navHere !== null) {
+		const p = new URLSearchParams(navHere.search);
+		const g = p.get("graph");
+		pendingGraph = g !== null ? { id: g, depth: clampDepth(p.get("depth")) } : null;
+	}
+	const effectiveGraphId = pendingGraph !== undefined ? (pendingGraph?.id ?? null) : graphId;
+	const effectiveDepth = pendingGraph !== undefined ? (pendingGraph?.depth ?? 1) : graphDepth;
+	const graphNavPending =
+		pendingGraph !== undefined &&
+		(pendingGraph?.id !== graphId || (pendingGraph !== null && pendingGraph.depth !== graphDepth));
+
+	const graphUrl = (id: string, depth: 1 | 2 | 3) => {
+		const q = new URLSearchParams();
+		if (selectedVerse !== null) q.set("verse", String(selectedVerse));
+		q.set("graph", id);
+		q.set("depth", String(depth));
+		return `${chapterUrl}?${q.toString()}`;
+	};
+	const openGraph = (id: string, depth: 1 | 2 | 3 = 1) =>
+		navigate(graphUrl(id, depth), { preventScrollReset: true });
+	const closeGraph = () =>
+		navigate(selectedVerse !== null ? `${chapterUrl}?verse=${selectedVerse}` : chapterUrl, {
+			preventScrollReset: true,
+		});
+	const readVerse = (t: { book: string; chapter: number; verse: number }) => {
+		scrollIntent.current = t.verse;
+		navigate(`/scripture/${t.book}/${t.chapter}?verse=${t.verse}`, { preventScrollReset: true });
+	};
+
 	const panelFor = (verse: VerseRow) => (
 		<PanelBody
 			verseText={verse.text}
 			isPending={isPending}
 			connections={connections}
 			onCrossRefNavigate={onCrossRefNavigate}
+			onOpenGraph={openGraph}
 		/>
+	);
+
+	const graphButton = (entityId: string, label: string) => (
+		<button
+			type="button"
+			onClick={() => openGraph(entityId)}
+			aria-label={label}
+			className="inline-flex items-center gap-1 rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
+		>
+			<WaypointsIcon className="size-3.5" aria-hidden="true" />
+			Graph
+		</button>
 	);
 
 	return (
@@ -248,7 +375,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 						Lumen
 					</Link>
 				</p>
-				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">{reference}</h1>
+				<div className="mt-2 flex items-center gap-3">
+					<h1 className="font-display text-3xl font-medium tracking-tight">{reference}</h1>
+					{graphButton(`${bookId}-${chapter}`, `Open the local graph for ${reference}`)}
+				</div>
 				<nav
 					aria-label="Chapter navigation"
 					className="mt-3 flex gap-3 font-ui text-sm font-semibold text-primary"
@@ -321,14 +451,17 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							<>
 								<div className="flex items-baseline justify-between gap-3">
 									<h2 className="font-display text-xl font-medium">{selected.reference}</h2>
-									<Link
-										to={chapterUrl}
-										preventScrollReset
-										aria-label="Close verse panel"
-										className="-m-2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink"
-									>
-										<XIcon className="size-4" aria-hidden="true" />
-									</Link>
+									<span className="flex items-center gap-2">
+										{graphButton(selected.id, `Open the local graph for ${selected.reference}`)}
+										<Link
+											to={chapterUrl}
+											preventScrollReset
+											aria-label="Close verse panel"
+											className="-m-2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink"
+										>
+											<XIcon className="size-4" aria-hidden="true" />
+										</Link>
+									</span>
 								</div>
 								{panelFor(selected)}
 							</>
@@ -348,7 +481,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			    modal would open on desktop too, blocking the page behind its overlay. */}
 			{isMobile && (
 				<Sheet
-					open={selected !== undefined}
+					// mutually exclusive with the graph overlay (UX-1): one dialog, one Esc target
+					open={selected !== undefined && effectiveGraphId === null}
 					onOpenChange={(open) => {
 						if (!open) navigate(chapterUrl, { preventScrollReset: true });
 					}}
@@ -366,12 +500,27 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 									<SheetDescription className="sr-only">
 										Connections for {sheetVerse.reference}
 									</SheetDescription>
+									<div>{graphButton(sheetVerse.id, `Open the local graph for ${sheetVerse.reference}`)}</div>
 								</SheetHeader>
 								{panelFor(sheetVerse)}
 							</>
 						)}
 					</SheetContent>
 				</Sheet>
+			)}
+
+			{effectiveGraphId !== null && (
+				<Suspense fallback={null}>
+					<GraphOverlay
+						entityId={effectiveGraphId}
+						depth={effectiveDepth}
+						graph={graph ?? PENDING_FOREVER}
+						isPending={graphNavPending}
+						onNavigate={openGraph}
+						onClose={closeGraph}
+						onReadVerse={readVerse}
+					/>
+				</Suspense>
 			)}
 		</div>
 	);
@@ -390,11 +539,13 @@ function PanelBody({
 	isPending,
 	connections,
 	onCrossRefNavigate,
+	onOpenGraph,
 }: {
 	verseText: string;
 	isPending: boolean;
 	connections: Promise<VersePanelData> | null;
 	onCrossRefNavigate: (verse: number) => void;
+	onOpenGraph: (entityId: string) => void;
 }) {
 	return (
 		<>
@@ -410,7 +561,9 @@ function PanelBody({
 					    (server streamTimeout) and navigations cancelling in-flight deferred
 					    data. Without it those rejections would take down the whole page. */}
 					<Await resolve={connections} errorElement={<DegradedNotice />}>
-						{(panel) => <Connections panel={panel} onCrossRefNavigate={onCrossRefNavigate} />}
+						{(panel) => (
+							<Connections panel={panel} onCrossRefNavigate={onCrossRefNavigate} onOpenGraph={onOpenGraph} />
+						)}
 					</Await>
 				</Suspense>
 			)}
@@ -461,9 +614,11 @@ function ConnectionsSkeleton() {
 function Connections({
 	panel,
 	onCrossRefNavigate,
+	onOpenGraph,
 }: {
 	panel: VersePanelData;
 	onCrossRefNavigate: (verse: number) => void;
+	onOpenGraph: (entityId: string) => void;
 }) {
 	if (panel.degraded) return <DegradedNotice />;
 
@@ -477,8 +632,8 @@ function Connections({
 
 	return (
 		<div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out">
-			<EntityChips title="Principles" accent="text-selbar" edge="border-l-selbar" chips={panel.principles} />
-			<EntityChips title="People" accent="text-people" edge="border-l-people" chips={panel.people} />
+			<EntityChips title="Principles" accent="text-selbar" edge="border-l-selbar" chips={panel.principles} onSelect={onOpenGraph} />
+			<EntityChips title="People" accent="text-people" edge="border-l-people" chips={panel.people} onSelect={onOpenGraph} />
 			<CrossRefGroup title="Cites" accent="text-cites" refs={cites} onNavigate={onCrossRefNavigate} />
 			<CrossRefGroup
 				title="Cited by"
@@ -500,11 +655,13 @@ function EntityChips({
 	accent,
 	edge,
 	chips,
+	onSelect,
 }: {
 	title: string;
 	accent: string;
 	edge: string;
 	chips: VerseEntityRef[];
+	onSelect: (entityId: string) => void;
 }) {
 	if (chips.length === 0) return null;
 	return (
@@ -514,11 +671,15 @@ function EntityChips({
 			</h3>
 			<ul className="mt-2 flex flex-wrap gap-1.5">
 				{chips.map((c) => (
-					<li
-						key={c.id}
-						className={`rounded-md border border-rule2 border-l-[3px] ${edge} bg-white px-2.5 py-1 font-ui text-xs font-semibold text-ink`}
-					>
-						{c.name}
+					<li key={c.id}>
+						<button
+							type="button"
+							onClick={() => onSelect(c.id)}
+							title={`Open the local graph for ${c.name}`}
+							className={`rounded-md border border-rule2 border-l-[3px] ${edge} bg-white px-2.5 py-1 font-ui text-xs font-semibold text-ink transition-colors duration-150 hover:bg-sel`}
+						>
+							{c.name}
+						</button>
 					</li>
 				))}
 			</ul>

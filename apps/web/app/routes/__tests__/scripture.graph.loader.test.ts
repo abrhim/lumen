@@ -100,7 +100,8 @@ describe("scripture loader — ?graph param (graph-view harness)", () => {
 		const data = await loader(makeArgs("?graph=obedience"));
 		const g = await data.graph!;
 		expect(g.degraded).toBe(true);
-		expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("neo4j_degraded"));
+		// OBS-1 (synthesis): graph degradation gets its own event, with graph dimensions
+		expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("graph_degraded"));
 		errorSpy.mockRestore();
 	});
 

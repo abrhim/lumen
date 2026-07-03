@@ -141,6 +141,13 @@ export async function getEntity(db: Db, id: string) {
   return rows[0] ?? null;
 }
 
+export async function getPublicCollectionIds(db: Db) {
+  const rows = await db.execute(
+    sql`SELECT id FROM lumen.collections WHERE public = true ORDER BY id`,
+  );
+  return (rows as { id: string }[]).map((r) => r.id);
+}
+
 export async function getChapterSummary(db: Db, bookId: string, chapter: number) {
   const summaryId = `${bookId}-${chapter}-summary`;
   const rows = await db.execute(
