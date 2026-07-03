@@ -7,7 +7,7 @@ import {
 	useNavigation,
 	useNavigationType,
 } from "react-router";
-import { WaypointsIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, WaypointsIcon, XIcon } from "lucide-react";
 import {
 	parseReference,
 	buildVerseId,
@@ -316,6 +316,16 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const isMobile = useIsMobile();
 
 	const chapterUrl = `/scripture/${bookId}/${chapter}`;
+	// "1 Nephi 3" → "1 Nephi" for the breadcrumb link
+	const bookName = reference.replace(/\s+\d+$/, "");
+	// History back when there is history; otherwise up to the chapter grid.
+	const goBack = () => {
+		if (typeof window !== "undefined" && ((window.history.state?.idx as number) ?? 0) > 0) {
+			navigate(-1);
+		} else {
+			navigate(`/scripture/${bookId}`);
+		}
+	};
 
 	// Optimistic selection: a same-chapter ?verse navigation moves the highlight
 	// and opens the panel skeleton before the server responds. Shares the loader's
@@ -446,7 +456,24 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					</Link>
 				</p>
 				<div className="mt-2 flex items-center gap-3">
-					<h1 className="font-display text-3xl font-medium tracking-tight">{reference}</h1>
+					<button
+						type="button"
+						onClick={goBack}
+						aria-label="Back"
+						className="-m-2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink"
+					>
+						<ArrowLeftIcon className="size-5" aria-hidden="true" />
+					</button>
+					<h1 className="font-display text-3xl font-medium tracking-tight">
+						{/* the book name doubles as a breadcrumb to the chapter grid */}
+						<Link
+							to={`/scripture/${bookId}`}
+							className="underline-offset-4 hover:underline hover:decoration-rule2"
+						>
+							{bookName}
+						</Link>{" "}
+						{chapter}
+					</h1>
 					{/* the summary node is the semantically rich chapter center: it FEATURES
 					    principles/people/places and COVERS the verses (bare chapter nodes
 					    carry only structural CONTAINS edges) */}
@@ -463,9 +490,6 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					)}
 					<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
 						Chapter {chapter + 1} →
-					</Link>
-					<Link to={`/scripture/${bookId}`} className="text-muted-foreground hover:underline">
-						All chapters
 					</Link>
 				</nav>
 			</header>
