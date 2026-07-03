@@ -1,4 +1,9 @@
 import type { Neo4jClient } from '@lumen/neo4j-http';
+import { GRAPH_ENTITY_TYPES } from './get-neighborhood';
+
+// The Neo4j instance is shared with other knowledge bases — every node group
+// must be LM-label-constrained or traversal leaks across tenants (API-1).
+const LM_UNION = GRAPH_ENTITY_TYPES.map((t) => `{${t}}`).join('|');
 
 export interface GraphConnection {
   direction?: 'incoming' | 'outgoing';
@@ -47,8 +52,8 @@ export async function exploreGraph(
 
   if (depth === 1) {
     const results = await neo4j.layer.lumen.query(
-      `MATCH (n {id: $entityId})
-       OPTIONAL MATCH (n)-[r]-(connected)
+      `MATCH (n:${LM_UNION} {id: $entityId})
+       OPTIONAL MATCH (n)-[r]-(connected:${LM_UNION})
        WHERE true ${relFilterClause}
        RETURN n.id AS id,
               n.name AS name,
@@ -84,11 +89,11 @@ export async function exploreGraph(
     : '';
 
   const results = await neo4j.layer.lumen.query(
-    `MATCH (n {id: $entityId})
+    `MATCH (n:${LM_UNION} {id: $entityId})
      CALL {
        WITH n
-       MATCH path = (n)-[*1..${depth}]-(connected)
-       WHERE connected <> n ${depthRelFilter}
+       MATCH path = (n)-[*1..${depth}]-(connected:${LM_UNION})
+       WHERE connected <> n AND ALL(x IN nodes(path) WHERE x:${LM_UNION}) ${depthRelFilter}
        WITH connected, relationships(path) AS rels, length(path) AS hops
        RETURN DISTINCT connected.id AS connected_id,
               connected.name AS connected_name,

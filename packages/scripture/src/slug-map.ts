@@ -166,4 +166,7 @@ export const RELATIONSHIP_TYPES = [
   'IN_CHAPTER', 'IN_BOOK', 'IN_VOLUME',
   'HAS_JST', 'HAS_SUMMARY', 'USES_WORD',
   'REFERENCES', 'MAPS_TO', 'PARENT_OF',
+  // semantic verse relations confirmed live in the graph (graph-view feature)
+  'PARALLELS', 'EXTENDS', 'CONTRASTS', 'TYPIFIES', 'HAS_SYMBOL', 'SETTING_OF',
+  'SUMMARIZES', 'APPEARS_IN', 'FEATURES', 'COVERS',
 ] as const;
