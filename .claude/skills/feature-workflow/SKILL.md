@@ -13,21 +13,21 @@ Disciplined process for shipping product features. Tiered rigor — no ceremony 
 
 ## Pre-flight (always)
 
-Run `node .claude/skills/feature-workflow/tests/validate.mjs --quick`. **If exit code ≠ 0, halt and report failures to the user; do not proceed to step 1.** Warnings (`!`) on dirty working tree are allowed but should be acknowledged.
+Run `node .claude/skills/feature-workflow/tests/validate.mjs --quick`. **If exit code ≠ 0, halt and report failures to the user; do not proceed to step 1.** Dirty-tree warnings (`!`) are allowed but acknowledge them.
 
 Branch: `git switch -c feature/<slug>` (slug = short kebab from feature title).
 
 ## References
 
-| File | Use when |
+| File | Use at |
 |---|---|
-| [references/tiers.md](references/tiers.md) | Step 1 — choose tier; mid-flight tier re-check at end of steps 2 and 4. |
-| [references/panel-roles.md](references/panel-roles.md) | Step 4 + step 9 — pick the panel-1 / code-panel specialists for the feature type. |
-| [references/adversarial.md](references/adversarial.md) | Step 5 + step 10 — adversarial meta-reviewers tag findings. |
-| [references/harness-template.md](references/harness-template.md) | Step 3 — author the harness. Step 12 — repro test for confirmed bugs. |
-| [references/bug-filter.md](references/bug-filter.md) | Step 11 — sort findings into confirmed-bug / preference / out-of-scope. |
-| [references/retro-template.md](references/retro-template.md) | Step 14 — write the retro. |
-| [references/quality-signals.md](references/quality-signals.md) | Step 14 — compute the four signals. Meta-retro reads aggregate. |
+| [references/tiers.md](references/tiers.md) | Step 1 tier choice; re-check after steps 2 and 4 |
+| [references/panel-roles.md](references/panel-roles.md) | Steps 4 + 9 — pick panel specialists |
+| [references/adversarial.md](references/adversarial.md) | Steps 5 + 10 — adversarial finding tags |
+| [references/harness-template.md](references/harness-template.md) | Step 3 harness; step 12 repro tests |
+| [references/bug-filter.md](references/bug-filter.md) | Step 11 — confirmed-bug / preference / out-of-scope |
+| [references/retro-template.md](references/retro-template.md) | Step 14 — write the retro |
+| [references/quality-signals.md](references/quality-signals.md) | Step 14 signals; meta-retro reads aggregate |
 
 ## Step map
 
@@ -36,64 +36,44 @@ Branch: `git switch -c feature/<slug>` (slug = short kebab from feature title).
 | 0 | Pre-flight + branch | `tests/validate.mjs` |
 | 1 | Tier decision | `references/tiers.md` |
 | 1b | **Pipeline confirmation** | (inline rule below) |
-| 2 | Plan + load prior learnings — **REQUIRED**: read `state/learnings.md` and the last 3 retros under `docs/features/`; surface entries with overlapping area into the plan + Panel-1 brief. | `references/tiers.md` (template), `state/learnings.md` |
+| 2 | Plan — **REQUIRED**: read `state/learnings.md` + last 3 retros; surface overlapping entries into plan + Panel-1 brief | `references/tiers.md` (template) |
 | 3 | Harness (required for `behavior` scope) | `references/harness-template.md` |
 | 4 | Panel-1 (parallel specialists) | `references/panel-roles.md` |
 | 5 | Panel-2 (adversarial) | `references/adversarial.md` |
-| 6 | Synthesize → append `## Decisions` to plan.md | (inline rule below) |
+| 6 | Synthesize → `## Decisions` in plan.md | (inline rule below) |
 | 7 | **Human gate** | (inline rule below) |
-| 8 | Implement (cap: 3 attempts, then `blocked.md`) | `references/harness-template.md` |
+| 8 | Implement (cap: 3 attempts → `blocked.md`) | `references/harness-template.md` |
 | 9 | Code-panel | `references/panel-roles.md` |
 | 10 | Code-adversarial | `references/adversarial.md` |
 | 11 | Bug filter | `references/bug-filter.md` |
-| 12 | Repro tests for confirmed-bugs (severity ≥ med) | `references/harness-template.md` |
+| 12 | Repro tests (confirmed bugs, severity ≥ med) | `references/harness-template.md` |
 | 13 | Fix |  |
 | 14 | Retro + append `state/learnings.md` | `references/retro-template.md`, `references/quality-signals.md` |
 | 15 | Done — `validate.mjs --done` | `tests/validate.mjs` |
 
 ## Inline rules
 
-**Pipeline confirmation (step 1b).** After the tier decision, present the proposed pipeline to the user before executing any steps. Format:
+**Pipeline confirmation (step 1b).** After the tier decision, present the proposed pipeline and stop:
 
 ```
-## Proposed pipeline for <feature title> (tier: <light|full>)
-
-Steps I'll run:
-  [ ] Plan
-  [ ] Harness
-  [ ] Panel-1 review (N specialists)
-  [ ] Panel-2 adversarial
-  [ ] Synthesize + human gate
-  [ ] Implement
-  [ ] Code-panel review
-  [ ] Code-adversarial
-  [ ] Bug filter + fix
-  [ ] Retro
-
-Skip or modify any steps? (approve / skip:<step,step> / "let's co-design the plan first")
+## Proposed pipeline for <feature title> (tier: <tier>)
+  [ ] Plan   [ ] Harness   [ ] Panel-1 (N specialists)   [ ] Panel-2 adversarial
+  [ ] Synthesize + human gate   [ ] Implement   [ ] Code-panel   [ ] Code-adversarial
+  [ ] Bug filter + fix   [ ] Retro
+approve / skip:<step,step> / "co-design <step>"
 ```
 
-The user may:
-- `approve` → run the full pipeline as proposed
-- `skip:<steps>` → remove specific steps (e.g., `skip:panel-2,code-adversarial`). Security-related steps cannot be skipped for Full-tier features.
-- Request collaborative mode for any step (e.g., "let's co-design the plan" or "I want to pair on the harness") — the step still runs, but interactively with the user instead of autonomously.
-- Reorder steps if they have a reason.
+User may `approve`, `skip:<steps>` (security steps unskippable at Full tier), request collaborative mode for any step (it still runs, interactively), or reorder with a reason. **Do not proceed past 1b without explicit confirmation.**
 
-Do not proceed past step 1b without explicit user confirmation of the pipeline.
+**Synthesis (step 6).** Tie-break precedence: **human > panel-2 > panel-1**. Safety findings (security / data-loss / correctness severity:high) always survive panel-2. Append `## Decisions` to plan.md labeling every panel-1 finding exactly one of: `incorporated` / `rejected-with-rationale` / `dropped-as-noise` / `deferred-out-of-scope`. Hash plan.md + harness into plan.md `## Drift baseline`.
 
-**Synthesis (step 6).** Tie-break precedence: **human > panel-2 > panel-1**. Safety-tagged findings (security / data-loss / correctness severity:high) always survive panel-2 regardless of tag. Append `## Decisions` to plan.md listing each panel-1 finding's resolution using exactly one of these labels: `incorporated` / `rejected-with-rationale` / `dropped-as-noise` / `deferred-out-of-scope`. Hash plan.md and harness; record in plan.md `## Drift baseline`.
+**Human gate (step 7).** Enumerate every open question with a proposed default. Responses: `approve` · `approve-with-changes: {q1: …}` · `revise` (loop to step 2 with notes) · `abort` (mark aborted, abbreviated retro).
 
-**Human gate (step 7).** Enumerate every open question with proposed default. User responds:
-- `approve` → all defaults accepted
-- `approve-with-changes: {q1: ..., q2: ...}` → override specific defaults
-- `revise` → loop to step 2 with notes
-- `abort` → mark feature aborted, run abbreviated retro
+**Implement (step 8).** Cap 3 attempts; then halt with `blocked.md` describing the gap and require human unblock. Verify hashes against drift baseline at exit; refuse step 9 if plan or harness changed without an explicit `plan-amendment` commit. Cap replans at 2 per feature.
 
-**Implement (step 8).** Cap 3 attempts. After 3, halt with `blocked.md` describing the gap; require human unblock. Verify hashes against drift baseline at exit; refuse step 9 if plan or harness changed without an explicit `plan-amendment` commit. Cap replans at 2 per feature.
+**Sub-agent orchestration.** Spawn specialists in parallel via `Task`. Per-role files `docs/features/<slug>/reviews/{panel-1|panel-2|code-panel|code-adversarial}/<role>.md` are the source of truth (idempotent — re-runs skip completed roles); the aggregator overwrites `panel-1.md` / `panel-2.md` / `code-panel.md` / `code-adversarial.md` from them. Soft target 5 min wall-clock per agent (`Task` exposes no abort; log overruns in retro). If <½ of agents return, restart the panel once; then escalate to human. Dedup by topic/file/line; canonical finding lists `raised_by: [agents]`.
 
-**Sub-agent orchestration.** Spawn N specialists in parallel via `Task`. Per-role files: `docs/features/<slug>/reviews/{panel-1|panel-2|code-panel|code-adversarial}/<role>.md` (per-role files are idempotent — re-runs skip completed roles). The aggregator (the main agent) overwrites `panel-1.md` / `panel-2.md` / `code-panel.md` / `code-adversarial.md` from the per-role files; per-role files are the source of truth. Target 5-min wall-clock per agent (the `Task` tool does not expose abort, so this is a soft target — log truncation in retro if exceeded). If <½ of agents return, restart panel once; if still failing, escalate to human. Dedup by topic/file/line; canonical with `raised_by: [agents]`.
-
-**Cost profile.** Prefer Sonnet for panel agents and Opus for tier decision + adversarial-meta on tier=large. Note: the `Task` tool does not currently expose a per-call model parameter, so this is a recommendation, not an enforced policy. Prompt caching for the shared plan + artifact prefix is supported by Anthropic SDK; rely on it where the platform allows.
+**Cost profile.** Prefer Sonnet for panel agents; Opus for tier decision + adversarial-meta on tier=large. Advisory only — `Task` exposes no per-call model param. Rely on prompt caching for the shared plan/artifact prefix.
 
 ## Per-feature artifacts
 
@@ -113,10 +93,10 @@ docs/features/<slug>/
 ## State + meta-retro
 
 - `state/learnings.md` — append-only, capped 50 entries, rotated to `state/archive/`.
-- `state/corrections.md` — user overrides for miscategorized findings (see `references/quality-signals.md` for the weight rule).
-- `CHANGELOG.md` — bumped by meta-retro per its versioning rules.
-- **Meta-retro** triggers every 15 features total. Reads last 10 retros + state. Emits diff to SKILL.md / references/ + CHANGELOG entry. Approval applies the diff and bumps version.
+- `state/corrections.md` — user overrides for miscategorized findings (weight rule: `references/quality-signals.md`).
+- `CHANGELOG.md` — bumped by meta-retro.
+- **Meta-retro** every 15 features: reads last 10 retros + state, emits diff to SKILL.md / references/ + CHANGELOG entry; approval applies it and bumps version.
 
 ## Invocation
 
-Activates automatically when the user requests a new feature (see frontmatter `description`). No slash command is registered for v0.1.0.
+Activates automatically on new-feature requests (see frontmatter `description`). No slash command in v0.1.0.

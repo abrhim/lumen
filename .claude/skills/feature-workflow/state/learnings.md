@@ -18,6 +18,12 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 
 -->
 
+## 2026-07-03 · feature: web-app-wiring · tier: standard
+- Portals escape CSS-hidden wrappers; mount-gate portaled components with matchMedia, never `lg:hidden` classes.
+- Mock-only loader tests hid every data-shape bug (D&C id collision, parallel edges); add real-data smoke assertions.
+- Post-gate iteration reversing an approved decision (Q3) shipped 6/12 bugs; require plan-amendment + mini-panel.
+- Streamed deferred promises need degraded-as-value AND a budget under RR's 4950ms turbo-stream abort AND Await errorElement.
+
 ## 2026-06-03 · feature: deploy-mcp-servers · tier: standard
 - For Terraform features, add AWS resource name length assertions to harness — ALB 32-char limit invisible until `terraform apply`.
 - Brief panel-1 with explicit traffic volume and SLA level; 54% noise rate came from enterprise-grade suggestions for 10-50 req/day internal tools.
