@@ -141,6 +141,16 @@ export async function getEntity(db: Db, id: string) {
   return rows[0] ?? null;
 }
 
+export async function getChapterArt(db: Db, bookId: string, chapter: number, limit = 24) {
+  return db.execute(
+    sql`SELECT id, name, metadata FROM lumen.entities
+        WHERE entity_type = 'artwork'
+          AND metadata->'refs' @> ${JSON.stringify([{ book_id: bookId, chapter }])}::jsonb
+        ORDER BY (metadata->>'fame')::numeric DESC NULLS LAST, id
+        LIMIT ${limit}`,
+  );
+}
+
 export async function getPublicCollectionIds(db: Db) {
   const rows = await db.execute(
     sql`SELECT id FROM lumen.collections WHERE public = true ORDER BY id`,

@@ -16,6 +16,7 @@ import {
 	getVerseConnections,
 	getNeighborhood,
 	getPublicCollectionIds,
+	getChapterArt,
 	type CrossReference,
 	type NeighborhoodResult,
 	type VerseConnectionsResult,
@@ -47,6 +48,51 @@ interface VerseRow {
 	verse_number: number;
 	text: string;
 	reference: string;
+}
+
+interface ArtRef {
+	book_id: string;
+	chapter: number;
+	verse_start: number | null;
+	verse_end: number | null;
+	is_primary?: boolean;
+}
+
+export interface ArtItem {
+	id: string;
+	title: string;
+	artist: string | null;
+	year: number | null;
+	thumb: string | null;
+	image: string;
+	sourceUrl: string;
+	refs: ArtRef[];
+}
+
+interface ArtworkRow {
+	id: string;
+	name: string;
+	metadata: {
+		artist_name?: string;
+		year?: number | null;
+		thumbnail_800_url?: string | null;
+		image_url?: string;
+		source_url?: string;
+		refs?: ArtRef[];
+	};
+}
+
+function toArtItem(row: ArtworkRow): ArtItem {
+	return {
+		id: row.id,
+		title: row.name,
+		artist: row.metadata.artist_name ?? null,
+		year: row.metadata.year ?? null,
+		thumb: row.metadata.thumbnail_800_url ?? null,
+		image: row.metadata.image_url ?? "",
+		sourceUrl: row.metadata.source_url ?? "",
+		refs: row.metadata.refs ?? [],
+	};
 }
 
 /** Resolved shape of the streamed panel promise — degradation is a value, not a rejection. */
@@ -248,12 +294,16 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections] = await Promise.all([
+	const [verses, summary, publicCollections, artRows] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		graphIdValid
 			? (getPublicCollectionIds(context.db) as Promise<string[]>).catch(() => undefined)
 			: Promise.resolve(undefined),
+		// art is an enhancement — its failure must never break the chapter
+		(getChapterArt(context.db, bookId, chapter) as Promise<ArtworkRow[]>).catch(
+			() => [] as ArtworkRow[],
+		),
 	]);
 
 	if (verses.length === 0) {
@@ -300,6 +350,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		graphId,
 		graphDepth,
 		graph,
+		art: (artRows ?? []).map(toArtItem),
 	};
 }
 
@@ -308,7 +359,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, graphId, graphDepth, graph } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, graphId, graphDepth, graph, art } =
 		loaderData;
 	const navigation = useNavigation();
 	const navigationType = useNavigationType();
@@ -425,11 +476,27 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 		navigate(`/scripture/${t.book}/${t.chapter}?verse=${t.verse}`, { preventScrollReset: true });
 	};
 
+	// Verse-anchored artworks for the selected verse (chapter-level refs stay in the strip)
+	const verseArt =
+		activeVerse === null
+			? []
+			: art.filter((a) =>
+					a.refs.some(
+						(r) =>
+							r.book_id === bookId &&
+							r.chapter === chapter &&
+							r.verse_start !== null &&
+							activeVerse >= r.verse_start &&
+							activeVerse <= (r.verse_end ?? r.verse_start),
+					),
+				);
+
 	const panelFor = (verse: VerseRow) => (
 		<PanelBody
 			verseText={verse.text}
 			isPending={isPending}
 			connections={connections}
+			art={verseArt}
 			onCrossRefNavigate={onCrossRefNavigate}
 			onOpenGraph={openGraph}
 		/>
@@ -493,6 +560,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					</Link>
 				</nav>
 			</header>
+
+			<ChapterArtStrip art={art} />
 
 			<div className="mt-8 gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
 				<main>
@@ -635,16 +704,62 @@ function scrollVerseIntoView(verseNumber: number, behavior: ScrollBehavior) {
 	});
 }
 
+function ChapterArtStrip({ art }: { art: ArtItem[] }) {
+	if (art.length === 0) return null;
+	return (
+		<section aria-label="Artwork for this chapter" className="mt-6">
+			<ul className="flex list-none gap-4 overflow-x-auto pb-2">
+				{art.slice(0, 12).map((a) => (
+					<li key={a.id} className="w-56 shrink-0">
+						<a
+							href={a.sourceUrl || a.image}
+							target="_blank"
+							rel="noreferrer"
+							className="group block"
+						>
+							<ArtImage art={a} className="h-36 w-full rounded-lg border border-rule2 object-cover" />
+							<p className="mt-1.5 truncate font-ui text-xs font-semibold text-ink group-hover:text-primary">
+								{a.title}
+							</p>
+							<p className="truncate font-ui text-[10px] text-muted-foreground">
+								{[a.artist, a.year].filter(Boolean).join(" · ")}
+							</p>
+						</a>
+					</li>
+				))}
+			</ul>
+		</section>
+	);
+}
+
+/** Thumbnail with full-image fallback — the 800px thumbs live on a third-party bucket. */
+function ArtImage({ art, className }: { art: ArtItem; className: string }) {
+	return (
+		<img
+			src={art.thumb ?? art.image}
+			alt={`${art.title}${art.artist ? ` — ${art.artist}` : ""}`}
+			loading="lazy"
+			className={className}
+			onError={(e) => {
+				const img = e.currentTarget;
+				if (art.thumb && img.src !== art.image && art.image) img.src = art.image;
+			}}
+		/>
+	);
+}
+
 function PanelBody({
 	verseText,
 	isPending,
 	connections,
+	art,
 	onCrossRefNavigate,
 	onOpenGraph,
 }: {
 	verseText: string;
 	isPending: boolean;
 	connections: Promise<VersePanelData> | null;
+	art: ArtItem[];
 	onCrossRefNavigate: (verse: number) => void;
 	onOpenGraph: (entityId: string) => void;
 }) {
@@ -653,6 +768,22 @@ function PanelBody({
 			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
 				{verseText}
 			</blockquote>
+			{art.length > 0 && (
+				<div className="mt-4">
+					<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+						Art · {art.length}
+					</h3>
+					<ul className="mt-2 flex list-none gap-2 overflow-x-auto">
+						{art.slice(0, 6).map((a) => (
+							<li key={a.id} className="shrink-0">
+								<a href={a.sourceUrl || a.image} target="_blank" rel="noreferrer" title={`${a.title}${a.artist ? ` — ${a.artist}` : ""}`}>
+									<ArtImage art={a} className="h-20 w-28 rounded-md border border-rule2 object-cover" />
+								</a>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
 			{isPending || connections === null ? (
 				<ConnectionsSkeleton />
 			) : (

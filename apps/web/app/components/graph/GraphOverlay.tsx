@@ -48,7 +48,7 @@ export default function GraphOverlay(props: GraphOverlayProps) {
 	return (
 		<DialogPrimitive.Root open onOpenChange={(open) => !open && onClose()}>
 			<DialogPrimitive.Portal>
-				<DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-ink/40 data-open:animate-in data-open:fade-in-0 supports-backdrop-filter:backdrop-blur-xs" />
+				<DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-open:animate-in data-open:fade-in-0 supports-backdrop-filter:backdrop-blur-xs" />
 				<DialogPrimitive.Content
 					className="fixed inset-3 z-50 flex flex-col overflow-hidden rounded-2xl border border-rule2 bg-panel shadow-2xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 md:inset-6"
 					aria-describedby={undefined}
