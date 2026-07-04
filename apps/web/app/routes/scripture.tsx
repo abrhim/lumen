@@ -777,7 +777,7 @@ function EntityChips({
 							type="button"
 							onClick={() => onSelect(c.id)}
 							title={`Open the local graph for ${c.name}`}
-							className={`rounded-md border border-rule2 border-l-[3px] ${edge} bg-white px-2.5 py-1 font-ui text-xs font-semibold text-ink transition-colors duration-150 hover:bg-sel`}
+							className={`rounded-md border border-rule2 border-l-[3px] ${edge} bg-surface px-2.5 py-1 font-ui text-xs font-semibold text-ink transition-colors duration-150 hover:bg-sel`}
 						>
 							{c.name}
 						</button>
@@ -851,12 +851,12 @@ function CrossRefGroup({
 									to={target.href}
 									preventScrollReset
 									onClick={() => onNavigate(target.verse)}
-									className="block rounded-lg border border-rule2 bg-white p-3 transition-[border-color,transform] duration-150 ease-out hover:-translate-y-px hover:border-primary motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+									className="block rounded-lg border border-rule2 bg-surface p-3 transition-[border-color,transform] duration-150 ease-out hover:-translate-y-px hover:border-primary motion-reduce:transition-none motion-reduce:hover:translate-y-0"
 								>
 									{body}
 								</Link>
 							) : (
-								<div className="rounded-lg border border-rule2 bg-white p-3">{body}</div>
+								<div className="rounded-lg border border-rule2 bg-surface p-3">{body}</div>
 							)}
 						</li>
 					);

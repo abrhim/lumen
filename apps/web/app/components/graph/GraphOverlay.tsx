@@ -394,7 +394,7 @@ function SegmentedToggle({
 								onChange(opt);
 							}}
 							className={`px-2.5 py-1 font-ui text-[11px] font-bold capitalize transition-colors duration-150 aria-disabled:opacity-50 ${
-								opt === value ? "bg-sel text-ink" : "bg-white text-muted-foreground hover:text-ink"
+								opt === value ? "bg-sel text-ink" : "bg-surface text-muted-foreground hover:text-ink"
 							}`}
 						>
 							{opt}
@@ -442,7 +442,7 @@ function ListView({
 						</h3>
 						<ul className="mt-2 flex flex-wrap gap-1.5">
 							{nodes.map((n) => (
-								<li key={n.id} className="inline-flex overflow-hidden rounded-md border border-rule2 bg-white">
+								<li key={n.id} className="inline-flex overflow-hidden rounded-md border border-rule2 bg-surface">
 									<button
 										type="button"
 										onClick={() => onRecenter(n.id)}

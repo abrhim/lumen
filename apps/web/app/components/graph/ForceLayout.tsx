@@ -207,7 +207,7 @@ export default function ForceLayout({
 						<circle
 							r={n.hop === 0 ? 24 : n.hop === 1 ? 14 : 10}
 							fill={n.color}
-							stroke={n.hop === 0 ? "#ffffff" : "var(--color-paper)"}
+							stroke={n.hop === 0 ? "var(--color-surface)" : "var(--color-paper)"}
 							strokeWidth={n.hop === 0 ? 3 : 2}
 						/>
 						{/* persistent recenter affordance, not hover-only (UX-5/B24) */}

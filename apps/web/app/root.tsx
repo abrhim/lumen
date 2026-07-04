@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
 	isRouteErrorResponse,
 	Links,
@@ -9,6 +10,41 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+
+const THEMES = ["paper", "parchment", "linen", "ink"] as const;
+
+/** Applies the stored theme before first paint — no flash of wrong theme. */
+const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem("lumen-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
+
+function ThemeSelect() {
+	const [theme, setTheme] = useState<string>("paper");
+	useEffect(() => {
+		setTheme(document.documentElement.dataset.theme ?? "paper");
+	}, []);
+	return (
+		<select
+			aria-label="Theme"
+			value={theme}
+			onChange={(e) => {
+				const next = e.target.value;
+				setTheme(next);
+				document.documentElement.dataset.theme = next;
+				try {
+					localStorage.setItem("lumen-theme", next);
+				} catch {
+					/* private mode */
+				}
+			}}
+			className="fixed right-4 top-4 z-40 rounded-md border border-rule2 bg-surface px-2 py-1 font-ui text-xs font-semibold text-muted-foreground shadow-sm transition-colors duration-150 hover:text-ink"
+		>
+			{THEMES.map((t) => (
+				<option key={t} value={t}>
+					{t}
+				</option>
+			))}
+		</select>
+	);
+}
 
 export const links: Route.LinksFunction = () => [
 	{ rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -25,10 +61,11 @@ export const links: Route.LinksFunction = () => [
 
 export function Layout({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en">
+		<html lang="en" suppressHydrationWarning>
 			<head>
 				<meta charSet="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
 				<Meta />
 				<Links />
 			</head>
@@ -42,7 +79,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-	return <Outlet />;
+	return (
+		<>
+			<ThemeSelect />
+			<Outlet />
+		</>
+	);
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

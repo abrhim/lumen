@@ -4,24 +4,175 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Palette + type from docs/design/lumen-study-v11.jsx (study surface sketch) */
+/* Theme system: tokens declared once, values swapped per [data-theme] on <html>.
+   Default is "paper" (neutral editorial); "parchment" is the original v11 look. */
 @theme {
-	--color-paper: #f3ede1;
-	--color-panel: #faf6ee;
-	--color-panel2: #f0e8d8;
-	--color-ink: #2a251f;
-	--color-faint: #9b8e78;
-	--color-rule: #e3d9c6;
-	--color-rule2: #d8ccb5;
-	--color-sel: #f6e9c8;
-	--color-selbar: #b07d2b;
-	--color-cites: #3a4a7a;
-	--color-citedby: #80395f;
-	--color-people: #2f6f5e;
+	--color-paper: var(--t-paper);
+	--color-panel: var(--t-panel);
+	--color-panel2: var(--t-panel2);
+	--color-surface: var(--t-surface);
+	--color-ink: var(--t-ink);
+	--color-faint: var(--t-faint);
+	--color-rule: var(--t-rule);
+	--color-rule2: var(--t-rule2);
+	--color-sel: var(--t-sel);
+	--color-selbar: var(--t-selbar);
+	--color-cites: var(--t-cites);
+	--color-citedby: var(--t-citedby);
+	--color-people: var(--t-people);
 
 	--font-display: "Fraunces", Georgia, serif;
 	--font-reading: "Newsreader", Georgia, serif;
 	--font-ui: "Archivo", system-ui, sans-serif;
+}
+
+/* ---- paper (default): neutral, editorial, one restrained accent ---- */
+:root {
+	--t-paper: #fafaf7;
+	--t-panel: #ffffff;
+	--t-panel2: #f1f1ec;
+	--t-surface: #ffffff;
+	--t-ink: #25272b;
+	--t-faint: #989ea6;
+	--t-rule: #e6e6e0;
+	--t-rule2: #d4d5cd;
+	--t-sel: #edf0f7;
+	--t-selbar: #3f5aa9;
+	--t-cites: #3a4a7a;
+	--t-citedby: #80395f;
+	--t-people: #2f6f5e;
+	--graph-verse: #8a6a4f;
+	--graph-principle: #3f5aa9;
+	--graph-person: #2f6f5e;
+	--graph-place: #9a4526;
+	--graph-symbol: #80395f;
+	--graph-topic: #3a4a7a;
+	--graph-era: #5a4a7a;
+	--graph-event: #8a3a3a;
+	--graph-other: #6b7280;
+}
+
+/* ---- parchment: the original v11 study-surface look ---- */
+:root[data-theme="parchment"] {
+	--t-paper: #f3ede1;
+	--t-panel: #faf6ee;
+	--t-panel2: #f0e8d8;
+	--t-surface: #ffffff;
+	--t-ink: #2a251f;
+	--t-faint: #9b8e78;
+	--t-rule: #e3d9c6;
+	--t-rule2: #d8ccb5;
+	--t-sel: #f6e9c8;
+	--t-selbar: #b07d2b;
+	--t-cites: #3a4a7a;
+	--t-citedby: #80395f;
+	--t-people: #2f6f5e;
+	--graph-verse: #7c4a2d;
+	--graph-principle: #8a5a1f;
+	--graph-person: #2f6f5e;
+	--graph-place: #9a4526;
+	--graph-symbol: #80395f;
+	--graph-topic: #3a4a7a;
+	--graph-era: #5a4a7a;
+	--graph-event: #8a3a3a;
+	--graph-other: #776a57;
+	--background: #f3ede1;
+	--card: #faf6ee;
+	--popover: #faf6ee;
+	--secondary: #f0e8d8;
+	--muted: #f0e8d8;
+	--muted-foreground: #776a57;
+	--accent: #f6e9c8;
+	--border: #e3d9c6;
+	--input: #d8ccb5;
+	--ring: #b07d2b;
+	--foreground: #2a251f;
+	--card-foreground: #2a251f;
+	--popover-foreground: #2a251f;
+	--primary: #2f3a56;
+	--primary-foreground: #faf6ee;
+}
+
+/* ---- linen: cool-tinted light, teal accent ---- */
+:root[data-theme="linen"] {
+	--t-paper: #f3f6f7;
+	--t-panel: #fbfdfd;
+	--t-panel2: #e8eef0;
+	--t-surface: #ffffff;
+	--t-ink: #22303a;
+	--t-faint: #8b9aa5;
+	--t-rule: #dce4e8;
+	--t-rule2: #c8d4da;
+	--t-sel: #e0edf2;
+	--t-selbar: #21708e;
+	--t-cites: #3a4a7a;
+	--t-citedby: #7d3b66;
+	--t-people: #2f6f5e;
+	--graph-verse: #6a6350;
+	--graph-principle: #21708e;
+	--graph-person: #2f6f5e;
+	--graph-place: #9a4526;
+	--graph-symbol: #7d3b66;
+	--graph-topic: #3a4a7a;
+	--graph-era: #5a4a7a;
+	--graph-event: #8a3a3a;
+	--graph-other: #71828e;
+	--background: #f3f6f7;
+	--card: #fbfdfd;
+	--popover: #fbfdfd;
+	--secondary: #e8eef0;
+	--muted: #e8eef0;
+	--muted-foreground: #5c6b76;
+	--accent: #e0edf2;
+	--border: #dce4e8;
+	--input: #c8d4da;
+	--ring: #21708e;
+	--foreground: #22303a;
+	--card-foreground: #22303a;
+	--popover-foreground: #22303a;
+	--primary: #274b63;
+	--primary-foreground: #fbfdfd;
+}
+
+/* ---- ink: dark reading mode, warm gold selection ---- */
+:root[data-theme="ink"] {
+	--t-paper: #17181c;
+	--t-panel: #1e2025;
+	--t-panel2: #26282e;
+	--t-surface: #26282e;
+	--t-ink: #e8e6e1;
+	--t-faint: #8f8a80;
+	--t-rule: #33353c;
+	--t-rule2: #43464e;
+	--t-sel: #35301e;
+	--t-selbar: #d4a24a;
+	--t-cites: #93a6d8;
+	--t-citedby: #d38fb4;
+	--t-people: #7fc0aa;
+	--graph-verse: #c9946a;
+	--graph-principle: #d4a24a;
+	--graph-person: #7fc0aa;
+	--graph-place: #d98a66;
+	--graph-symbol: #d38fb4;
+	--graph-topic: #93a6d8;
+	--graph-era: #a99fd8;
+	--graph-event: #d88f8f;
+	--graph-other: #8f8a80;
+	--background: #17181c;
+	--card: #1e2025;
+	--popover: #1e2025;
+	--secondary: #26282e;
+	--muted: #26282e;
+	--muted-foreground: #a3a099;
+	--accent: #35301e;
+	--border: #33353c;
+	--input: #43464e;
+	--ring: #d4a24a;
+	--foreground: #e8e6e1;
+	--card-foreground: #e8e6e1;
+	--popover-foreground: #e8e6e1;
+	--primary: #a9bcf0;
+	--primary-foreground: #17181c;
 }
 
 html {
@@ -74,24 +225,24 @@ html {
 }
 
 :root {
-	--background: #f3ede1;
-	--foreground: #2a251f;
-	--card: #faf6ee;
-	--card-foreground: #2a251f;
-	--popover: #faf6ee;
-	--popover-foreground: #2a251f;
+	--background: #fafaf7;
+	--foreground: #25272b;
+	--card: #ffffff;
+	--card-foreground: #25272b;
+	--popover: #ffffff;
+	--popover-foreground: #25272b;
 	--primary: #2f3a56;
-	--primary-foreground: #faf6ee;
-	--secondary: #f0e8d8;
-	--secondary-foreground: #2a251f;
-	--muted: #f0e8d8;
-	--muted-foreground: #776a57;
-	--accent: #f6e9c8;
-	--accent-foreground: #2a251f;
+	--primary-foreground: #fafaf7;
+	--secondary: #f1f1ec;
+	--secondary-foreground: #25272b;
+	--muted: #f1f1ec;
+	--muted-foreground: #6b7280;
+	--accent: #edf0f7;
+	--accent-foreground: #25272b;
 	--destructive: oklch(0.577 0.245 27.325);
-	--border: #e3d9c6;
-	--input: #d8ccb5;
-	--ring: #b07d2b;
+	--border: #e6e6e0;
+	--input: #d4d5cd;
+	--ring: #3f5aa9;
 	--chart-1: #b07d2b;
 	--chart-2: #2f6f5e;
 	--chart-3: #3a4a7a;

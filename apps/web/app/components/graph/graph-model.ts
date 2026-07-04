@@ -3,21 +3,21 @@ import { parseReference } from "@lumen/scripture";
 
 /** Plain-language legend labels (UX-8) and paper-contrast-checked colors (A11Y-9). */
 export const TYPE_META: Record<string, { label: string; color: string }> = {
-	Verse: { label: "Verse", color: "#7c4a2d" },
-	Principle: { label: "Principle", color: "#8a5a1f" },
-	Person: { label: "Person", color: "#2f6f5e" },
-	Place: { label: "Place", color: "#9a4526" },
-	Symbol: { label: "Symbol", color: "#80395f" },
-	NaveTopic: { label: "Topic", color: "#3a4a7a" },
-	Era: { label: "Time period", color: "#5a4a7a" },
-	Event: { label: "Event", color: "#8a3a3a" },
-	Chapter: { label: "Chapter", color: "#776a57" },
-	Book: { label: "Book", color: "#776a57" },
-	Volume: { label: "Volume", color: "#776a57" },
-	ChapterSummary: { label: "Summary", color: "#776a57" },
+	Verse: { label: "Verse", color: "var(--graph-verse)" },
+	Principle: { label: "Principle", color: "var(--graph-principle)" },
+	Person: { label: "Person", color: "var(--graph-person)" },
+	Place: { label: "Place", color: "var(--graph-place)" },
+	Symbol: { label: "Symbol", color: "var(--graph-symbol)" },
+	NaveTopic: { label: "Topic", color: "var(--graph-topic)" },
+	Era: { label: "Time period", color: "var(--graph-era)" },
+	Event: { label: "Event", color: "var(--graph-event)" },
+	Chapter: { label: "Chapter", color: "var(--graph-other)" },
+	Book: { label: "Book", color: "var(--graph-other)" },
+	Volume: { label: "Volume", color: "var(--graph-other)" },
+	ChapterSummary: { label: "Summary", color: "var(--graph-other)" },
 };
 
-export const FALLBACK_TYPE = { label: "Other", color: "#776a57" };
+export const FALLBACK_TYPE = { label: "Other", color: "var(--graph-other)" };
 
 export function primaryType(labels: string[]): string {
 	return labels.find((l) => TYPE_META[l]) ?? labels[0] ?? "Other";
