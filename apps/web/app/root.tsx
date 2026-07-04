@@ -7,7 +7,15 @@ import {
 	Scripts,
 	ScrollRestoration,
 } from "react-router";
+import { PaletteIcon } from "lucide-react";
 
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "~/components/ui/select";
 import type { Route } from "./+types/root";
 import "./app.css";
 
@@ -22,11 +30,9 @@ function ThemeSelect() {
 		setTheme(document.documentElement.dataset.theme ?? "paper");
 	}, []);
 	return (
-		<select
-			aria-label="Theme"
+		<Select
 			value={theme}
-			onChange={(e) => {
-				const next = e.target.value;
+			onValueChange={(next) => {
 				setTheme(next);
 				document.documentElement.dataset.theme = next;
 				try {
@@ -35,14 +41,23 @@ function ThemeSelect() {
 					/* private mode */
 				}
 			}}
-			className="fixed right-4 top-4 z-40 rounded-md border border-rule2 bg-surface px-2 py-1 font-ui text-xs font-semibold text-muted-foreground shadow-sm transition-colors duration-150 hover:text-ink"
 		>
-			{THEMES.map((t) => (
-				<option key={t} value={t}>
-					{t}
-				</option>
-			))}
-		</select>
+			<SelectTrigger
+				aria-label="Theme"
+				size="sm"
+				className="fixed right-4 top-4 z-40 bg-surface font-ui text-xs font-semibold text-muted-foreground shadow-sm"
+			>
+				<PaletteIcon className="size-3.5" aria-hidden="true" />
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent align="end" className="font-ui text-xs">
+				{THEMES.map((t) => (
+					<SelectItem key={t} value={t} className="capitalize">
+						{t}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
 	);
 }
 
