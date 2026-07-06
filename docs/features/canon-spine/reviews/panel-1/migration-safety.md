@@ -1,0 +1,21 @@
+# Panel 1 — Migration Safety Review (canon-spine)
+
+Lens: operational mechanics of running `migrate-canon-spine.mjs` and
+`ingest-words.mjs` against prod Supabase Postgres, safely, with rollback.
+
+| ID | Severity | Where | Problem (≤ 25 words) | Fix (≤ 30 words) |
+|---|---|---|---|---|
+| MIG-1 | Blocker | plan.md Scope/Files; no env/credential step | No privileged Postgres credential exists locally — `.env.example` only carries the `lumen_read` SELECT-only role; root `.env` with admin creds is gone. | Add a plan step to provision/rotate an admin (or `postgres`) credential path before P1 can run; document its storage, never commit it. |
+| MIG-2 | High | plan.md contract line 83; design.md "Migration" section | Neither doc names which host/port `migrate-canon-spine.mjs` must use. Pooler `*.pooler.supabase.com` also serves transaction-mode (6543), which breaks multi-statement BEGIN/DDL/DML sessions. | Require the script to hard-fail unless connected via session-mode/direct (port 5432, non-transaction pool) — assert at startup, don't infer. |
+| MIG-3 | High | plan.md Scope item 1; design.md "Migration" | No pre-migration backup/snapshot step anywhere in either doc. At 0 users the risk is process, not people, but a bad P1 DDL/backfill forces a costly ~1.2M-row scripture re-ingest. | Add explicit pre-flight step: Supabase PITR checkpoint noted or `pg_dump --schema=lumen` before running P1. |
+| MIG-4 | Medium | plan.md contract line 83 (`--dry-run`) | Dry-run contract is asserted but not specified mechanically — unclear if it executes every statement then `ROLLBACK`, or only simulates, risking false confidence or missed lock/timeout behavior. | Define dry-run explicitly: execute full transaction body, run all invariant checks, always `ROLLBACK` at the end regardless of result, log what would commit. |
+| MIG-5 | Medium | plan.md Scope item 1 & Files touched | Plan doesn't say ingest scripts (`ingest-words.mjs`, `backfill-neo4j-collections.mjs`, `ingest-phase-a.ts`) must not run concurrently with the P1 migration transaction; table locks on `verses` would collide. | Name the constraint explicitly: acquire a Postgres advisory lock (or documented run-order) so P1 and any concurrent ingest can't overlap. |
+| MIG-6 | Medium | plan.md contract line 84-85 ("idempotent re-run … exits 0") | `SET NOT NULL` and the `chapter_id` backfill `UPDATE` aren't naturally idempotent like `IF NOT EXISTS` table creation — a second run after a partial failure can error on re-applying `NOT NULL` or re-scanning already-set rows. | Guard backfill with `WHERE chapter_id IS NULL`; check `information_schema` before `ALTER ... SET NOT NULL` so re-run is a true no-op. |
+| MIG-7 | Medium | plan.md Scope item 2; design.md "Words" | ~1.2M-row words ingest over the pooler has no stated batch size, statement/lock timeout awareness, or duration estimate — precedent (`backfill-neo4j-collections.mjs`) uses `BATCH_SIZE=2000`; this plan gives none. | State a batch size (e.g. per-verse or ~2000-row chunks), note Supabase pooler idle/statement timeout limits, estimate expected wall-clock duration. |
+| MIG-8 | High | plan.md Scope item 5 (P4); design.md P4 | P4 column-drop is called "the true point of no return" but no script/flag/human-confirmation gate is named — Files touched lists only one migration script, ambiguous whether P4 auto-runs after P3 passes. | Require P4 as a separate, explicitly-invoked step (e.g. `--drop-transition-columns`) that refuses to run without a persisted "P3 verification passed" marker and manual confirmation. |
+| MIG-9 | Low | plan.md Files touched; Failure modes | Migration script's logging/exit-code contract isn't specified to match the `backfill-neo4j-collections.mjs` precedent (structured per-step logs, 0/1/2 exit code taxonomy, redaction of creds in log lines). | Adopt the same contract: structured JSON log lines per invariant/step, exit 0 clean / 1 fatal / 2 partial, scrub credentials from any logged connection string. |
+
+Cross-cutting note: MIG-1 blocks everything else in this table — until an admin
+credential path exists on this machine, none of P1–P4 can be executed or even
+dry-run against prod, and this gap isn't named anywhere in plan.md or
+docs/design/canon-spine.md.

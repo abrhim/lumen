@@ -1,0 +1,26 @@
+# Panel 2 — ADVERSARIAL Review — Panel 1 Data Integrity (canon-spine)
+
+Verified against `scripts/ingest-phase-a.ts`, `scripts/backfill-neo4j-collections.mjs`,
+`docs/design/canon-spine.md`, `docs/features/graph-view/{plan.md,retro.md,reviews/code-adversarial/data-integrity.md}`,
+and `docs/punch-list.md`.
+
+| ID | Tag | Rationale (≤ 25 words) |
+|---|---|---|
+| DATA-1 | material | Real open question (design.md flags it too), but "Critical/1,582 drifted" premise unverified — `chapterId()` matches derived spine format by construction; keep as pre-migration decision item, not confirmed-today bug. |
+| DATA-2 | material | Verified true: spine drops collection_id; `backfill-neo4j-collections.mjs:181-182` already hardcodes `cid:'canon'` for verses — book/chapter/volume need identical treatment post-migration. |
+| DATA-3 | material | Sound forward guidance for an unwritten script; join-based backfill is strictly safer than independent string concat, cheap to adopt now. |
+| DATA-4 | material | Verified: `VOLUME_CANON` (ingest-phase-a.ts:69-75) only ever yields `bible`/`restoration`; design.md's own comment promises `hebrew`\|`christian`\|`restoration`. Real self-inconsistency. |
+| DATA-5 | material | Verified against plan.md FM#9 text ("one id of each kind"); legitimate weak-smoke critique independent of DATA-1's severity. |
+| DATA-6 | noise | Contradicted by repo evidence: `od-1-2` sample id + bugs.md #9/#10 show `'od'` is one book with 2 chapters, not two colliding source rows. No upsert collision occurs. |
+| DATA-7 | risky | Technically true, but plan.md FM#8 already accepts this exact window by design ("interrupted runs converge") — self-heals on re-run, same pattern as graph-view's risky-tagged concurrent-race finding. |
+| DATA-8 | material | Verified against plan.md's own contract text ("abort with a named check"); Scope §1 doesn't enumerate this check. Low-cost, correctly scored Low. |
+
+## Stance
+
+**DATA-1's severity is inflated by an unverified premise, but the underlying question is real and should stay actionable, not be waved off.** The claim "1,582 chapter entities may have ids ≠ derived `{book}-{n}`" doesn't survive contact with `ingest-phase-a.ts`: `chapterId(bSlug, c.chapterNumber)` builds `{bookSlug}-{chapterNumber}` using the *same* `bookSlug()` call the verses loop uses for the same book, so Postgres chapter-entity ids are byte-identical to what the spine's `GROUP BY book_id, chapter_number` derivation would produce — no drift by construction. The one *confirmed* chapter-id drift in this system is on the Neo4j side (`X-ch-N` vs `X-N`), and it is (a) already scoped out of this feature by plan.md itself ("Neo4j chapter-id alignment — separate cleanup"), and (b) explicitly characterized by `docs/punch-list.md` as "join miss, cosmetic today" — a missing collection_id stamp, not an orphaned edge. This is the exact failure mode the graph-view retro warned about by name ("two specialists reasoned from scripts the live graph predates... and reached wrong conclusions") — panel-1 reasoned from design.md prose rather than checking whether the drift it names actually exists in the table it's about. That said, I'm not downgrading past material: design.md itself flags the `lumen.nodes` view definition as an "Open design question for panels," P4 keeps deprecated structural entities in place (not deleted) specifically to avoid breaking existing edges, and the punch-list's own "Add art" item plus the design's Strong's/TSK fast-follows will produce chapter-level edges soon. The recommended fix (literal union, always include deprecated rows) is correct and nearly free — worth locking in now on architectural grounds, just not framed as "edges silently orphan today."
+
+**DATA-6 is a confirmed miss, not a hedge.** `docs/features/web-app-wiring/bugs.md` bug #9 references a real graph id `od-1-2` and states the ingest map "already contains `'Official Declaration': 'od'`" as a *working* single-book mapping; bug #10 describes the surviving problem as `getBooksByVolume` hiding this one legitimate `od` book from listings — not two source rows upserting over each other. The LDS-scriptures source models both Official Declarations as one book ("Official Declaration") with two chapters, not two same-titled books; panel-1's upsert/last-write-wins mechanism doesn't apply. This is the plan's own named "od trap," but it's a filtering-heuristic bug, not a collision bug — panel-1 misattributed the mechanism.
+
+**DATA-7 downgraded to risky, not dropped**, on the same "self-heals" logic the graph-view panel-2 already applied to an analogous concurrent-write gap (tagged risky there): plan.md FM#8 makes idempotent re-run convergence the explicit accepted contract for interrupted words ingest, so the harm DATA-7 describes is a designed, bounded window, not a defect.
+
+**Net**: 6 material, 1 risky, 1 noise, 0 out-of-scope. DATA-2 and DATA-4 are the strongest items — both are verified, present-tense, cheap-to-fix contract gaps. DATA-1 stays material but its rationale/fix text should be rewritten to cite the real (Neo4j-side, already-scoped, cosmetic-today) drift rather than an unverified Postgres-side one, so the plan doesn't chase a bug that isn't there while under-selling the real open design question.
