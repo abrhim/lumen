@@ -28,6 +28,15 @@ test('diffQueryParity reports row-level differences, empty when identical (FM-6)
   assert.equal(diff.length, 1);
 });
 
+test('diffQueryParity is key-based: permuted-but-equal rows are parity, not false positives (COR-4)', () => {
+  const a = [{ id: 'x', n: 1 }, { id: 'y', n: 2 }, { id: 'z', n: 3 }];
+  const permuted = [{ id: 'z', n: 3 }, { id: 'x', n: 1 }, { id: 'y', n: 2 }];
+  assert.equal(diffQueryParity(a, permuted).length, 0);
+  // missing + extra rows both surface
+  const missing = diffQueryParity(a, [{ id: 'x', n: 1 }]);
+  assert.equal(missing.length, 2);
+});
+
 test('planWordBatches is idempotent-friendly: batches keyed by verse, re-planning converges (FM-8)', () => {
   const verses = Array.from({ length: 2500 }, (_, i) => ({ id: `v-${i}`, text: 'a b c' }));
   const batches = planWordBatches(verses, 1000);

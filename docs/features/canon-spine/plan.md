@@ -257,4 +257,4 @@ repo evidence (DATA-6: 'od' is one book with two chapters, no collision).
 
 ## Drift baseline (filled at end of step 6)
 - plan-hash: e12d4c99f05a2255 (sha256/16 at synthesis, pre-stamp)
-- harness-hash: 5ff189aa9dd3b701 (sha256/16 of the three harness files; harness-revision items land via explicit amendment commit at step 8 start)
+- harness-hash: d6eec528441e4eac (sha256/16; harness-revision applied post-gate: COR-2, API-1/4/5, COR-4 coverage)

@@ -1,12 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 // Harness (canon-spine): structural queries must read the spine, not entities.
 // Signatures stay stable (MCP compatibility) — only internals move.
+// Extended per synthesis (harness-revision): COR-2, API-1, API-4, API-5.
 import {
 	getAllBooks,
 	getBooksByVolume,
 	getChapterNumbers,
 	getVolumeList,
 	getChapterSummary,
+	getVersesByChapter,
+	getVerseById,
+	getPassage,
+	searchScriptures,
 } from '../queries';
 import { resolveReference } from '../resolve-reference';
 
@@ -58,6 +63,60 @@ describe('spine queries (canon-spine harness)', () => {
 		const q = captured.join();
 		expect(q).toContain('chapter_id');
 		expect(q).not.toContain('-summary');
+	});
+
+	it('getVersesByChapter (hottest path) filters by chapter_id, not transition columns (API-2)', async () => {
+		const { db, captured } = capturingDb([]);
+		await getVersesByChapter(db, '1-ne', 3);
+		const q = captured.join();
+		expect(q).toContain('chapter_id');
+		expect(q).not.toContain('chapter_number =');
+	});
+
+	it('getVerseById keeps MCP field names via spine-safe aliases (API-1/API-4)', async () => {
+		const { db, captured } = capturingDb([]);
+		await getVerseById(db, '1-ne-3-7');
+		const q = captured.join();
+		// old JSON shape survives P4: these exact field names must still be selected
+		expect(q).toContain('book_id');
+		expect(q).toContain('chapter_number');
+		expect(q).toContain('volume_id');
+	});
+
+	it('getPassage orders through chapters.number, not chapter arithmetic (COR-1/PERF-7)', async () => {
+		const { db, captured } = capturingDb([]);
+		await getPassage(db, '1-ne', 3, 1, 4, 10, 50);
+		const q = captured.join();
+		expect(q).toContain('lumen.chapters');
+		expect(q).not.toContain('* 1000');
+	});
+
+	it('searchScriptures volume filter joins through the spine (COR-3)', async () => {
+		const { db, captured } = capturingDb([]);
+		await searchScriptures(db, 'faith', 'bom', 5);
+		const q = captured.join();
+		expect(q).toContain('lumen.chapters');
+		expect(q).toContain('lumen.books');
+		expect(q).not.toContain('volume_id =');
+	});
+
+	it('resolveReference chapter + verse levels keep their MCP JSON shapes (COR-2/API-1)', async () => {
+		const verseRow = {
+			id: '1-ne-3-7', volume_id: 'bom', book_id: '1-ne', chapter_number: 3,
+			verse_number: 7, text: 'And it came to pass…', reference: '1 Nephi 3:7',
+		};
+		const { db } = capturingDb([verseRow]);
+		const chapterRes = await resolveReference(db, '1-ne-3');
+		expect(chapterRes.level).toBe('chapter');
+		if (chapterRes.level === 'chapter' && 'verses' in chapterRes) {
+			expect(chapterRes.verse_count).toBe(1);
+		}
+		const { db: db2 } = capturingDb([verseRow]);
+		const verseRes = await resolveReference(db2, '1-ne-3-7');
+		expect(verseRes.level).toBe('verse');
+		expect(verseRes).toMatchObject({
+			book_id: '1-ne', chapter_number: 3, verse_number: 7, volume_id: 'bom',
+		});
 	});
 
 	it('resolveReference keeps its MCP-facing shapes for volume/book inputs (FM-7)', async () => {
