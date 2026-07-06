@@ -1,0 +1,20 @@
+=== harness-initial run: 2026-07-06T23:35:52Z ===
+--- tokenize + spine queries (vitest) ---
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  5 failed | 1 passed (6)
+   Start at  17:35:53
+   Duration  304ms (transform 88ms, setup 0ms, collect 152ms, tests 5ms, environment 0ms, prepare 83ms)
+
+EXIT=1
+--- migration pure fns (node:test) ---
+test at scripts/__tests__/canon-spine.test.mjs:1:1
+✖ scripts/__tests__/canon-spine.test.mjs (28.280375ms)
+  'test failed'
+EXIT=0
+--- live smoke ---
+
+Node.js v26.4.0
+EXIT=0
