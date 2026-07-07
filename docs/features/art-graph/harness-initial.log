@@ -1,0 +1,5 @@
+ℹ pass 0
+ℹ fail 1
+Error: Cannot find module '../scripture.art' imported from '/Users/abram/code/lumen/apps/web/app/routes/__tests__/art.loader.test.ts'
+      Tests  no tests
+EXIT=1 (art-edges: materialize-art-edges.mjs absent; gallery: scripture.art + lib/art absent)
