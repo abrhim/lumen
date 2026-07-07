@@ -6,13 +6,14 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { scrub } from './migrate-canon-spine.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = join(ROOT, '.env');
 if (!existsSync(envPath)) { console.error('root .env with DATABASE_URL required'); process.exit(1); }
 const url = readFileSync(envPath, 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
 const require = createRequire(import.meta.url);
-const postgres = require(join(ROOT, 'apps/web/node_modules/postgres'));
+const postgres = require('postgres');
 const sql = postgres(url, { prepare: false, max: 1 });
 
 let failures = 0;
@@ -22,6 +23,9 @@ const check = (name, ok, detail = '') => {
 };
 
 try {
+  // this gate must fail loudly, never hang (CPERF-8)
+  await sql.unsafe(`SET statement_timeout = '120s'`);
+
   // counts + structure
   const [v] = await sql`SELECT count(*)::int AS n FROM lumen.verses`;
   const [c] = await sql`SELECT count(*)::int AS n FROM lumen.chapters`;
@@ -54,13 +58,20 @@ try {
       AND NOT EXISTS (SELECT 1 FROM lumen.chapters c2 WHERE c2.id = e.metadata->>'chapter_id')`;
   check('zero orphan summaries', orphS.n === 0, `${orphS.n}`);
 
-  // exhaustive edge-endpoint anti-join against lumen.nodes (DATA-5)
-  const [orphFrom] = await sql`
+  // exhaustive edge-endpoint check (DATA-5). Per-source-table NOT EXISTS —
+  // six indexed PK probes per edge — instead of a LEFT JOIN against the
+  // un-materialized lumen.nodes UNION view, which the planner may hash-build
+  // (~1.3M rows incl. words) twice with no ceiling (CPERF-8).
+  const orphanEndpoints = (col) => sql.unsafe(`
     SELECT count(*)::int AS n FROM lumen.edges e
-    LEFT JOIN lumen.nodes nn ON nn.id = e.from_id WHERE nn.id IS NULL`;
-  const [orphTo] = await sql`
-    SELECT count(*)::int AS n FROM lumen.edges e
-    LEFT JOIN lumen.nodes nn ON nn.id = e.to_id WHERE nn.id IS NULL`;
+    WHERE NOT EXISTS (SELECT 1 FROM lumen.volumes t WHERE t.id = e.${col})
+      AND NOT EXISTS (SELECT 1 FROM lumen.books t WHERE t.id = e.${col})
+      AND NOT EXISTS (SELECT 1 FROM lumen.chapters t WHERE t.id = e.${col})
+      AND NOT EXISTS (SELECT 1 FROM lumen.verses t WHERE t.id = e.${col})
+      AND NOT EXISTS (SELECT 1 FROM lumen.words t WHERE t.id = e.${col})
+      AND NOT EXISTS (SELECT 1 FROM lumen.entities t WHERE t.id = e.${col})`);
+  const [orphFrom] = await orphanEndpoints('from_id');
+  const [orphTo] = await orphanEndpoints('to_id');
   check('every edge from-endpoint resolves in lumen.nodes', orphFrom.n === 0, `${orphFrom.n}`);
   check('every edge to-endpoint resolves in lumen.nodes', orphTo.n === 0, `${orphTo.n}`);
 
@@ -97,7 +108,7 @@ try {
   }
 } catch (err) {
   failures++;
-  console.error('✗ fatal:', String(err.message).replace(/\/\/[^@\s]*@/g, '//<redacted>@'));
+  console.error('✗ fatal:', scrub(err.message));
 } finally {
   await sql.end();
   console.log(failures === 0 ? 'SMOKE PASS' : `SMOKE FAIL (${failures})`);

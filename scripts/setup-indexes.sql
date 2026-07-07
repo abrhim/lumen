@@ -3,13 +3,19 @@
 -- without indexes; run this after bulk loads.
 
 -- verses
+-- idx_verses_chapter/idx_verses_volume index the pre-canon-spine transition
+-- columns (book_id, chapter_number, volume_id); P4 of the spine migration
+-- drops those columns and the indexes with them.
 CREATE INDEX IF NOT EXISTS idx_verses_chapter ON lumen.verses (book_id, chapter_number, verse_number);
+CREATE INDEX IF NOT EXISTS idx_verses_chapter_id ON lumen.verses (chapter_id, verse_number);
 CREATE INDEX IF NOT EXISTS idx_verses_reference ON lumen.verses (reference);
 CREATE INDEX IF NOT EXISTS idx_verses_volume ON lumen.verses (volume_id);
 CREATE INDEX IF NOT EXISTS idx_verses_search ON lumen.verses USING gin (search_vector);
 
 -- words
-CREATE INDEX IF NOT EXISTS idx_words_verse_position ON lumen.words (verse_id, position);
+-- (verse_id, position) is already indexed by the table's UNIQUE constraint;
+-- idx_words_normalized is created by ingest-words.mjs after the bulk load,
+-- listed here only so this file stays the full index inventory.
 CREATE INDEX IF NOT EXISTS idx_words_normalized ON lumen.words (normalized);
 
 -- entities

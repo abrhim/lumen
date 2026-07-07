@@ -255,6 +255,40 @@ repo evidence (DATA-6: 'od' is one book with two chapters, no collision).
 | UX-7, UX-9 | dropped-as-noise (restate plan verbatim) |
 | UX-8 | rejected-with-rationale: "P50/P95 disproportionate at 0 users" — one manual latency sanity note in smoke |
 
+## Plan amendment — code-review fixes (2026-07-07, steps 9–13)
+
+Code-panel (7 roles, 40 canonical findings) × code-adversarial (25 material)
+→ 21 confirmed bugs, all fixed pre-prod-run. Full filter in bugs.md; aggregates
+in reviews/code-panel.md and reviews/code-adversarial.md. Plan-level changes:
+
+- **DEPLOYMENT ORDER (B4/CCOR-1, new hard constraint):** P1 + summary stamping
+  MUST run against prod before any web deploy of this branch. The rewritten
+  query layer reads spine tables and stamped metadata that exist only post-P1;
+  deploying first breaks every scripture route. Also stated in the migration
+  script header.
+- P4 now requires `--drop-transition-columns --confirm` (B5/CMIG-2 — restores
+  the promised human-confirmation gate); any P1 re-run deletes the P3 marker
+  (staleness fix, replacing the rejected hash-binding machinery); P4 re-checks
+  the marker inside its transaction, marks structural entities
+  `metadata.deprecated`, and writes a `canon-spine-p4-done` audit row.
+- `lumen.words` is now `CREATE TABLE IF NOT EXISTS` + RLS'd like its siblings
+  (B1/B2 — the DROP TABLE re-run wipe is dead); its search index moves to
+  ingest-words.mjs post-bulk-load (B17).
+- Session mode is verified by a live SET/current_setting probe, not the port
+  string (B6); `--book` validates against lumen.books (B8).
+- Parity now covers books, getBooksByVolume, getPassage, searchScriptures, and
+  a volume_id old-vs-new drift invariant (B3/B14 — volume_id was the one field
+  that changed source table with no check).
+- Harness additions (repro tests): SPINE_DDL shape + p4Preflight in
+  scripts/__tests__/canon-spine.test.mjs; getVerseByReference/getBook/
+  getVolume/unknown-resolver in spine-queries.test.ts; scripture-loader
+  query-count guard.
+- `postgres` added as a root devDependency; admin scripts no longer reach into
+  apps/web/node_modules (B11).
+
 ## Drift baseline (filled at end of step 6)
 - plan-hash: e12d4c99f05a2255 (sha256/16 at synthesis, pre-stamp)
 - harness-hash: d6eec528441e4eac (sha256/16; harness-revision applied post-gate: COR-2, API-1/4/5, COR-4 coverage)
+- post-amendment (2026-07-07): re-baselined in the plan-amendment commit; hashes recomputed below
+- plan-hash-2: d66e593ba488c808
+- harness-hash-2: 313ad901f0092485

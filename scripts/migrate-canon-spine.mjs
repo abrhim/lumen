@@ -1,10 +1,15 @@
 // Canon-spine migration: normalize scripture structure into FK'd tables.
 //   node scripts/migrate-canon-spine.mjs --dry-run                  # full run + checks, then ROLLBACK
 //   node scripts/migrate-canon-spine.mjs                            # P1: build spine (one transaction)
-//   node scripts/migrate-canon-spine.mjs --drop-transition-columns  # P4: gated point of no return
+//   node scripts/migrate-canon-spine.mjs --drop-transition-columns --confirm  # P4: gated point of no return
+//
+// DEPLOYMENT ORDER (CCOR-1): the rewritten query layer reads these spine
+// tables and the stamped summary metadata. P1 MUST run against prod before
+// any web deploy of the canon-spine branch, or every scripture route breaks.
 //
 // Requires an ADMIN session-mode connection: DATABASE_URL in the repo-root
-// .env (port 5432; transaction-mode pooling breaks multi-statement DDL).
+// .env (port 5432; transaction-mode pooling breaks multi-statement DDL —
+// verified at startup by a live probe, not just the port string).
 // Exit codes: 0 success, 1 fatal/invariant-abort. Single-runner constraint:
 // never run concurrently with any ingest script.
 //
@@ -54,6 +59,17 @@ export function scrub(message) {
     .replace(/password=[^&\s]+/gi, 'password=<redacted>');
 }
 
+/** P4 preflight (CMIG-2/CSEC-5): irreversible drop needs marker AND --confirm. */
+export function p4Preflight(argv, markerRows) {
+  if (!argv.includes('--confirm')) {
+    return { ok: false, reason: 'P4 refused: pass --confirm to acknowledge the irreversible column drop (plan MIG-8: marker + human confirmation)' };
+  }
+  if (!markerRows || markerRows.length === 0) {
+    return { ok: false, reason: 'P4 refused: no canon-spine-p3-verified marker — run smoke-canon-spine.mjs first' };
+  }
+  return { ok: true, reason: null };
+}
+
 // ---------- I/O ----------
 
 const log = (event, data = {}) => console.log(JSON.stringify({ event, ...data }));
@@ -67,7 +83,8 @@ function loadAdminUrl() {
   return url;
 }
 
-const SPINE_DDL = `
+// Exported for DDL-shape repro tests (B1/B2/B17/B20 in bugs.md).
+export const SPINE_DDL = `
 CREATE TABLE IF NOT EXISTS lumen.volumes (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -92,8 +109,7 @@ CREATE TABLE IF NOT EXISTS lumen.chapters (
   UNIQUE (book_id, number)
 );
 ALTER TABLE lumen.verses ADD COLUMN IF NOT EXISTS chapter_id TEXT;
-DROP TABLE IF EXISTS lumen.words;
-CREATE TABLE lumen.words (
+CREATE TABLE IF NOT EXISTS lumen.words (
   id TEXT PRIMARY KEY,
   verse_id TEXT NOT NULL REFERENCES lumen.verses(id),
   position INT NOT NULL CHECK (position > 0),
@@ -110,19 +126,37 @@ CREATE TABLE IF NOT EXISTS lumen.migration_state (
 );
 CREATE INDEX IF NOT EXISTS idx_verses_chapter_id ON lumen.verses (chapter_id, verse_number);
 CREATE INDEX IF NOT EXISTS idx_chapters_book ON lumen.chapters (book_id, number);
-CREATE INDEX IF NOT EXISTS idx_words_verse ON lumen.words (verse_id, position);
-CREATE INDEX IF NOT EXISTS idx_words_normalized ON lumen.words (normalized);
+-- words search index is deliberately NOT here: UNIQUE (verse_id, position)
+-- already indexes the read path, and idx_words_normalized is created by
+-- ingest-words.mjs AFTER the ~1.2M-row bulk load (CPERF-7).
 ALTER TABLE lumen.volumes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lumen.books ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lumen.chapters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lumen.words ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS volumes_read ON lumen.volumes;
 DROP POLICY IF EXISTS books_read ON lumen.books;
 DROP POLICY IF EXISTS chapters_read ON lumen.chapters;
+DROP POLICY IF EXISTS words_read ON lumen.words;
 CREATE POLICY volumes_read ON lumen.volumes FOR SELECT USING (true);
 CREATE POLICY books_read ON lumen.books FOR SELECT USING (true);
 CREATE POLICY chapters_read ON lumen.chapters FOR SELECT USING (true);
-GRANT SELECT ON lumen.volumes, lumen.books, lumen.chapters, lumen.words, lumen.migration_state TO lumen_read;
+CREATE POLICY words_read ON lumen.words FOR SELECT USING (true);
+GRANT SELECT ON lumen.volumes, lumen.books, lumen.chapters, lumen.words TO lumen_read;
 `;
+
+/**
+ * Session-mode probe (CMIG-3): a custom GUC set in one top-level statement
+ * must be visible in the next. Under transaction-mode pooling the statements
+ * can land on different backends and the setting vanishes — the port-string
+ * check alone can't catch portless/proxied DSNs.
+ */
+export async function assertSessionMode(sql) {
+  await sql.unsafe(`SET "lumen.session_probe" = 'canon-spine'`);
+  const [row] = await sql.unsafe(`SELECT current_setting('lumen.session_probe', true) AS v`);
+  if (row?.v !== 'canon-spine') {
+    throw new Error('connection is not session-mode (SET did not persist across statements) — use the port-5432 session pooler');
+  }
+}
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
@@ -134,7 +168,7 @@ async function main() {
   let sql;
   try {
     const require = createRequire(import.meta.url);
-    const postgres = require(join(ROOT, 'apps/web/node_modules/postgres'));
+    const postgres = require('postgres');
     sql = postgres(loadAdminUrl(), { prepare: false, max: 1 });
   } catch (err) {
     log('migration_fatal', { message: scrub(err.message) });
@@ -151,14 +185,30 @@ async function main() {
 
   let exitCode = 0;
   try {
+    await assertSessionMode(sql);
+
     if (dropColumns) {
       // ---- P4: gated point of no return ----
       const marker = await sql`SELECT value FROM lumen.migration_state WHERE key = 'canon-spine-p3-verified'`;
-      if (marker.length === 0) throw new Error('P4 refused: no canon-spine-p3-verified marker — run smoke-canon-spine.mjs first');
+      const preflight = p4Preflight(process.argv, marker);
+      if (!preflight.ok) throw new Error(preflight.reason);
       await sql.begin(async (tx) => {
+        // re-assert the marker inside the tx (CMIG-5 — no check/act gap)
+        const m = await tx`SELECT 1 FROM lumen.migration_state WHERE key = 'canon-spine-p3-verified'`;
+        if (m.length === 0) throw new Error('P4 refused: marker vanished between preflight and transaction');
+        // plan promise (CDATA-3): structural entities are deprecated in place at P4
+        await tx`
+          UPDATE lumen.entities
+          SET metadata = jsonb_set(metadata, '{deprecated}', 'true'::jsonb)
+          WHERE entity_type IN ('volume', 'book', 'chapter')`;
         await tx`ALTER TABLE lumen.verses DROP COLUMN IF EXISTS volume_id`;
         await tx`ALTER TABLE lumen.verses DROP COLUMN IF EXISTS book_id`;
         await tx`ALTER TABLE lumen.verses DROP COLUMN IF EXISTS chapter_number`;
+        // audit row (CDATA-6): irreversible op leaves in-DB evidence
+        await tx`
+          INSERT INTO lumen.migration_state (key, value)
+          VALUES ('canon-spine-p4-done', ${tx.json({ at: startedAt })})
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, at = now()`;
         if (dryRun) throw new Error('DRY_RUN_ROLLBACK');
       }).catch((e) => { if (e.message !== 'DRY_RUN_ROLLBACK') throw e; log('dry_run_rollback', {}); });
       log('migration_done', { phase: 'P4', dryRun, elapsedMs: Date.now() - t0 });
@@ -248,6 +298,16 @@ async function main() {
       }
       log('verses_done', { updated: true });
 
+      // volume_id is the ONE verse field whose source table changes (verse row →
+      // joined books row) with no by-construction guarantee (CAPI-1). Assert
+      // zero drift while the old column still exists to compare against.
+      const volDrift = await tx`
+        SELECT count(*)::int AS n FROM lumen.verses v
+        JOIN lumen.chapters c ON c.id = v.chapter_id
+        JOIN lumen.books b ON b.id = c.book_id
+        WHERE b.volume_id IS DISTINCT FROM v.volume_id`;
+      check('volume_id_parity_via_join', 0, volDrift[0].n);
+
       // summaries stamped with chapter_id (id convention retires) + resolution check (COR-9)
       await tx`
         UPDATE lumen.entities
@@ -268,7 +328,10 @@ async function main() {
           UNION ALL SELECT id, 'verse', reference FROM lumen.verses
           UNION ALL SELECT id, 'word', surface FROM lumen.words
           UNION ALL SELECT id, entity_type, name FROM lumen.entities
-        -- contract: id-lookup only; consumers re-apply collection visibility`;
+        -- contract (CDATA-2): existence/id-lookup only. Structural ids (volumes/
+        -- books/chapters) return MULTIPLE rows — the spine row plus the retained
+        -- deprecated entity — with no ordering guarantee. Consumers must never
+        -- assume one row per id, and must re-apply collection visibility.`;
       await tx`GRANT SELECT ON lumen.nodes TO lumen_read`;
 
       // parity checks (FM-6): old SQL vs new SQL, key-based
@@ -282,6 +345,31 @@ async function main() {
         ['getVersesByChapter_1ne3',
           tx`SELECT id, text FROM lumen.verses WHERE book_id = '1-ne' AND chapter_number = 3`,
           tx`SELECT id, text FROM lumen.verses WHERE chapter_id = '1-ne-3'`],
+        ['books_table',
+          tx`SELECT id FROM lumen.entities WHERE entity_type = 'book'
+             UNION SELECT 'dc' ORDER BY id`,
+          tx`SELECT id FROM lumen.books ORDER BY id`],
+        ['getBooksByVolume_ot',
+          tx`SELECT id, name FROM lumen.entities
+             WHERE entity_type = 'book' AND metadata->>'volume_id' = 'ot' ORDER BY id`,
+          tx`SELECT id, name FROM lumen.books WHERE volume_id = 'ot' ORDER BY id`],
+        ['getPassage_1ne3_1_to_4_5',
+          tx`SELECT id FROM lumen.verses
+             WHERE book_id = '1-ne'
+               AND (chapter_number, verse_number) >= (3, 1)
+               AND (chapter_number, verse_number) <= (4, 5)`,
+          tx`SELECT v.id FROM lumen.verses v
+             JOIN lumen.chapters c ON c.id = v.chapter_id
+             WHERE c.book_id = '1-ne'
+               AND (c.number, v.verse_number) >= (3, 1)
+               AND (c.number, v.verse_number) <= (4, 5)`],
+        ['searchScriptures_faith_bom',
+          tx`SELECT id FROM lumen.verses
+             WHERE search_vector @@ plainto_tsquery('english', 'faith') AND volume_id = 'bom'`,
+          tx`SELECT v.id FROM lumen.verses v
+             JOIN lumen.chapters c ON c.id = v.chapter_id
+             JOIN lumen.books b ON b.id = c.book_id
+             WHERE v.search_vector @@ plainto_tsquery('english', 'faith') AND b.volume_id = 'bom'`],
       ];
       for (const [name, oldQ, newQ] of parityPairs) {
         const [oldRows, newRows] = await Promise.all([oldQ, newQ]);
@@ -290,6 +378,9 @@ async function main() {
         check(`parity_${name}`, 0, diffs.length);
       }
 
+      // any P1 re-run re-mutates spine state, so the P3 verification is void
+      // until smoke passes again (CSEC-5/CDATA-5, sans hash machinery)
+      await tx`DELETE FROM lumen.migration_state WHERE key = 'canon-spine-p3-verified'`;
       await tx`
         INSERT INTO lumen.migration_state (key, value)
         VALUES ('canon-spine-p1', ${tx.json({ at: startedAt, dryRun, checks: checks.length })})

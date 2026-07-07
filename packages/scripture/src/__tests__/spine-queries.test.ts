@@ -10,8 +10,11 @@ import {
 	getChapterSummary,
 	getVersesByChapter,
 	getVerseById,
+	getVerseByReference,
 	getPassage,
 	searchScriptures,
+	getBook,
+	getVolume,
 } from '../queries';
 import { resolveReference } from '../resolve-reference';
 
@@ -81,6 +84,49 @@ describe('spine queries (canon-spine harness)', () => {
 		expect(q).toContain('book_id');
 		expect(q).toContain('chapter_number');
 		expect(q).toContain('volume_id');
+	});
+
+	it('getVerseByReference shares the spine join + MCP aliases with getVerseById (CAPI-2)', async () => {
+		const { db, captured } = capturingDb([]);
+		await getVerseByReference(db, '1 Nephi 3:7');
+		const q = captured.join();
+		expect(q).toContain('lumen.chapters');
+		expect(q).toContain('lumen.books');
+		expect(q).toContain('book_id');
+		expect(q).toContain('chapter_number');
+		expect(q).toContain('volume_id');
+	});
+
+	it('getBook and getVolume read their spine tables directly (CAPI-3)', async () => {
+		const { db, captured } = capturingDb([]);
+		await getBook(db, '1-ne');
+		expect(captured.join()).toContain('lumen.books');
+		const { db: db2, captured: captured2 } = capturingDb([]);
+		await getVolume(db2, 'bom');
+		expect(captured2.join()).toContain('lumen.volumes');
+		expect(captured2.join()).not.toContain('lumen.entities');
+	});
+
+	it('resolveReference unknown-level falls back byId then byRef, then reports not-found (CAPI-2)', async () => {
+		const verseRow = {
+			id: '1-ne-3-7', volume_id: 'bom', book_id: '1-ne', chapter_number: 3,
+			verse_number: 7, text: 'And it came to pass…', reference: '1 Nephi 3:7',
+		};
+		// second call (byRef) hits
+		const captured: string[] = [];
+		const db = {
+			execute: vi.fn(async (q: unknown) => {
+				captured.push(JSON.stringify(q));
+				return captured.length === 1 ? [] : [verseRow];
+			}),
+		} as any;
+		const hit = await resolveReference(db, 'not-an-id 3:7');
+		expect(hit.level).toBe('verse');
+		expect(db.execute).toHaveBeenCalledTimes(2);
+
+		const { db: dbMiss } = capturingDb([]);
+		const miss = await resolveReference(dbMiss, 'gibberish');
+		expect(miss).toMatchObject({ level: 'unknown', found: false });
 	});
 
 	it('getPassage orders through chapters.number, not chapter arithmetic (COR-1/PERF-7)', async () => {

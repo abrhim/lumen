@@ -10,6 +10,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { assertSessionMode } from './migrate-canon-spine.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // ~75 verses/batch ≈ ~2,000 word rows/batch (PERF-5/MIG-7)
@@ -47,11 +48,18 @@ async function main() {
   if (/:6543\b/.test(url)) throw new Error('session-mode connection required (port 5432)');
 
   const require = createRequire(import.meta.url);
-  const postgres = require(join(ROOT, 'apps/web/node_modules/postgres'));
+  const postgres = require('postgres');
   const sql = postgres(url, { prepare: false, max: 1 });
 
   let exitCode = 0;
   try {
+    await assertSessionMode(sql);
+
+    if (onlyBook) {
+      // unknown --book must fail loudly, not converge on a 0-verse success (CMIG-4)
+      const known = await sql`SELECT 1 FROM lumen.books WHERE id = ${onlyBook}`;
+      if (known.length === 0) throw new Error(`--book "${onlyBook}" not found in lumen.books`);
+    }
     const books = onlyBook
       ? [{ id: onlyBook }]
       : await sql`SELECT id FROM lumen.books ORDER BY sort_order`;
@@ -103,7 +111,12 @@ async function main() {
           bookTokens += rows.length;
         } catch (err) {
           batchesFailed++;
-          log('words_batch_failed', { book: book.id, message: scrub(err.message) });
+          log('words_batch_failed', {
+            book: book.id,
+            verseRange: [batch[0].id, batch[batch.length - 1].id],
+            verses: batch.length,
+            message: scrub(err.message),
+          });
         }
       }
 
@@ -120,6 +133,17 @@ async function main() {
     }
 
     if (batchesFailed > 0) exitCode = 2;
+
+    // search index is built AFTER the bulk load, not live-maintained across it
+    // (CPERF-7); only after a clean, full-corpus run
+    if (!dryRun && !onlyBook && batchesFailed === 0) {
+      const it = Date.now();
+      await sql`CREATE INDEX IF NOT EXISTS idx_words_normalized ON lumen.words (normalized)`;
+      log('words_index_built', { index: 'idx_words_normalized', elapsedMs: Date.now() - it });
+    } else if (!dryRun) {
+      log('words_index_skipped', { reason: onlyBook ? 'partial --book run' : 'batch failures' });
+    }
+
     log('words_ingest_done', {
       dryRun, books: books.length, verses: totalVerses, tokens: totalTokens,
       zeroTokenVerses: { count: zeroTokenVerses.length, sample: zeroTokenVerses.slice(0, 10) },

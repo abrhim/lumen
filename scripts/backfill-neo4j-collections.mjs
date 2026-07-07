@@ -156,7 +156,7 @@ async function main() {
   const verifyOnly = process.argv.includes('--verify');
   const cfg = loadConfig();
   const require = createRequire(import.meta.url);
-  const postgres = require(join(ROOT, 'apps/web/node_modules/postgres'));
+  const postgres = require('postgres');
   const sql = postgres(cfg.pgUrl, { prepare: false });
   const startedAt = new Date().toISOString();
   log('backfill_start', { startedAt, dryRun, verifyOnly });

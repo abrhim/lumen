@@ -17,7 +17,7 @@ const EXPORT_DIR = process.argv[2] ?? join(process.env.HOME ?? '', 'Downloads/ar
 const { parseReference } = await import(join(ROOT, 'packages/scripture/src/slug-map.ts'));
 
 const require = createRequire(import.meta.url);
-const postgres = require(join(ROOT, 'apps/web/node_modules/postgres'));
+const postgres = require('postgres');
 const pgUrl = readFileSync(join(ROOT, 'apps/web/.env'), 'utf8').match(/HYPERDRIVE=(.+)/)?.[1]?.trim();
 if (!pgUrl) throw new Error('missing PG connection (apps/web/.env)');
 const sql = postgres(pgUrl, { prepare: false });

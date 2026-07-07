@@ -116,6 +116,17 @@ describe("scripture loader — happy paths", () => {
 		expect(data.maxChapter).toBe(3);
 	});
 
+	it("keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)", async () => {
+		const args = makeArgs("1-ne", "3");
+		await loader(args);
+		expect(getVersesByChapter).toHaveBeenCalledTimes(1);
+		expect(getChapterSummary).toHaveBeenCalledTimes(1);
+		expect(getChapterNumbers).toHaveBeenCalledTimes(1);
+		// art is the only direct db.execute on a plain chapter view (no ?graph)
+		expect(args.context.db.execute).toHaveBeenCalledTimes(1);
+		expect(getVerseConnections).not.toHaveBeenCalled();
+	});
+
 	it("includes reference on every verse in the loader data", async () => {
 		const data = await loader(makeArgs("1-ne", "3"));
 		expect(data.verses[0].reference).toBe("1 Nephi 3:1");
