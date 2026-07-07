@@ -126,10 +126,109 @@ panel group/sort pure helpers; loader collection-selection + cache-key tests.
 node:test: ingest exported pure fns (row planner, invariant predicates).
 Live smoke post-ingest. Initial harness must FAIL (nothing implemented).
 
+## Plan amendments (post-panel synthesis)
+
+1. **Ingest atomicity (DATA-1/SEC-2/COR-2):** the entire delete+insert runs in
+   ONE transaction (canon-spine P1 precedent; ~600k rows is fine). No
+   half-populated window, no resume marker needed.
+2. **Dedup + self-ref filter (DATA-2/DATA-4):** aggregate duplicate
+   (from,to) pairs (keep max votes) and drop from_id=to_id rows pre-insert;
+   both counted in named in-tx checks.
+3. **Collection row upsert (DATA-5):** `ON CONFLICT (id) DO UPDATE` — plain
+   INSERT would throw on re-run (collections.id is a real PK).
+4. **Post-ingest gate (DATA-3):** re-run `smoke-canon-spine.mjs` after ingest;
+   its exhaustive edge-endpoint anti-join must stay green.
+5. **Versification drift (COR-1, Critical):** explicit exceptions map for
+   known KJV-vs-modern drift refs (3John.1.15→3john-1-14, Rev.12.18→rev-13-1);
+   any other target verse id that doesn't exist counts toward the unmapped cap
+   (never clamped, never guessed). Smoke adds a Psalm-title spot check
+   (a title-sensitive psalm's top ref must land on the expected KJV text).
+6. **Cross-book ranges (COR-4, verified 18 rows):** `expandOsisRange` takes an
+   ordered chapter sequence (derived from spine books.sort_order + chapters)
+   and rolls over book boundaries; unit test uses the live `Lev.27.34-Num.1.1`
+   example.
+7. **Unmapped cap semantics (COR-5/OBS-3, FM-11):** evaluated once over the
+   whole run; denominator = source TSV rows (344,799); named check
+   `openbible_unmapped_threshold` at 0.5%; exit code 1 on breach;
+   boundary-value unit test.
+8. **Critical-path degrade (COR-6/OBS-1/PERF-1):** `getCrossReferences` call
+   is wrapped never-throw (empty-with-degraded-flag + `crossref_degraded` log,
+   mirroring `loadConnections`); it joins the EXISTING loader Promise.all so
+   added wall-clock ≈ 0 (parallel with verses/summary/art); chapter text is
+   never gated beyond that existing barrier.
+9. **Ingest observability (OBS-2/OBS-5, PERF-3):** `openbible_unmapped_refs
+   {count, ratio, sample}` event; run summary logs deleted/inserted totals +
+   elapsedMs; batch size documented (5,000 rows/batch ≈ 120 batches, est.
+   2–4 min); smoke adds a re-run count-stability bullet.
+10. **Panel UI (UX-1..6, A11Y-1/2/4/5, SEC-4 substance):** principles/people
+    keep reserved-height skeleton slots inside their own `aria-busy` region
+    (no layout shift, no masked-ready content); section headers disclose
+    truncation "20 of N" via `COUNT(*) OVER()`; range cards link to
+    range_start and title the full range ("Ps 148:4–5") — also the accessible
+    name; chip wording is **"Curated"** (not "legacy"), real text ≥12px,
+    contrast-checked on all four themes; empty states differ (Bible: "No
+    cross-references found" / BoM-D&C: "Not yet curated for this volume");
+    CC-BY credit sits under the References header with a license link and
+    "adapted (ranges expanded)" note; vote counts are sort-only, never
+    rendered as bare numbers.
+11. **Contract specification (API-1/API-2/API-3):** plan claim corrected —
+    `getVerseConnections`'s only caller is the web loader (MCP uses the
+    separate `findCrossReferences`), so its result type DROPS
+    `cross_references` and the loader updates. Exact shapes:
+    `getCrossReferences(db, verseId, { collectionId, limitPerDirection = 20 })`
+    → `{ refs: CrossRefRow[], totals: { outgoing: number, incoming: number } }`
+    where `CrossRefRow = { verse_id, reference, text, direction:
+    'outgoing'|'incoming', votes: number, range_start: string|null,
+    range_end: string|null }`; `groupCrossRefs(refs)` → `CrossRefCard[] =
+    { verse_id, label, text, direction, votes, range_end: string|null }`.
+12. **Source vendoring (SEC-1, high/security carve-out):** the already-
+    downloaded TSV is vendored at `data/openbible/cross_references.txt`
+    (8.3 MB) with its CC-BY header intact + a README noting source, date,
+    license; ingest reads the file, never the network. (Panel-2 tagged the
+    pinning-infra version risky; vendoring is the zero-upkeep form.)
+13. **scrub() + parameterized inserts (SEC-3/SEC-5):** explicit requirements:
+    scrub() on every logged error; `jsonb_to_recordset(${tx.json(batch)})`
+    batch inserts only.
+14. **Index posture (DATA-7, PERF-4 refuted):** no new indexes planned
+    (fan-out ≈ tens/verse); one `EXPLAIN` sanity check post-ingest recorded in
+    smoke output. UNION ALL single-round-trip is the implementation choice,
+    pinned by the SQL-shape test (PERF-2's mandate rejected as risky —
+    redundant with the harness).
+
+## Decisions
+
+| Finding(s) | Resolution |
+|---|---|
+| DATA-1, DATA-2, DATA-3, DATA-4, DATA-5, DATA-7 | incorporated (amendments 1–4, 14) |
+| COR-1, COR-2, COR-4, COR-5, COR-6 | incorporated (amendments 1, 5–8) |
+| SEC-2, SEC-3, SEC-5 | incorporated (amendments 1, 13) |
+| SEC-1 | incorporated via zero-upkeep vendoring (amendment 12) — panel-2 downgrade to risky logged; high/security carve-out applies |
+| OBS-1, OBS-2, OBS-3, OBS-5, OBS-7 | incorporated (amendments 7–10) |
+| PERF-1, PERF-3 | incorporated (amendments 8–9) |
+| UX-1, UX-2, UX-3, UX-4, UX-5, UX-6 | incorporated (amendment 10; Q6 default becomes "Curated") |
+| API-1, API-2 | incorporated (amendment 11) |
+| A11Y-1, A11Y-2, A11Y-4, A11Y-5 | incorporated (amendment 10) |
+| COR-3 | rejected-with-rationale: panel-2 empirically refuted the canonical-order mechanism (from/to ≈ 53/47 random); direction labels stay, legacy-convention check folded into implementation notes |
+| DATA-6 | rejected-with-rationale: typed votes column is schema DDL the contract forbids; strict ingest validation (votes must parse as int) suffices at LIMIT-20 scale |
+| API-4 | rejected-with-rationale: the plan deliberately routed the card contract to panel review; amendment 11 now specifies it — no further action |
+| PERF-2, PERF-5 | rejected-with-rationale: UNION ALL already the implementation choice pinned by harness; separate KV cache flow costs more than the ~10–50ms PG hit it saves at 0 users |
+| A11Y-3 | rejected-with-rationale per tag (risky); substance delivered anyway by amendment 10's range-title spec |
+| API-3, API-6, API-7, PERF-4, PERF-6, UX-7, OBS-4, OBS-6, OBS-8, A11Y-6 | dropped-as-noise (aggregated for retro) |
+| SEC-4 | deferred-out-of-scope as a security finding; its substance (license link + modification note) ships via amendment 10 |
+| API-5 | deferred-out-of-scope: volume→collection pure fn belongs to the future MCP-adoption feature |
+
+Panel-2 dissent: (33 material + 7 risky) / 52 = **0.769**.
+
 ## Open questions (for human gate)
 - Q1 source: **RESOLVED pre-plan** — OpenBible CC-BY (Abram approved after TSKe license finding).
 - Q2 BoM/D&C: **RESOLVED pre-plan** — hybrid; legacy curated refs render only for volumes OpenBible doesn't cover, labeled.
 - Q3 range storage: expand to per-verse edges (correct cited-by, ~600k rows) vs store-start-only (~345k rows, cited-by misses mid-range). **Default: expand.**
 - Q4 negative-vote refs (1,239): ingest and rank last vs drop at ingest. **Default: ingest, rank last.**
-- Q5 per-direction limit in the panel. **Default: 20, "show all" affordance deferred.**
-- Q6 legacy label wording for BoM/D&C refs. **Default: "curated (legacy)" chip.**
+- Q5 per-direction limit in the panel. **Default: 20, with "20 of N" disclosure (UX-2/A11Y-1); "show all" affordance deferred.**
+- Q6 chip wording for BoM/D&C fallback refs. **Default: "Curated" (panel consensus: "legacy" reads as broken to lay readers).**
+- Q7 vendor the 8.3 MB CC-BY TSV in the repo (`data/openbible/`). **Default: yes (SEC-1; zero-upkeep, reproducible ingest).**
+- Q8 versification exceptions map (3John.1.15→3john-1-14, Rev.12.18→rev-13-1; others hit the unmapped cap). **Default: yes.**
+
+## Drift baseline (filled at end of step 6)
+- plan-hash: dfeb3216f7309654 (sha256/16 at synthesis)
+- harness-hash: 9aca5ea38f5763d1 (osis-map.test.ts + crossref.test.ts + openbible.test.mjs + scripture.loader.test.ts)
