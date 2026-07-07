@@ -79,3 +79,9 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - **REVERSAL of prior learning**: the "skip code-stage when plan-stage is comprehensive" hypothesis was wrong. After user pushback I ran code-stage retroactively and found 12 real bugs the harness couldn't catch. Two were stdio framing-corruption bugs only visible in code; uniquely findable by code-panel.
 - Code-panel false positive: 4 of 6 specialists agreed `[ --]` regex was broken because they read rendered text rather than bytes; `od -c` proved the regex correct. Code-stage prompts must require byte-level verification for regex/encoding claims.
 
+
+## 2026-07-07 · feature: canon-spine · tier: large
+- canon-spine: live-data conventions (id prefixes, legacy tables) diverge from design assumptions; one prod SELECT during planning prevents in-tx aborts.
+- canon-spine: DDL/gate logic kept inline is untestable — exported SPINE_DDL + p4Preflight let repro tests catch 2 Criticals.
+- canon-spine: background panel agents stalled/died 4×; inline review of the same scope took 15 min. Critical-path roles should run synchronously.
+- canon-spine: adversarial refuted 5 findings WITH repo evidence and rejected a heavy fix as risky — dissent working as designed, both directions.
