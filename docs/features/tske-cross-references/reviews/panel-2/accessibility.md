@@ -1,0 +1,10 @@
+| ID | Tag | Rationale (≤ 25 words) |
+|---|---|---|
+| A11Y-1 | material | Verified: no total-count field anywhere; existing `{title} · {refs.length}` would render misleadingly with a silent 20-cap. Cheap, proportionate fix. |
+| A11Y-2 | material | Verified: today one `VersePanelData` promise + one `aria-busy` skeleton wraps cross-refs+principles+people; plan's timing split (sync refs, streamed entities) breaks that without new loading semantics. |
+| A11Y-3 | risky | Real gap in Failure-mode #5's assertion, but Scope §4's own example ("Ps 148:4–5") already implies range_start–end; overstates ambiguity. Fix is trivial to include anyway. |
+| A11Y-4 | material | Verified: `sourceLabel` precedent is literally `text-[9px] ... text-faint` (scripture.tsx:984); an unspecified new legacy chip is likely to inherit it. Fix is proportionate. |
+| A11Y-5 | material | Verified: plan says "vote-sorted"/"vote-ranked" but never states whether counts render; a shipped bare-number badge would be undecided SR noise. Cheap decision + label fix. |
+| A11Y-6 | noise | Verified titles differ ("Cites"/"Cited by" vs "References"/"Referenced by") but that reads as a deliberate rename with the data-source swap, not a structural a11y hazard; h3+ul reuse is already implied by "panel + loader" edit scope, not rewrite. |
+
+Overall: five of six findings hold up against the live markup — `ConnectionsSkeleton`'s single `aria-busy` region, `CrossRefGroup`'s h3+ul structure, and the 9px `text-faint` `sourceLabel` precedent are all real and directly relevant to how the new cross-ref UI will be built. A11Y-3 is downgraded to risky because the plan's own "Ps 148:4–5" example already answers most of the ambiguity it flags, even though the failure-mode test doesn't lock it in. A11Y-6 is downgraded to noise since a "Cites"→"References" rename is plausibly intentional (data source is changing) and carries no accessibility risk on its own — the h3+ul structural reuse it worries about isn't actually threatened anywhere in the plan.

@@ -9,6 +9,9 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		getChapterSummary: vi.fn(),
 		getVerseConnections: vi.fn(),
 		getChapterNumbers: vi.fn(),
+		// shape MUST match the real contract — an [] here once made every
+		// crossRefs path throw-and-degrade while 19/19 tests stayed green (CAPI-1)
+		getCrossReferences: vi.fn(async () => ({ refs: [], totals: { outgoing: 0, incoming: 0 } })),
 	};
 });
 
@@ -25,11 +28,9 @@ const mockVerses = [
 	{ id: "1-ne-3-7", verse_number: 7, text: "I will go and do...", reference: "1 Nephi 3:7" },
 ];
 
+// getVerseConnections slimmed to entities only — cross-refs moved to Postgres (API-2)
 const mockConnections = {
 	verse_id: "1-ne-3-7",
-	cross_references: [
-		{ verse_id: "john-3-16", reference: "John 3:16", text: "For God so loved...", relationship: "CROSS_REF", direction: "outgoing", source: "curated" },
-	],
 	principles: [{ id: "obedience", name: "Obedience" }],
 	people: [{ id: "nephi-1", name: "Nephi" }],
 };
@@ -88,7 +89,6 @@ describe("scripture loader — happy paths", () => {
 		const panel = await data.connections!;
 		expect(panel.degraded).toBe(false);
 		if (!panel.degraded) {
-			expect(panel.crossRefs).toHaveLength(1);
 			expect(panel.principles[0].name).toBe("Obedience");
 			expect(panel.people[0].name).toBe("Nephi");
 		}
@@ -101,19 +101,75 @@ describe("scripture loader — happy paths", () => {
 		const panel = await data.connections!;
 		expect(getVerseConnections).not.toHaveBeenCalled();
 		expect(panel.degraded).toBe(false);
-		if (!panel.degraded) expect(panel.crossRefs[0].verse_id).toBe("john-3-16");
+		if (!panel.degraded) expect(panel.principles[0].id).toBe("obedience");
 	});
 
-	it("uses a versioned cache key built from the canonical verse id", async () => {
+	it("uses the v2 versioned cache key (payload shape changed with the crossref move, FM-9)", async () => {
 		const kv = kvNoop();
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		await data.connections;
-		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v1:1-ne-3-7$/));
+		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v2:1-ne-3-7$/));
 	});
 
 	it("exposes real chapter bounds so the last chapter has no next link (FM-10)", async () => {
 		const data = await loader(makeArgs("1-ne", "3"));
 		expect(data.maxChapter).toBe(3);
+	});
+
+	it("fetches cross-refs from Postgres in the CRITICAL PATH for the selected verse — openbible+cross-canon for Bible, legacy for BoM (FM-7/FM-8)", async () => {
+		const { getCrossReferences } = await import("@lumen/scripture");
+		const args = makeArgs("john", "3", "?verse=16");
+		vi.mocked(getVersesByChapter).mockResolvedValue([
+			{ id: "john-3-16", verse_number: 16, text: "For God so loved…", reference: "John 3:16" },
+		] as any);
+		await loader(args);
+		// Bible verses query BOTH collections (cross-canon merge, Abram's call)
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledWith(
+			expect.anything(), "john-3-16", expect.objectContaining({ collectionId: "openbible" }),
+		);
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledWith(
+			expect.anything(), "john-3-16", expect.objectContaining({ collectionId: "phase-b" }),
+		);
+
+		vi.mocked(getCrossReferences as any).mockClear();
+		const bomArgs = makeArgs("1-ne", "3", "?verse=7");
+		await loader(bomArgs);
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledWith(
+			expect.anything(), "1-ne-3-7", expect.not.objectContaining({ collectionId: "openbible" }),
+		);
+	});
+
+	it("delivers non-degraded cards for a Bible verse, keeping only CROSS-CANON legacy refs (CAPI-1 repro + merge)", async () => {
+		const { getCrossReferences } = await import("@lumen/scripture");
+		const row = (o: Record<string, unknown>) => ({
+			verse_id: "heb-11-3", reference: "Hebrews 11:3", text: "Through faith…",
+			direction: "outgoing", votes: 271, range_start: null, range_end: null, source: "openbible", ...o,
+		});
+		vi.mocked(getCrossReferences as any).mockImplementation(async (_db: unknown, _v: string, opts: { collectionId: string }) =>
+			opts.collectionId === "openbible"
+				? { refs: [row({})], totals: { outgoing: 1, incoming: 0 } }
+				: {
+						refs: [
+							// cross-canon: kept
+							row({ verse_id: "ether-12-27", reference: "Ether 12:27", votes: null, source: "anthropic-batch" }),
+							// Bible↔Bible legacy: dropped (OpenBible replaces these)
+							row({ verse_id: "rom-8-28", reference: "Romans 8:28", votes: null, source: "anthropic-batch" }),
+						],
+						totals: { outgoing: 2, incoming: 0 },
+					},
+		);
+		vi.mocked(getVersesByChapter).mockResolvedValue([
+			{ id: "john-3-16", verse_number: 16, text: "For God so loved…", reference: "John 3:16" },
+		] as any);
+		const data = await loader(makeArgs("john", "3", "?verse=16"));
+		expect(data.crossRefs).not.toBeNull();
+		expect(data.crossRefs!.degraded).toBe(false);
+		const ids = data.crossRefs!.cards.map((c: { verse_id: string }) => c.verse_id);
+		expect(ids).toContain("heb-11-3");
+		expect(ids).toContain("ether-12-27");
+		expect(ids).not.toContain("rom-8-28");
+		expect(data.crossRefs!.totals.outgoing).toBe(2); // 1 openbible + 1 cross-canon
 	});
 
 	it("keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)", async () => {
@@ -201,6 +257,6 @@ describe("scripture loader — failure modes", () => {
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		const panel = await data.connections!;
 		expect(panel.degraded).toBe(false);
-		if (!panel.degraded) expect(panel.crossRefs).toHaveLength(1);
+		if (!panel.degraded) expect(panel.principles).toHaveLength(1);
 	});
 });

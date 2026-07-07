@@ -85,3 +85,9 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - canon-spine: DDL/gate logic kept inline is untestable — exported SPINE_DDL + p4Preflight let repro tests catch 2 Criticals.
 - canon-spine: background panel agents stalled/died 4×; inline review of the same scope took 15 min. Critical-path roles should run synchronously.
 - canon-spine: adversarial refuted 5 findings WITH repo evidence and rejected a heavy fix as risky — dissent working as designed, both directions.
+
+## 2026-07-07 · feature: tske-cross-references · tier: large
+- tske: never-throw degrade wrappers invert test semantics — a wrong-shaped mock passed 19/19 while every path silently degraded. Happy-path assertions are mandatory.
+- tske: replacement features need a removed-behavior audit AT PLANNING (old path's filters/fields/labels vs new design) — the two product regressions were knowable from deleted code.
+- tske: independent convergence ≈ certainty — the Critical was found by 4 reviewers with 2 repros; the tautology check by 5.
+- tske: verify licenses before planning around a dataset — "TSKe is CC-BY" survived a whole session as false memory; one search flipped the source choice.

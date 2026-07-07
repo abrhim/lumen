@@ -19,7 +19,10 @@ import {
 	getChapterArt,
 	getChapterNumbers,
 	chapterUnit,
-	type CrossReference,
+	getCrossReferences,
+	groupCrossRefs,
+	BIBLE_BOOK_IDS,
+	type CrossRefCard,
 	type NeighborhoodResult,
 	type VerseConnectionsResult,
 	type VerseEntityRef,
@@ -97,15 +100,81 @@ function toArtItem(row: ArtworkRow): ArtItem {
 	};
 }
 
-/** Resolved shape of the streamed panel promise — degradation is a value, not a rejection. */
+/** Resolved shape of the streamed panel promise — degradation is a value, not a rejection.
+ * Cross-references left this payload for the critical path (Postgres) with the
+ * OpenBible swap; only the Neo4j-backed entity chips still stream. */
 type VersePanelData =
 	| {
 			degraded: false;
-			crossRefs: CrossReference[];
 			principles: VerseEntityRef[];
 			people: VerseEntityRef[];
 	  }
 	| { degraded: true };
+
+/** Critical-path cross-references (OpenBible for Bible verses, curated
+ * fallback for BoM/D&C/PGP). Degradation is a value — never throws (COR-6). */
+interface CrossRefsPanel {
+	degraded: boolean;
+	cards: CrossRefCard[];
+	totals: { outgoing: number; incoming: number };
+	/** true when served from the curated fallback collection (chip + copy differ) */
+	curated: boolean;
+}
+
+const LEGACY_CROSSREF_COLLECTION = "phase-b";
+
+/** book id of a verse id: "ether-12-27" → "ether" */
+const bookOfVerseId = (verseId: string) => verseId.replace(/-\d+-\d+$/, "");
+
+async function loadCrossRefs(
+	db: Route.LoaderArgs["context"]["db"],
+	bookId: string,
+	chapter: number,
+	verse: number,
+): Promise<CrossRefsPanel> {
+	const verseId = buildVerseId(bookId, chapter, verse);
+	const curated = !BIBLE_BOOK_IDS.has(bookId);
+	const startedAt = Date.now();
+	try {
+		if (curated) {
+			// BoM/D&C/PGP: the curated collection is the only verse↔verse source
+			const { refs, totals } = await getCrossReferences(db, verseId, {
+				collectionId: LEGACY_CROSSREF_COLLECTION,
+			});
+			return { degraded: false, cards: groupCrossRefs(refs), totals, curated };
+		}
+
+		// Bible verses: OpenBible plus curated CROSS-CANON links (Abram's call —
+		// the old Neo4j panel had no collection filter, so Bible↔BoM bridges like
+		// 1 Cor 1:27 → Ether 12:27 were visible; keep them, drop the curated
+		// set's noisy Bible↔Bible refs that OpenBible replaces).
+		const [openbible, legacy] = await Promise.all([
+			getCrossReferences(db, verseId, { collectionId: "openbible" }),
+			getCrossReferences(db, verseId, { collectionId: LEGACY_CROSSREF_COLLECTION }),
+		]);
+		const crossCanon = legacy.refs.filter((r) => !BIBLE_BOOK_IDS.has(bookOfVerseId(r.verse_id)));
+		const cards = groupCrossRefs([...openbible.refs, ...crossCanon]);
+		const totals = {
+			outgoing: openbible.totals.outgoing + crossCanon.filter((r) => r.direction === "outgoing").length,
+			incoming: openbible.totals.incoming + crossCanon.filter((r) => r.direction === "incoming").length,
+		};
+		if (cards.length === 0) {
+			// a Bible verse with zero refs is rare — distinguishable from a bug (OBS-7)
+			logEvent("crossref_empty", { verse: verseId });
+		}
+		return { degraded: false, cards, totals, curated };
+	} catch (error) {
+		logEvent("crossref_degraded", {
+			name: error instanceof Error ? error.name : "unknown",
+			message: error instanceof Error ? error.message : String(error),
+			book: bookId,
+			chapter,
+			verse,
+			elapsedMs: Date.now() - startedAt,
+		});
+		return { degraded: true, cards: [], totals: { outgoing: 0, incoming: 0 }, curated };
+	}
+}
 
 /** One owner for the ?verse grammar — the loader and the optimistic client parse share it. */
 function parseVerseParam(search: string): number | null {
@@ -224,15 +293,16 @@ async function loadConnections(
 ): Promise<VersePanelData> {
 	const verseId = buildVerseId(bookId, chapter, verse);
 	try {
+		// v2: payload shape changed when cross-references moved to Postgres.
+		// Orphaned v1 entries self-evict via the TTL — no purge step (API-6).
 		const result = await cachedJson<VerseConnectionsResult>(
 			context.cache,
-			`vconn:v1:${verseId}`,
+			`vconn:v2:${verseId}`,
 			CONNECTIONS_TTL_SECONDS,
 			() => getVerseConnections(context.neo4j, verseId),
 		);
 		return {
 			degraded: false,
-			crossRefs: result.cross_references,
 			principles: result.principles,
 			people: result.people,
 		};
@@ -296,7 +366,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows, chapterRows] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		graphIdValid
@@ -311,6 +381,12 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		(getChapterNumbers(context.db, bookId) as Promise<{ chapter_number: number }[]>).catch(
 			() => [] as { chapter_number: number }[],
 		),
+		// cross-references share the same parallel window (PERF-1: added
+		// wall-clock ≈ 0) and MUST stay in the critical path — the PG
+		// connection is gone once the handler returns (COR-2). Never throws.
+		requestedVerse !== null
+			? loadCrossRefs(context.db, bookId, chapter, requestedVerse)
+			: Promise.resolve(null),
 	]);
 
 	if (verses.length === 0) {
@@ -324,6 +400,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			? requestedVerse
 			: null;
 	const connections = selectedVerse !== null ? pendingConnections : null;
+	const crossRefs = selectedVerse !== null ? crossRefsRaw : null;
 
 	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
 	const graph: Promise<GraphPanelData> | null =
@@ -354,6 +431,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		})),
 		selectedVerse,
 		connections,
+		crossRefs,
 		graphId,
 		graphDepth,
 		graph,
@@ -367,7 +445,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, crossRefs, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
 	const unit = chapterUnit(bookId);
 	const navigation = useNavigation();
@@ -505,6 +583,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			verseText={verse.text}
 			isPending={isPending}
 			connections={connections}
+			crossRefs={crossRefs}
 			art={verseArt}
 			onCrossRefNavigate={onCrossRefNavigate}
 			onOpenGraph={openGraph}
@@ -763,6 +842,7 @@ function PanelBody({
 	verseText,
 	isPending,
 	connections,
+	crossRefs,
 	art,
 	onCrossRefNavigate,
 	onOpenGraph,
@@ -770,6 +850,7 @@ function PanelBody({
 	verseText: string;
 	isPending: boolean;
 	connections: Promise<VersePanelData> | null;
+	crossRefs: CrossRefsPanel | null;
 	art: ArtItem[];
 	onCrossRefNavigate: (verse: number) => void;
 	onOpenGraph: (entityId: string) => void;
@@ -795,18 +876,24 @@ function PanelBody({
 					</ul>
 				</div>
 			)}
-			{isPending || connections === null ? (
-				<ConnectionsSkeleton />
+			{/* Cross-references resolve in the loader's critical path, so they render
+			    synchronously ABOVE the streamed chips — late-arriving chips append
+			    below and can never shift these cards (UX-1). */}
+			{isPending || crossRefs === null ? (
+				<CrossRefsSkeleton />
 			) : (
-				<Suspense fallback={<ConnectionsSkeleton />}>
+				<CrossRefsSection panel={crossRefs} onNavigate={onCrossRefNavigate} />
+			)}
+			{isPending || connections === null ? (
+				<EntityChipsSkeleton />
+			) : (
+				<Suspense fallback={<EntityChipsSkeleton />}>
 					{/* errorElement: the server maps failures to {degraded:true}, but the
 					    stream itself can still reject client-side — turbo-stream aborts
 					    (server streamTimeout) and navigations cancelling in-flight deferred
 					    data. Without it those rejections would take down the whole page. */}
 					<Await resolve={connections} errorElement={<DegradedNotice />}>
-						{(panel) => (
-							<Connections panel={panel} onCrossRefNavigate={onCrossRefNavigate} onOpenGraph={onOpenGraph} />
-						)}
+						{(panel) => <Connections panel={panel} onOpenGraph={onOpenGraph} />}
 					</Await>
 				</Suspense>
 			)}
@@ -823,10 +910,41 @@ function DegradedNotice() {
 	);
 }
 
-function ConnectionsSkeleton() {
+/** Skeleton for the synchronous cross-ref block (only shown while a same-chapter
+ * verse navigation is pending — the data itself arrives with the loader).
+ * Shaped like the median real output — two titled groups of cards — so the
+ * pending→resolved swap moves layout as little as possible (CUX-2). */
+function CrossRefsSkeleton() {
 	return (
 		<div aria-busy="true">
-			<span className="sr-only">Loading connections…</span>
+			<span className="sr-only">Loading cross-references…</span>
+			<div className="mt-5 space-y-5" aria-hidden="true">
+				<div>
+					<Skeleton className="h-3 w-28" />
+					<div className="mt-2 space-y-2">
+						<Skeleton className="h-20 w-full rounded-lg" />
+						<Skeleton className="h-20 w-full rounded-lg" />
+						<Skeleton className="h-20 w-full rounded-lg" />
+					</div>
+				</div>
+				<div>
+					<Skeleton className="h-3 w-24" />
+					<div className="mt-2 space-y-2">
+						<Skeleton className="h-20 w-full rounded-lg" />
+						<Skeleton className="h-20 w-full rounded-lg" />
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+/** aria-busy scopes to ONLY the still-streaming entity block (A11Y-2) —
+ * the already-rendered cross-ref cards above are never inside a busy region. */
+function EntityChipsSkeleton() {
+	return (
+		<div aria-busy="true">
+			<span className="sr-only">Loading principles and people…</span>
 			<div className="mt-5 space-y-5" aria-hidden="true">
 				<div>
 					<Skeleton className="h-3 w-24" />
@@ -836,59 +954,107 @@ function ConnectionsSkeleton() {
 						<Skeleton className="h-7 w-20 rounded-md" />
 					</div>
 				</div>
-				<div>
-					<Skeleton className="h-3 w-16" />
-					<div className="mt-2 space-y-2">
-						<Skeleton className="h-20 w-full rounded-lg" />
-						<Skeleton className="h-20 w-full rounded-lg" />
-					</div>
-				</div>
-				<div>
-					<Skeleton className="h-3 w-20" />
-					<div className="mt-2 space-y-2">
-						<Skeleton className="h-20 w-full rounded-lg" />
-					</div>
-				</div>
 			</div>
+		</div>
+	);
+}
+
+function CrossRefsSection({
+	panel,
+	onNavigate,
+}: {
+	panel: CrossRefsPanel;
+	onNavigate: (verse: number) => void;
+}) {
+	if (panel.degraded) {
+		return (
+			<p className="mt-5 font-reading text-sm italic text-muted-foreground">
+				Cross-references couldn't be loaded right now. The chapter text is unaffected.
+			</p>
+		);
+	}
+	const references = panel.cards.filter((c) => c.direction === "outgoing");
+	const referencedBy = panel.cards.filter((c) => c.direction === "incoming");
+
+	if (references.length === 0 && referencedBy.length === 0) {
+		// differentiated empty states (UX-5): a Bible verse without OpenBible
+		// refs is rare; an uncurated BoM/D&C verse is expected
+		return (
+			<p className="mt-5 font-reading text-sm italic text-faint">
+				{panel.curated
+					? "Cross-references are not yet curated for this volume."
+					: "No cross-references found for this verse."}
+			</p>
+		);
+	}
+
+	const credit = !panel.curated && (
+		<p className="mt-1.5 font-ui text-[10px] text-faint">
+			Cross-references:{" "}
+			<a
+				href="https://www.openbible.info/labs/cross-references/"
+				target="_blank"
+				rel="noreferrer"
+				className="underline hover:text-ink"
+			>
+				openbible.info
+			</a>{" "}
+			(
+			<a
+				href="https://creativecommons.org/licenses/by/4.0/"
+				target="_blank"
+				rel="noreferrer"
+				className="underline hover:text-ink"
+			>
+				CC BY 4.0
+			</a>
+			, adapted — ranges expanded)
+		</p>
+	);
+
+	return (
+		<div>
+			<CrossRefCards
+				title="References"
+				accent="text-cites"
+				cards={references}
+				total={panel.totals.outgoing}
+				curated={panel.curated}
+				onNavigate={onNavigate}
+				credit={credit}
+			/>
+			<CrossRefCards
+				title="Referenced by"
+				accent="text-citedby"
+				cards={referencedBy}
+				total={panel.totals.incoming}
+				curated={panel.curated}
+				onNavigate={onNavigate}
+				credit={references.length === 0 ? credit : null}
+			/>
 		</div>
 	);
 }
 
 function Connections({
 	panel,
-	onCrossRefNavigate,
 	onOpenGraph,
 }: {
 	panel: VersePanelData;
-	onCrossRefNavigate: (verse: number) => void;
 	onOpenGraph: (entityId: string) => void;
 }) {
 	if (panel.degraded) return <DegradedNotice />;
-
-	const cites = panel.crossRefs.filter((x) => x.direction === "outgoing");
-	const citedBy = panel.crossRefs.filter((x) => x.direction === "incoming");
-	const isEmpty =
-		cites.length === 0 &&
-		citedBy.length === 0 &&
-		panel.principles.length === 0 &&
-		panel.people.length === 0;
+	if (panel.principles.length === 0 && panel.people.length === 0) return null;
 
 	return (
-		<div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out">
+		// the live region belongs HERE — this is the block that arrives late
+		// (streamed via Await); the cross-ref cards above render synchronously (CUX-1)
+		<div
+			aria-live="polite"
+			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
+		>
 			<EntityChips title="Principles" accent="text-selbar" edge="border-l-selbar" chips={panel.principles} onSelect={onOpenGraph} />
 			<EntityChips title="People" accent="text-people" edge="border-l-people" chips={panel.people} onSelect={onOpenGraph} />
-			<CrossRefGroup title="Cites" accent="text-cites" refs={cites} onNavigate={onCrossRefNavigate} />
-			<CrossRefGroup
-				title="Cited by"
-				accent="text-citedby"
-				refs={citedBy}
-				onNavigate={onCrossRefNavigate}
-			/>
-			{isEmpty && (
-				<p className="mt-5 font-reading text-sm italic text-faint">
-					No connections recorded for this verse.
-				</p>
-			)}
 		</div>
 	);
 }
@@ -930,21 +1096,6 @@ function EntityChips({
 	);
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-	"lds-doc-project": "LDS Documentation Project",
-	"1867-jst": "1867 JST",
-	"anthropic-batch": "AI-suggested",
-	strongs: "Strong's Concordance",
-	naves: "Nave's Topical Bible",
-};
-
-function sourceLabel(source: string | null | undefined): string {
-	if (!source) return "Unattributed";
-	return (
-		SOURCE_LABELS[source] ?? source.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-	);
-}
-
 /** "1-ne-3-7" → link target, via the package's own verse-id grammar (bad ids → null → unlinked card). */
 function verseIdToTarget(verseId: string): { href: string; verse: number } | null {
 	const parsed = parseReference(verseId);
@@ -955,35 +1106,70 @@ function verseIdToTarget(verseId: string): { href: string; verse: number } | nul
 	};
 }
 
-function CrossRefGroup({
+const CURATED_SOURCE_LABELS: Record<string, string> = {
+	"anthropic-batch": "AI-suggested",
+	curated: "Curated",
+	"lds-doc-project": "LDS Documentation Project",
+};
+
+function CrossRefCards({
 	title,
 	accent,
-	refs,
+	cards,
+	total,
+	curated,
 	onNavigate,
+	credit,
 }: {
 	title: string;
 	accent: string;
-	refs: CrossReference[];
+	cards: CrossRefCard[];
+	total: number;
+	curated: boolean;
 	onNavigate: (verse: number) => void;
+	credit?: React.ReactNode;
 }) {
-	if (refs.length === 0) return null;
+	if (cards.length === 0) return null;
+	// Truncation is disclosed, not silent (UX-2/A11Y-1) — but only when rows
+	// were actually cut by the limit: the SQL total counts pre-dedup rows, so
+	// "N of M" with untruncated cards would misread duplicates as hidden refs.
+	const truncated = cards.length >= 20 && total > cards.length;
+	const count = truncated ? `${cards.length} of ${total}` : `${cards.length}`;
 	return (
 		<div className="mt-5">
-			<h3 className={`font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
-				{title} · {refs.length}
+			<h3 className={`flex items-baseline gap-2 font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
+				<span>
+					{title} · {count}
+				</span>
+				{curated && (
+					// real visible text at 12px, not a decorative micro-label (A11Y-4);
+					// "Curated", never "legacy" (UX-4)
+					<span className="rounded border border-rule2 px-1.5 py-0.5 font-ui text-xs font-medium normal-case tracking-normal text-muted-foreground">
+						Curated
+					</span>
+				)}
 			</h3>
+			{/* CC-BY credit under the References header, per amendment 10 */}
+			{credit}
 			<ul className="mt-2 space-y-2">
-				{refs.map((x) => {
+				{cards.map((x) => {
 					const target = verseIdToTarget(x.verse_id);
+					// provenance stays visible on curated-source cards (the old
+					// panel distinguished AI-suggested from human-curated; keep that
+					// trust signal on the merged cross-canon cards too)
+					const showSource = x.source !== null && x.source !== "openbible";
 					const body = (
 						<>
-							<p className="font-ui text-xs font-semibold text-ink">{x.reference}</p>
+							{/* label carries the full range ("Psalm 148:4–5") — also the accessible name (A11Y-3) */}
+							<p className="font-ui text-xs font-semibold text-ink">{x.label}</p>
 							<p className="mt-1 line-clamp-3 font-reading text-[13px] leading-snug text-muted-foreground">
 								{x.text}
 							</p>
-							<p className="mt-1.5 font-ui text-[9px] font-bold uppercase tracking-wide text-faint">
-								{sourceLabel(x.source)}
-							</p>
+							{showSource && (
+								<p className="mt-1.5 font-ui text-[10px] font-semibold uppercase tracking-wide text-faint">
+									{CURATED_SOURCE_LABELS[x.source!] ?? x.source}
+								</p>
+							)}
 						</>
 					);
 					return (
