@@ -17,3 +17,4 @@ Exit status 1
 ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
  Test Files  1 failed | 8 passed (9)
       Tests  2 failed | 54 passed (56)
+EXIT=1 (initial harness run: @lumen/scripture 2 test files failed to resolve unimplemented modules; node:test openbible fail 1 [script absent]; loader tests 2 failed [getCrossReferences/vconn:v2 unimplemented])
