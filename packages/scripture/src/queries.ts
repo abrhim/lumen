@@ -1,35 +1,56 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from './types';
 
-const VERSE_COLUMNS = sql`id, volume_id, book_id, chapter_number, verse_number, text, reference`;
+/**
+ * Canon-spine query layer. Export enumeration (API-2/API-6):
+ *
+ *  REWRITTEN onto spine tables (signatures + row shapes stable for MCP):
+ *    getVerseById, getVerseByReference, getVersesByChapter, getChapterNumbers,
+ *    getPassage, searchScriptures, getBooksByVolume, getAllBooks,
+ *    getVolumeList, getChapterSummary
+ *  NEW (spine):
+ *    getBook, getVolume
+ *  UNCHANGED (knowledge layer — entities/collections):
+ *    getEntity, getChapterArt, getPublicCollectionIds
+ *
+ * Verse rows keep their historical field names (volume_id, book_id,
+ * chapter_number) via aliases so MCP JSON shapes are byte-stable through the
+ * transition-column drop (API-1/API-4).
+ */
+
+const VERSE_COLUMNS = sql`v.id, b.volume_id, c.book_id, c.number AS chapter_number, v.verse_number, v.text, v.reference`;
+const VERSE_SPINE = sql`FROM lumen.verses v
+  JOIN lumen.chapters c ON c.id = v.chapter_id
+  JOIN lumen.books b ON b.id = c.book_id`;
 
 export async function getVerseById(db: Db, id: string) {
   const rows = await db.execute(
-    sql`SELECT ${VERSE_COLUMNS} FROM lumen.verses WHERE id = ${id} LIMIT 1`,
+    sql`SELECT ${VERSE_COLUMNS} ${VERSE_SPINE} WHERE v.id = ${id} LIMIT 1`,
   );
   return rows[0] ?? null;
 }
 
 export async function getVerseByReference(db: Db, reference: string) {
   const rows = await db.execute(
-    sql`SELECT ${VERSE_COLUMNS} FROM lumen.verses WHERE reference = ${reference} LIMIT 1`,
+    sql`SELECT ${VERSE_COLUMNS} ${VERSE_SPINE} WHERE v.reference = ${reference} LIMIT 1`,
   );
   return rows[0] ?? null;
 }
 
 export async function getVersesByChapter(db: Db, bookId: string, chapter: number) {
+  // chapter id is the verse-id prefix by construction: '{book}-{n}'
   return db.execute(
-    sql`SELECT ${VERSE_COLUMNS} FROM lumen.verses
-        WHERE book_id = ${bookId} AND chapter_number = ${chapter}
-        ORDER BY verse_number`,
+    sql`SELECT ${VERSE_COLUMNS} ${VERSE_SPINE}
+        WHERE v.chapter_id = ${`${bookId}-${chapter}`}
+        ORDER BY v.verse_number`,
   );
 }
 
 export async function getChapterNumbers(db: Db, bookId: string) {
   return db.execute(
-    sql`SELECT DISTINCT chapter_number FROM lumen.verses
+    sql`SELECT number AS chapter_number FROM lumen.chapters
         WHERE book_id = ${bookId}
-        ORDER BY chapter_number`,
+        ORDER BY number`,
   );
 }
 
@@ -43,11 +64,11 @@ export async function getPassage(
   limit: number,
 ) {
   return db.execute(
-    sql`SELECT ${VERSE_COLUMNS} FROM lumen.verses
-        WHERE book_id = ${bookId}
-          AND (chapter_number * 1000 + verse_number) >= ${startChapter * 1000 + startVerse}
-          AND (chapter_number * 1000 + verse_number) <= ${endChapter * 1000 + endVerse}
-        ORDER BY chapter_number, verse_number
+    sql`SELECT ${VERSE_COLUMNS} ${VERSE_SPINE}
+        WHERE c.book_id = ${bookId}
+          AND (c.number, v.verse_number) >= (${startChapter}, ${startVerse})
+          AND (c.number, v.verse_number) <= (${endChapter}, ${endVerse})
+        ORDER BY c.number, v.verse_number
         LIMIT ${limit}`,
   );
 }
@@ -60,83 +81,69 @@ export async function searchScriptures(
 ) {
   if (volume) {
     return db.execute(
-      sql`SELECT ${VERSE_COLUMNS}, ts_rank(search_vector, plainto_tsquery('english', ${query})) AS rank
-          FROM lumen.verses
-          WHERE search_vector @@ plainto_tsquery('english', ${query})
-            AND volume_id = ${volume}
+      sql`SELECT ${VERSE_COLUMNS}, ts_rank(v.search_vector, plainto_tsquery('english', ${query})) AS rank
+          ${VERSE_SPINE}
+          WHERE v.search_vector @@ plainto_tsquery('english', ${query})
+            AND ${volume} = b.volume_id
           ORDER BY rank DESC
           LIMIT ${limit}`,
     );
   }
   return db.execute(
-    sql`SELECT ${VERSE_COLUMNS}, ts_rank(search_vector, plainto_tsquery('english', ${query})) AS rank
-        FROM lumen.verses
-        WHERE search_vector @@ plainto_tsquery('english', ${query})
+    sql`SELECT ${VERSE_COLUMNS}, ts_rank(v.search_vector, plainto_tsquery('english', ${query})) AS rank
+        ${VERSE_SPINE}
+        WHERE v.search_vector @@ plainto_tsquery('english', ${query})
         ORDER BY rank DESC
         LIMIT ${limit}`,
   );
 }
 
 export async function getBooksByVolume(db: Db, volumeId: string) {
-  const fromEntities = await db.execute(
-    sql`SELECT DISTINCT e.id, e.name, e.description, e.metadata FROM lumen.entities e
-        JOIN lumen.verses v ON v.book_id = e.id
-        WHERE e.entity_type = 'book'
-          AND v.volume_id = ${volumeId}
-        ORDER BY e.id`,
-  );
-  if ((fromEntities as any[]).length > 0) return fromEntities;
-
   return db.execute(
-    sql`SELECT DISTINCT v.book_id AS id,
-           COALESCE(e.name, v.book_id) AS name,
-           e.description,
-           e.metadata
-        FROM lumen.verses v
-        LEFT JOIN lumen.entities e ON e.id = v.book_id
-        WHERE v.volume_id = ${volumeId}
-        ORDER BY v.book_id`,
+    sql`SELECT id, name, abbrev, sort_order FROM lumen.books
+        WHERE volume_id = ${volumeId}
+        ORDER BY sort_order`,
   );
 }
 
 export async function getAllBooks(db: Db) {
-  // Single-book volumes (D&C) can't have a book entity — entities share one id
-  // namespace and the volume row already owns the id. A volume whose own id
-  // appears as a verses.book_id IS its own book; that test stays correct even
-  // if the volume later gains sibling book children (Official Declarations).
   return db.execute(
-    sql`SELECT id, name,
-           metadata->>'volume_id' AS volume_id,
-           (metadata->>'sort_order')::int AS sort_order,
-           (metadata->>'chapter_count')::int AS chapter_count
-        FROM lumen.entities
-        WHERE entity_type = 'book'
-        UNION ALL
-        SELECT v.id, v.name,
-           v.id AS volume_id,
-           0 AS sort_order,
-           NULL::int AS chapter_count
-        FROM lumen.entities v
-        WHERE v.entity_type = 'volume'
-          AND EXISTS (
-            SELECT 1 FROM lumen.verses vs WHERE vs.book_id = v.id
-          )
+    sql`SELECT id, name, abbrev, volume_id, sort_order FROM lumen.books
         ORDER BY sort_order`,
   );
 }
 
 export async function getVolumeList(db: Db) {
   return db.execute(
-    sql`SELECT id, name, description, metadata FROM lumen.entities
-        WHERE entity_type = 'volume'
-        ORDER BY id`,
+    sql`SELECT id, name, abbrev, tradition, sort_order FROM lumen.volumes
+        ORDER BY sort_order`,
   );
 }
 
-export async function getEntity(db: Db, id: string) {
+export async function getBook(db: Db, id: string) {
   const rows = await db.execute(
-    sql`SELECT id, entity_type, name, description, metadata, source FROM lumen.entities
+    sql`SELECT id, name, abbrev, volume_id, sort_order FROM lumen.books
         WHERE id = ${id} LIMIT 1`,
+  );
+  return rows[0] ?? null;
+}
+
+export async function getVolume(db: Db, id: string) {
+  const rows = await db.execute(
+    sql`SELECT id, name, abbrev, tradition, sort_order FROM lumen.volumes
+        WHERE id = ${id} LIMIT 1`,
+  );
+  return rows[0] ?? null;
+}
+
+export async function getChapterSummary(db: Db, bookId: string, chapter: number) {
+  // summaries are knowledge-layer entities; looked up by stamped chapter_id,
+  // never by id-string convention
+  const rows = await db.execute(
+    sql`SELECT id, name, description, metadata FROM lumen.entities
+        WHERE entity_type = 'chapter_summary'
+          AND metadata->>'chapter_id' = ${`${bookId}-${chapter}`}
+        LIMIT 1`,
   );
   return rows[0] ?? null;
 }
@@ -158,12 +165,10 @@ export async function getPublicCollectionIds(db: Db) {
   return (rows as { id: string }[]).map((r) => r.id);
 }
 
-export async function getChapterSummary(db: Db, bookId: string, chapter: number) {
-  const summaryId = `${bookId}-${chapter}-summary`;
+export async function getEntity(db: Db, id: string) {
   const rows = await db.execute(
-    sql`SELECT id, name, description, metadata FROM lumen.entities
-        WHERE id = ${summaryId} AND entity_type = 'chapter_summary'
-        LIMIT 1`,
+    sql`SELECT id, entity_type, name, description, metadata, source FROM lumen.entities
+        WHERE id = ${id} LIMIT 1`,
   );
   return rows[0] ?? null;
 }

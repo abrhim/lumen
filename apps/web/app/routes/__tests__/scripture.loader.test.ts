@@ -8,6 +8,7 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		getVersesByChapter: vi.fn(),
 		getChapterSummary: vi.fn(),
 		getVerseConnections: vi.fn(),
+		getChapterNumbers: vi.fn(),
 	};
 });
 
@@ -15,6 +16,7 @@ import {
 	getVersesByChapter,
 	getChapterSummary,
 	getVerseConnections,
+	getChapterNumbers,
 } from "@lumen/scripture";
 import { loader } from "../scripture";
 
@@ -53,6 +55,9 @@ beforeEach(() => {
 	vi.mocked(getVersesByChapter).mockResolvedValue(mockVerses as any);
 	vi.mocked(getChapterSummary).mockResolvedValue({ description: "Nephi obtains the plates." } as any);
 	vi.mocked(getVerseConnections).mockResolvedValue(mockConnections as any);
+	vi.mocked(getChapterNumbers).mockResolvedValue([
+		{ chapter_number: 1 }, { chapter_number: 2 }, { chapter_number: 3 },
+	] as any);
 });
 
 describe("scripture loader — happy paths", () => {
@@ -104,6 +109,22 @@ describe("scripture loader — happy paths", () => {
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		await data.connections;
 		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v1:1-ne-3-7$/));
+	});
+
+	it("exposes real chapter bounds so the last chapter has no next link (FM-10)", async () => {
+		const data = await loader(makeArgs("1-ne", "3"));
+		expect(data.maxChapter).toBe(3);
+	});
+
+	it("keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)", async () => {
+		const args = makeArgs("1-ne", "3");
+		await loader(args);
+		expect(getVersesByChapter).toHaveBeenCalledTimes(1);
+		expect(getChapterSummary).toHaveBeenCalledTimes(1);
+		expect(getChapterNumbers).toHaveBeenCalledTimes(1);
+		// art is the only direct db.execute on a plain chapter view (no ?graph)
+		expect(args.context.db.execute).toHaveBeenCalledTimes(1);
+		expect(getVerseConnections).not.toHaveBeenCalled();
 	});
 
 	it("includes reference on every verse in the loader data", async () => {

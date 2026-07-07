@@ -4,7 +4,7 @@ import type { Route } from "./+types/home";
 interface VolumeRow {
 	id: string;
 	name: string;
-	metadata: { sort_order?: number } | null;
+	sort_order: number;
 }
 
 interface BookRow {
@@ -29,7 +29,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 	const sorted = volumes
 		.slice()
-		.sort((a, b) => (a.metadata?.sort_order ?? 0) - (b.metadata?.sort_order ?? 0))
+		.sort((a, b) => a.sort_order - b.sort_order)
 		.map((v) => ({
 			id: v.id,
 			name: v.name,

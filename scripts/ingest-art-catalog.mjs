@@ -17,9 +17,11 @@ const EXPORT_DIR = process.argv[2] ?? join(process.env.HOME ?? '', 'Downloads/ar
 const { parseReference } = await import(join(ROOT, 'packages/scripture/src/slug-map.ts'));
 
 const require = createRequire(import.meta.url);
-const postgres = require(join(ROOT, 'apps/web/node_modules/postgres'));
-const pgUrl = readFileSync(join(ROOT, 'apps/web/.env'), 'utf8').match(/HYPERDRIVE=(.+)/)?.[1]?.trim();
-if (!pgUrl) throw new Error('missing PG connection (apps/web/.env)');
+const postgres = require('postgres');
+// writes require the admin session-mode DSN (root .env), same as the spine
+// migration scripts — the app's Hyperdrive credential is SELECT-only
+const pgUrl = readFileSync(join(ROOT, '.env'), 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
+if (!pgUrl) throw new Error('missing admin DATABASE_URL (repo-root .env)');
 const sql = postgres(pgUrl, { prepare: false });
 
 const log = (event, data) => console.log(JSON.stringify({ event, ...data }));

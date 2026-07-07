@@ -5,11 +5,11 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 	return {
 		...actual,
 		getChapterNumbers: vi.fn(),
-		getEntity: vi.fn(),
+		getBook: vi.fn(),
 	};
 });
 
-import { getChapterNumbers, getEntity } from "@lumen/scripture";
+import { getChapterNumbers, getBook } from "@lumen/scripture";
 import { loader } from "../book";
 
 function makeArgs(book: string) {
@@ -26,7 +26,7 @@ beforeEach(() => {
 		{ chapter_number: 2 },
 		{ chapter_number: 3 },
 	] as any);
-	vi.mocked(getEntity).mockResolvedValue({ id: "1-ne", name: "1 Nephi" } as any);
+	vi.mocked(getBook).mockResolvedValue({ id: "1-ne", name: "1 Nephi" } as any);
 });
 
 describe("book loader", () => {
@@ -36,7 +36,7 @@ describe("book loader", () => {
 	});
 
 	it("accepts dc (single-book volume) like the chapter route does", async () => {
-		vi.mocked(getEntity).mockResolvedValue({ id: "dc", name: "Doctrine and Covenants" } as any);
+		vi.mocked(getBook).mockResolvedValue({ id: "dc", name: "Doctrine and Covenants" } as any);
 		const data = await loader(makeArgs("dc"));
 		expect(data.bookId).toBe("dc");
 		expect(getChapterNumbers).toHaveBeenCalledWith(expect.anything(), "dc");
@@ -60,7 +60,7 @@ describe("book loader", () => {
 	});
 
 	it("falls back to the book id when no entity name exists", async () => {
-		vi.mocked(getEntity).mockResolvedValue(null as any);
+		vi.mocked(getBook).mockResolvedValue(null as any);
 		const data = await loader(makeArgs("1-ne"));
 		expect(data.name).toBe("1-ne");
 	});

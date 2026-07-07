@@ -1,5 +1,5 @@
 import { Link, isRouteErrorResponse } from "react-router";
-import { parseReference, getChapterNumbers, getEntity } from "@lumen/scripture";
+import { parseReference, getChapterNumbers, getBook, chapterUnit } from "@lumen/scripture";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/book";
 
@@ -25,9 +25,9 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 		throw new Response(null, { status: 301, headers: { Location: `/scripture/${bookId}` } });
 	}
 
-	const [chapters, entity] = await Promise.all([
+	const [chapters, book] = await Promise.all([
 		getChapterNumbers(context.db, bookId) as Promise<ChapterRow[]>,
-		getEntity(context.db, bookId) as Promise<{ name?: string } | null>,
+		getBook(context.db, bookId) as Promise<{ name?: string } | null>,
 	]);
 
 	if (chapters.length === 0) {
@@ -37,7 +37,7 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 
 	return {
 		bookId,
-		name: entity?.name ?? bookId,
+		name: book?.name ?? bookId,
 		chapters: chapters.map((c) => c.chapter_number),
 	};
 }
@@ -48,8 +48,7 @@ export function meta({ data }: Route.MetaArgs) {
 
 export default function Book({ loaderData }: Route.ComponentProps) {
 	const { bookId, name, chapters } = loaderData;
-	// D&C is divided into sections, not chapters
-	const unit = bookId === "dc" ? "Section" : "Chapter";
+	const unit = chapterUnit(bookId);
 
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-12">

@@ -14,8 +14,8 @@ import { loader } from "../home";
 
 beforeEach(() => {
 	vi.mocked(getVolumeList).mockResolvedValue([
-		{ id: "bom", name: "Book of Mormon", metadata: { sort_order: 3 } },
-		{ id: "ot", name: "Old Testament", metadata: { sort_order: 1 } },
+		{ id: "bom", name: "Book of Mormon", sort_order: 3 },
+		{ id: "ot", name: "Old Testament", sort_order: 1 },
 	] as any);
 	vi.mocked(getAllBooks).mockResolvedValue([
 		{ id: "1-ne", name: "1 Nephi", volume_id: "bom", sort_order: 68 },
@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 describe("home loader", () => {
-	it("returns volumes ordered by metadata.sort_order with their books, in 2 queries", async () => {
+	it("returns volumes ordered by spine sort_order with their books, in 2 queries", async () => {
 		const data = await loader({
 			params: {},
 			request: new Request("http://localhost/"),

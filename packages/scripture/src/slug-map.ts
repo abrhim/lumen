@@ -159,6 +159,11 @@ export function buildVerseId(bookId: string, chapter: number, verse: number): st
   return `${bookId}-${chapter}-${verse}`;
 }
 
+/** D&C is divided into sections; everything else into chapters (one owner — UX-4). */
+export function chapterUnit(bookId: string): 'Section' | 'Chapter' {
+  return bookId === 'dc' ? 'Section' : 'Chapter';
+}
+
 export const VOLUME_ID_LIST = [...VOLUME_IDS];
 
 export const RELATIONSHIP_TYPES = [
