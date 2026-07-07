@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 // Harness (tske-cross-references): query shape + panel grouping helpers.
 // FM-4/FM-5/FM-6 — vote ordering, range dedup, both directions.
-import { getCrossReferences, groupCrossRefs } from '../crossrefs';
+import { getCrossReferences, groupCrossRefs, type CrossRefRow } from '../crossrefs';
 
 function capturingDb(rows: unknown[] = []) {
 	const captured: string[] = [];
@@ -34,7 +34,7 @@ describe('getCrossReferences SQL shape', () => {
 });
 
 describe('groupCrossRefs (FM-5: one card per range, vote-sorted)', () => {
-	const row = (o: Partial<Record<string, unknown>>) => ({
+	const row = (o: Partial<Omit<CrossRefRow, 'total'>>): Omit<CrossRefRow, 'total'> => ({
 		verse_id: 'ps-148-4', reference: 'Psalm 148:4', text: 'Praise him…',
 		direction: 'outgoing', votes: 10, range_start: null, range_end: null, ...o,
 	});

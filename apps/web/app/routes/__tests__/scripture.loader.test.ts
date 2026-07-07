@@ -26,11 +26,9 @@ const mockVerses = [
 	{ id: "1-ne-3-7", verse_number: 7, text: "I will go and do...", reference: "1 Nephi 3:7" },
 ];
 
+// getVerseConnections slimmed to entities only — cross-refs moved to Postgres (API-2)
 const mockConnections = {
 	verse_id: "1-ne-3-7",
-	cross_references: [
-		{ verse_id: "john-3-16", reference: "John 3:16", text: "For God so loved...", relationship: "CROSS_REF", direction: "outgoing", source: "curated" },
-	],
 	principles: [{ id: "obedience", name: "Obedience" }],
 	people: [{ id: "nephi-1", name: "Nephi" }],
 };
@@ -89,7 +87,6 @@ describe("scripture loader — happy paths", () => {
 		const panel = await data.connections!;
 		expect(panel.degraded).toBe(false);
 		if (!panel.degraded) {
-			expect(panel.crossRefs).toHaveLength(1);
 			expect(panel.principles[0].name).toBe("Obedience");
 			expect(panel.people[0].name).toBe("Nephi");
 		}
@@ -102,14 +99,14 @@ describe("scripture loader — happy paths", () => {
 		const panel = await data.connections!;
 		expect(getVerseConnections).not.toHaveBeenCalled();
 		expect(panel.degraded).toBe(false);
-		if (!panel.degraded) expect(panel.crossRefs[0].verse_id).toBe("john-3-16");
+		if (!panel.degraded) expect(panel.principles[0].id).toBe("obedience");
 	});
 
-	it("uses a versioned cache key built from the canonical verse id", async () => {
+	it("uses the v2 versioned cache key (payload shape changed with the crossref move, FM-9)", async () => {
 		const kv = kvNoop();
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		await data.connections;
-		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v1:1-ne-3-7$/));
+		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v2:1-ne-3-7$/));
 	});
 
 	it("exposes real chapter bounds so the last chapter has no next link (FM-10)", async () => {
@@ -134,13 +131,6 @@ describe("scripture loader — happy paths", () => {
 		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledWith(
 			expect.anything(), "1-ne-3-7", expect.not.objectContaining({ collectionId: "openbible" }),
 		);
-	});
-
-	it("streams principles/people under the v2 cache key (FM-9: payload shape changed)", async () => {
-		const kv = kvNoop();
-		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
-		await data.connections;
-		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v2:1-ne-3-7$/));
 	});
 
 	it("keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)", async () => {
@@ -228,6 +218,6 @@ describe("scripture loader — failure modes", () => {
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		const panel = await data.connections!;
 		expect(panel.degraded).toBe(false);
-		if (!panel.degraded) expect(panel.crossRefs).toHaveLength(1);
+		if (!panel.degraded) expect(panel.principles).toHaveLength(1);
 	});
 });
