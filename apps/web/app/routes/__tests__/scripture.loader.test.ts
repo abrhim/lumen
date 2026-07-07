@@ -9,6 +9,7 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		getChapterSummary: vi.fn(),
 		getVerseConnections: vi.fn(),
 		getChapterNumbers: vi.fn(),
+		getCrossReferences: vi.fn(async () => []),
 	};
 });
 
@@ -114,6 +115,32 @@ describe("scripture loader — happy paths", () => {
 	it("exposes real chapter bounds so the last chapter has no next link (FM-10)", async () => {
 		const data = await loader(makeArgs("1-ne", "3"));
 		expect(data.maxChapter).toBe(3);
+	});
+
+	it("fetches cross-refs from Postgres in the CRITICAL PATH for the selected verse — openbible for Bible, legacy for BoM (FM-7/FM-8)", async () => {
+		const { getCrossReferences } = await import("@lumen/scripture");
+		const args = makeArgs("john", "3", "?verse=16");
+		vi.mocked(getVersesByChapter).mockResolvedValue([
+			{ id: "john-3-16", verse_number: 16, text: "For God so loved…", reference: "John 3:16" },
+		] as any);
+		await loader(args);
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledWith(
+			expect.anything(), "john-3-16", expect.objectContaining({ collectionId: "openbible" }),
+		);
+
+		vi.mocked(getCrossReferences as any).mockClear();
+		const bomArgs = makeArgs("1-ne", "3", "?verse=7");
+		await loader(bomArgs);
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledWith(
+			expect.anything(), "1-ne-3-7", expect.not.objectContaining({ collectionId: "openbible" }),
+		);
+	});
+
+	it("streams principles/people under the v2 cache key (FM-9: payload shape changed)", async () => {
+		const kv = kvNoop();
+		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
+		await data.connections;
+		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v2:1-ne-3-7$/));
 	});
 
 	it("keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)", async () => {

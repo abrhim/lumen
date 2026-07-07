@@ -1,0 +1,19 @@
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 5 passed (7)
+      Tests  67 passed (67)
+   Start at  16:24:19
+   Duration  320ms (transform 341ms, setup 0ms, collect 427ms, tests 18ms, environment 1ms, prepare 276ms)
+
+/Users/abram/code/lumen/packages/scripture:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @lumen/scripture@0.1.0 test: `vitest run`
+Exit status 1
+ℹ pass 0
+ℹ fail 1
+{"event":"pg_client_init_failed","message":"boom"}
+ ❯ app/routes/__tests__/scripture.loader.test.ts (20 tests | 2 failed) 10ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 8 passed (9)
+      Tests  2 failed | 54 passed (56)
