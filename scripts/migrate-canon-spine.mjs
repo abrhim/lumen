@@ -217,6 +217,22 @@ async function main() {
 
     // ---- P1: build the spine, one transaction ----
     await sql.begin(async (tx) => {
+      // Prod predates canon-spine with a legacy lumen.words (surface_form, no
+      // offsets). Replace it ONLY when provably empty — the B1 guarantee (a
+      // populated words table is never dropped) must hold, so any rows in a
+      // wrong-shape table abort for manual review instead.
+      const wordsShape = await tx`
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'lumen' AND table_name = 'words'`;
+      if (wordsShape.length > 0 && !wordsShape.some((c) => c.column_name === 'char_start')) {
+        const legacyRows = await tx`SELECT count(*)::int AS n FROM lumen.words`;
+        if (legacyRows[0].n > 0) {
+          throw new Error(`legacy lumen.words has ${legacyRows[0].n} rows but the pre-spine shape — refusing to drop; migrate or clear it manually`);
+        }
+        await tx`DROP TABLE lumen.words`;
+        log('legacy_words_replaced', { rows: 0, missingColumn: 'char_start' });
+      }
+
       await tx.unsafe(SPINE_DDL);
       log('ddl_applied', { elapsedMs: Date.now() - t0 });
 
@@ -308,10 +324,12 @@ async function main() {
         WHERE b.volume_id IS DISTINCT FROM v.volume_id`;
       check('volume_id_parity_via_join', 0, volDrift[0].n);
 
-      // summaries stamped with chapter_id (id convention retires) + resolution check (COR-9)
+      // summaries stamped with chapter_id (id convention retires) + resolution
+      // check (COR-9). Live ids are PREFIXED: 'summary-1-chr-1' → '1-chr-1'
+      // (first dry run failed 1582/1582 on the assumed '-summary' suffix).
       await tx`
         UPDATE lumen.entities
-        SET metadata = jsonb_set(metadata, '{chapter_id}', to_jsonb(replace(id, '-summary', '')))
+        SET metadata = jsonb_set(metadata, '{chapter_id}', to_jsonb(regexp_replace(id, '^summary-', '')))
         WHERE entity_type = 'chapter_summary'`;
       const orphanSummaries = await tx`
         SELECT count(*)::int AS n FROM lumen.entities e
