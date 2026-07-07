@@ -71,6 +71,13 @@ export function buildEdgeRows(tsvRows, verseCount, nextChapter) {
       const endRef = VERSIFICATION_EXCEPTIONS[b] ?? b;
       targets = expandOsisRange(startRef, endRef, verseCount, nextChapter);
       if (targets && targets.length > 0) {
+        // a range containing the citing verse itself: drop the self member
+        // BEFORE deriving range_start, or dedup would later orphan the
+        // representative row and the whole card would vanish (CCOR-2)
+        targets = targets.filter((t) => t !== fromId);
+        if (targets.length === 0) targets = null;
+      }
+      if (targets) {
         rangeStart = targets[0];
         rangeEnd = targets[targets.length - 1];
         if (rangeEnd === rangeStart) { rangeStart = null; rangeEnd = null; targets = [targets[0]]; }
@@ -94,6 +101,12 @@ export function buildEdgeRows(tsvRows, verseCount, nextChapter) {
     }
   }
   return { rows, unmapped };
+}
+
+/** Pure: whole-run unmapped-cap verdict (FM-11/COBS-4) — boundary is exclusive pass. */
+export function unmappedCapVerdict(unmappedCount, sourceCount, cap) {
+  const ratio = sourceCount === 0 ? 0 : unmappedCount / sourceCount;
+  return { ratio: Number(ratio.toFixed(5)), pass: ratio < cap };
 }
 
 /** Pure: drop self-refs and duplicate (from,to) pairs keeping max votes (DATA-2/DATA-4). */
@@ -127,19 +140,25 @@ const log = (event, data = {}) => console.log(JSON.stringify({ event, ...data })
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const t0 = Date.now();
-  log('openbible_ingest_start', { startedAt: new Date().toISOString(), dryRun, dataFile: 'data/openbible/cross_references.txt' });
+  log('openbible_ingest_start', { startedAt: new Date().toISOString(), dryRun, dataFile: DATA_FILE });
 
-  osisModule = await import(join(ROOT, 'packages/scripture/src/osis-map.ts'));
-
-  const envPath = join(ROOT, '.env');
-  if (!existsSync(envPath)) throw new Error('repo-root .env with admin DATABASE_URL required');
-  const url = readFileSync(envPath, 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
-  if (!url) throw new Error('DATABASE_URL not found in repo-root .env');
-  if (/:6543\b/.test(url)) throw new Error('session-mode connection required (port 5432)');
-
-  const require = createRequire(import.meta.url);
-  const postgres = require('postgres');
-  const sql = postgres(url, { prepare: false, max: 1 });
+  // env/URL/client setup inside the scrubbed path — a malformed DSN must never
+  // print unredacted (CSEC-1)
+  let sql;
+  try {
+    osisModule = await import(join(ROOT, 'packages/scripture/src/osis-map.ts'));
+    const envPath = join(ROOT, '.env');
+    if (!existsSync(envPath)) throw new Error('repo-root .env with admin DATABASE_URL required');
+    const url = readFileSync(envPath, 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
+    if (!url) throw new Error('DATABASE_URL not found in repo-root .env');
+    if (/:6543\b/.test(url)) throw new Error('session-mode connection required (port 5432)');
+    const require = createRequire(import.meta.url);
+    const postgres = require('postgres');
+    sql = postgres(url, { prepare: false, max: 1 });
+  } catch (err) {
+    log('openbible_ingest_fatal', { message: scrub(err.message) });
+    process.exit(1);
+  }
 
   let exitCode = 0;
   try {
@@ -168,32 +187,36 @@ async function main() {
     log('source_loaded', { rows: sourceRows.length });
 
     const { rows: builtRows, unmapped } = buildEdgeRows(sourceRows, verseCount, nextChapter);
-    const ratio = unmapped.length / sourceRows.length;
+    const verdict = unmappedCapVerdict(unmapped.length, sourceRows.length, UNMAPPED_CAP);
     log('openbible_unmapped_refs', {
       count: unmapped.length,
-      ratio: Number(ratio.toFixed(5)),
+      ratio: verdict.ratio,
       sample: unmapped.slice(0, 10),
     });
-    if (ratio >= UNMAPPED_CAP) {
-      log('openbible_unmapped_threshold', { ratio, cap: UNMAPPED_CAP, pass: false });
-      throw new Error(`unmapped ratio ${(ratio * 100).toFixed(2)}% breaches the ${UNMAPPED_CAP * 100}% cap (FM-11)`);
+    log('openbible_unmapped_threshold', { ratio: verdict.ratio, cap: UNMAPPED_CAP, pass: verdict.pass });
+    if (!verdict.pass) {
+      throw new Error(`unmapped ratio ${(verdict.ratio * 100).toFixed(2)}% breaches the ${UNMAPPED_CAP * 100}% cap (FM-11)`);
     }
-    log('openbible_unmapped_threshold', { ratio, cap: UNMAPPED_CAP, pass: true });
 
     const { rows, selfRefs, duplicates } = dedupeEdgeRows(builtRows);
     log('openbible_dedup', { built: builtRows.length, selfRefs, duplicates, final: rows.length });
 
     // ---- ONE transaction: collection upsert + delete + insert (DATA-1) ----
+    let deletedCount = 0;
     await sql.begin(async (tx) => {
+      // public visibility explicit, not schema-default (CSEC-5); tier/category
+      // self-correct on re-run like every other column (CDATA-3)
       await tx`
-        INSERT INTO lumen.collections (id, name, description, tier, category, provenance, license, storage)
+        INSERT INTO lumen.collections (id, name, description, tier, category, provenance, license, storage, public)
         VALUES ('openbible', 'OpenBible.info Cross References',
                 'Vote-ranked Bible cross-references (openbible.info, adapted: ranges expanded to per-verse edges)',
-                'app', 'cross-references', 'openbible.info', 'cc-by-4.0', 'vendored')
+                'app', 'cross-references', 'openbible.info', 'cc-by-4.0', 'vendored', true)
         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
-          provenance = EXCLUDED.provenance, license = EXCLUDED.license, storage = EXCLUDED.storage`;
+          tier = EXCLUDED.tier, category = EXCLUDED.category, provenance = EXCLUDED.provenance,
+          license = EXCLUDED.license, storage = EXCLUDED.storage, public = EXCLUDED.public`;
 
       const deleted = await tx`DELETE FROM lumen.edges WHERE collection_id = 'openbible'`;
+      deletedCount = deleted.count;
       let inserted = 0;
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         const batch = rows.slice(i, i + BATCH_SIZE);
@@ -203,6 +226,10 @@ async function main() {
           FROM jsonb_to_recordset(${tx.json(batch)}) AS r(from_id text, to_id text, metadata jsonb)`;
         inserted += batch.length;
       }
+
+      // incoming-direction composite, built AFTER the bulk insert (CPERF-2 —
+      // mirrors idx_edges_from_rel; the smoke EXPLAIN checks both directions)
+      await tx`CREATE INDEX IF NOT EXISTS idx_edges_to_rel ON lumen.edges (to_id, rel_type)`;
 
       // in-tx invariant: every endpoint resolves to a live verse
       const [orph] = await tx`
@@ -226,7 +253,8 @@ async function main() {
       else throw e;
     });
 
-    log('openbible_ingest_done', { dryRun, edges: rows.length, elapsedMs: Date.now() - t0 });
+    // dry runs report projected write volume too (COBS-3)
+    log('openbible_ingest_done', { dryRun, deleted: deletedCount, inserted: rows.length, elapsedMs: Date.now() - t0 });
   } catch (err) {
     exitCode = 1;
     log('openbible_ingest_fatal', { message: scrub(err.message), elapsedMs: Date.now() - t0 });

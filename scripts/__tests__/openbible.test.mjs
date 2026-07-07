@@ -8,6 +8,7 @@ import * as osis from '../../packages/scripture/src/osis-map.ts';
 import {
   buildEdgeRows,
   dedupeEdgeRows,
+  unmappedCapVerdict,
   VERSIFICATION_EXCEPTIONS,
   _setOsisModule,
 } from '../ingest-openbible-refs.mjs';
@@ -73,6 +74,24 @@ test('buildEdgeRows: out-of-chapter verse numbers are unmapped, never clamped (C
   const { rows, unmapped } = buildEdgeRows([['Gen.1.99', 'Gen.1.1', '4']], lookup);
   assert.equal(rows.length, 0);
   assert.equal(unmapped.length, 1);
+});
+
+test('a range containing the citing verse drops the self member BEFORE deriving range_start (CCOR-2)', () => {
+  // Gen.1.1 cites Gen.1.1-Gen.1.3: verse 1 is the citer itself; the surviving
+  // representative must be gen-1-2, or dedup would orphan the range entirely
+  const { rows } = buildEdgeRows([['Gen.1.1', 'Gen.1.1-Gen.1.3', '9']], lookup);
+  assert.deepEqual(rows.map((r) => r.to_id), ['gen-1-2', 'gen-1-3']);
+  for (const r of rows) {
+    assert.equal(r.metadata.range_start, 'gen-1-2');
+    assert.equal(r.metadata.range_end, 'gen-1-3');
+  }
+});
+
+test('unmappedCapVerdict: boundary is exclusive — exactly at cap fails, just under passes (FM-11/COBS-4)', () => {
+  assert.equal(unmappedCapVerdict(5, 1000, 0.005).pass, false); // 0.5% exactly
+  assert.equal(unmappedCapVerdict(4, 1000, 0.005).pass, true);
+  assert.equal(unmappedCapVerdict(0, 0, 0.005).pass, true); // empty source
+  assert.equal(unmappedCapVerdict(6, 1000, 0.005).ratio, 0.006);
 });
 
 test('dedupeEdgeRows: self-refs dropped, duplicate pairs keep max votes (DATA-2/DATA-4)', () => {

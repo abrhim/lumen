@@ -123,6 +123,9 @@ interface CrossRefsPanel {
 
 const LEGACY_CROSSREF_COLLECTION = "phase-b";
 
+/** book id of a verse id: "ether-12-27" → "ether" */
+const bookOfVerseId = (verseId: string) => verseId.replace(/-\d+-\d+$/, "");
+
 async function loadCrossRefs(
 	db: Route.LoaderArgs["context"]["db"],
 	bookId: string,
@@ -131,11 +134,31 @@ async function loadCrossRefs(
 ): Promise<CrossRefsPanel> {
 	const verseId = buildVerseId(bookId, chapter, verse);
 	const curated = !BIBLE_BOOK_IDS.has(bookId);
-	const collectionId = curated ? LEGACY_CROSSREF_COLLECTION : "openbible";
+	const startedAt = Date.now();
 	try {
-		const { refs, totals } = await getCrossReferences(db, verseId, { collectionId });
-		const cards = groupCrossRefs(refs);
-		if (cards.length === 0 && !curated) {
+		if (curated) {
+			// BoM/D&C/PGP: the curated collection is the only verse↔verse source
+			const { refs, totals } = await getCrossReferences(db, verseId, {
+				collectionId: LEGACY_CROSSREF_COLLECTION,
+			});
+			return { degraded: false, cards: groupCrossRefs(refs), totals, curated };
+		}
+
+		// Bible verses: OpenBible plus curated CROSS-CANON links (Abram's call —
+		// the old Neo4j panel had no collection filter, so Bible↔BoM bridges like
+		// 1 Cor 1:27 → Ether 12:27 were visible; keep them, drop the curated
+		// set's noisy Bible↔Bible refs that OpenBible replaces).
+		const [openbible, legacy] = await Promise.all([
+			getCrossReferences(db, verseId, { collectionId: "openbible" }),
+			getCrossReferences(db, verseId, { collectionId: LEGACY_CROSSREF_COLLECTION }),
+		]);
+		const crossCanon = legacy.refs.filter((r) => !BIBLE_BOOK_IDS.has(bookOfVerseId(r.verse_id)));
+		const cards = groupCrossRefs([...openbible.refs, ...crossCanon]);
+		const totals = {
+			outgoing: openbible.totals.outgoing + crossCanon.filter((r) => r.direction === "outgoing").length,
+			incoming: openbible.totals.incoming + crossCanon.filter((r) => r.direction === "incoming").length,
+		};
+		if (cards.length === 0) {
 			// a Bible verse with zero refs is rare — distinguishable from a bug (OBS-7)
 			logEvent("crossref_empty", { verse: verseId });
 		}
@@ -144,7 +167,10 @@ async function loadCrossRefs(
 		logEvent("crossref_degraded", {
 			name: error instanceof Error ? error.name : "unknown",
 			message: error instanceof Error ? error.message : String(error),
-			verse: verseId,
+			book: bookId,
+			chapter,
+			verse,
+			elapsedMs: Date.now() - startedAt,
 		});
 		return { degraded: true, cards: [], totals: { outgoing: 0, incoming: 0 }, curated };
 	}
@@ -885,12 +911,22 @@ function DegradedNotice() {
 }
 
 /** Skeleton for the synchronous cross-ref block (only shown while a same-chapter
- * verse navigation is pending — the data itself arrives with the loader). */
+ * verse navigation is pending — the data itself arrives with the loader).
+ * Shaped like the median real output — two titled groups of cards — so the
+ * pending→resolved swap moves layout as little as possible (CUX-2). */
 function CrossRefsSkeleton() {
 	return (
 		<div aria-busy="true">
 			<span className="sr-only">Loading cross-references…</span>
 			<div className="mt-5 space-y-5" aria-hidden="true">
+				<div>
+					<Skeleton className="h-3 w-28" />
+					<div className="mt-2 space-y-2">
+						<Skeleton className="h-20 w-full rounded-lg" />
+						<Skeleton className="h-20 w-full rounded-lg" />
+						<Skeleton className="h-20 w-full rounded-lg" />
+					</div>
+				</div>
 				<div>
 					<Skeleton className="h-3 w-24" />
 					<div className="mt-2 space-y-2">
@@ -952,8 +988,32 @@ function CrossRefsSection({
 		);
 	}
 
+	const credit = !panel.curated && (
+		<p className="mt-1.5 font-ui text-[10px] text-faint">
+			Cross-references:{" "}
+			<a
+				href="https://www.openbible.info/labs/cross-references/"
+				target="_blank"
+				rel="noreferrer"
+				className="underline hover:text-ink"
+			>
+				openbible.info
+			</a>{" "}
+			(
+			<a
+				href="https://creativecommons.org/licenses/by/4.0/"
+				target="_blank"
+				rel="noreferrer"
+				className="underline hover:text-ink"
+			>
+				CC BY 4.0
+			</a>
+			, adapted — ranges expanded)
+		</p>
+	);
+
 	return (
-		<div aria-live="polite">
+		<div>
 			<CrossRefCards
 				title="References"
 				accent="text-cites"
@@ -961,6 +1021,7 @@ function CrossRefsSection({
 				total={panel.totals.outgoing}
 				curated={panel.curated}
 				onNavigate={onNavigate}
+				credit={credit}
 			/>
 			<CrossRefCards
 				title="Referenced by"
@@ -969,30 +1030,8 @@ function CrossRefsSection({
 				total={panel.totals.incoming}
 				curated={panel.curated}
 				onNavigate={onNavigate}
+				credit={references.length === 0 ? credit : null}
 			/>
-			{!panel.curated && (
-				<p className="mt-2 font-ui text-[10px] text-faint">
-					Cross-references:{" "}
-					<a
-						href="https://www.openbible.info/labs/cross-references/"
-						target="_blank"
-						rel="noreferrer"
-						className="underline hover:text-ink"
-					>
-						openbible.info
-					</a>{" "}
-					(
-					<a
-						href="https://creativecommons.org/licenses/by/4.0/"
-						target="_blank"
-						rel="noreferrer"
-						className="underline hover:text-ink"
-					>
-						CC BY 4.0
-					</a>
-					, adapted — ranges expanded)
-				</p>
-			)}
 		</div>
 	);
 }
@@ -1008,7 +1047,12 @@ function Connections({
 	if (panel.principles.length === 0 && panel.people.length === 0) return null;
 
 	return (
-		<div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out">
+		// the live region belongs HERE — this is the block that arrives late
+		// (streamed via Await); the cross-ref cards above render synchronously (CUX-1)
+		<div
+			aria-live="polite"
+			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
+		>
 			<EntityChips title="Principles" accent="text-selbar" edge="border-l-selbar" chips={panel.principles} onSelect={onOpenGraph} />
 			<EntityChips title="People" accent="text-people" edge="border-l-people" chips={panel.people} onSelect={onOpenGraph} />
 		</div>
@@ -1062,6 +1106,12 @@ function verseIdToTarget(verseId: string): { href: string; verse: number } | nul
 	};
 }
 
+const CURATED_SOURCE_LABELS: Record<string, string> = {
+	"anthropic-batch": "AI-suggested",
+	curated: "Curated",
+	"lds-doc-project": "LDS Documentation Project",
+};
+
 function CrossRefCards({
 	title,
 	accent,
@@ -1069,6 +1119,7 @@ function CrossRefCards({
 	total,
 	curated,
 	onNavigate,
+	credit,
 }: {
 	title: string;
 	accent: string;
@@ -1076,10 +1127,14 @@ function CrossRefCards({
 	total: number;
 	curated: boolean;
 	onNavigate: (verse: number) => void;
+	credit?: React.ReactNode;
 }) {
 	if (cards.length === 0) return null;
-	// truncation is disclosed, not silent (UX-2/A11Y-1)
-	const count = total > cards.length ? `${cards.length} of ${total}` : `${cards.length}`;
+	// Truncation is disclosed, not silent (UX-2/A11Y-1) — but only when rows
+	// were actually cut by the limit: the SQL total counts pre-dedup rows, so
+	// "N of M" with untruncated cards would misread duplicates as hidden refs.
+	const truncated = cards.length >= 20 && total > cards.length;
+	const count = truncated ? `${cards.length} of ${total}` : `${cards.length}`;
 	return (
 		<div className="mt-5">
 			<h3 className={`flex items-baseline gap-2 font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
@@ -1094,9 +1149,15 @@ function CrossRefCards({
 					</span>
 				)}
 			</h3>
+			{/* CC-BY credit under the References header, per amendment 10 */}
+			{credit}
 			<ul className="mt-2 space-y-2">
 				{cards.map((x) => {
 					const target = verseIdToTarget(x.verse_id);
+					// provenance stays visible on curated-source cards (the old
+					// panel distinguished AI-suggested from human-curated; keep that
+					// trust signal on the merged cross-canon cards too)
+					const showSource = x.source !== null && x.source !== "openbible";
 					const body = (
 						<>
 							{/* label carries the full range ("Psalm 148:4–5") — also the accessible name (A11Y-3) */}
@@ -1104,6 +1165,11 @@ function CrossRefCards({
 							<p className="mt-1 line-clamp-3 font-reading text-[13px] leading-snug text-muted-foreground">
 								{x.text}
 							</p>
+							{showSource && (
+								<p className="mt-1.5 font-ui text-[10px] font-semibold uppercase tracking-wide text-faint">
+									{CURATED_SOURCE_LABELS[x.source!] ?? x.source}
+								</p>
+							)}
 						</>
 					);
 					return (

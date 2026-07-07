@@ -19,10 +19,12 @@ export interface CrossRefRow {
   reference: string;
   text: string;
   direction: 'outgoing' | 'incoming';
+  /** null for the curated legacy collection (no vote data) */
   votes: number | null;
   range_start: string | null;
   range_end: string | null;
-  total: number;
+  /** provenance of the edge (e.g. 'openbible', 'anthropic-batch', 'curated') */
+  source: string | null;
 }
 
 export interface CrossRefsResult {
@@ -41,6 +43,7 @@ export async function getCrossReferences(
            (e.metadata->>'votes')::int AS votes,
            e.metadata->>'range_start' AS range_start,
            e.metadata->>'range_end' AS range_end,
+           e.source AS source,
            COUNT(*) OVER ()::int AS total
          FROM lumen.edges e
          JOIN lumen.verses v ON v.id = e.to_id
@@ -48,58 +51,77 @@ export async function getCrossReferences(
            AND e.rel_type = 'CROSS_REF'
            AND e.collection_id = ${opts.collectionId}
            AND (e.metadata->>'range_start' IS NULL OR e.to_id = e.metadata->>'range_start')
-         ORDER BY (e.metadata->>'votes')::int DESC NULLS LAST, v.id
+         ORDER BY votes DESC NULLS LAST, v.chapter_id, v.verse_number
          LIMIT ${limit})
         UNION ALL
         (SELECT v.id, v.reference, v.text, 'incoming',
-           (e.metadata->>'votes')::int,
+           (e.metadata->>'votes')::int AS votes,
            e.metadata->>'range_start',
            e.metadata->>'range_end',
+           e.source,
            COUNT(*) OVER ()::int
          FROM lumen.edges e
          JOIN lumen.verses v ON v.id = e.from_id
          WHERE e.to_id = ${verseId}
            AND e.rel_type = 'CROSS_REF'
            AND e.collection_id = ${opts.collectionId}
-         ORDER BY (e.metadata->>'votes')::int DESC NULLS LAST, v.id
+         ORDER BY votes DESC NULLS LAST, v.chapter_id, v.verse_number
          LIMIT ${limit})`,
-  )) as unknown as CrossRefRow[];
+  )) as unknown as Array<CrossRefRow & { total: number }>;
 
+  // `total` is transport plumbing for the window count — the contract's
+  // CrossRefRow (amendment 11) does not carry it (CAPI-3).
   const totals = { outgoing: 0, incoming: 0 };
-  for (const r of rows) totals[r.direction] = r.total;
-  return { refs: rows, totals };
+  const refs = rows.map(({ total, ...r }) => {
+    totals[r.direction] = total;
+    return r;
+  });
+  return { refs, totals };
 }
 
 export interface CrossRefCard {
+  /** outgoing: the target verse (range start for ranges); incoming: the citing verse */
   verse_id: string;
-  /** Display label: "Psalm 148:4–5" for ranges, plain reference otherwise. */
+  /** Display label: "Psalm 148:4–5" for outgoing ranges, plain reference otherwise. */
   label: string;
   text: string;
   direction: 'outgoing' | 'incoming';
   votes: number | null;
   range_end: string | null;
+  /** edge provenance ('openbible', 'anthropic-batch', …) — UI labels curated sources */
+  source: string | null;
 }
 
 /**
- * Pure view helper (FM-5/FM-6): one card per (direction, range|verse),
- * vote-sorted descending with null and negative votes last, range labels
- * derived from ids ("…:4–5" same chapter, "… 8:22–9:2" same book,
- * "… ff." across books — 18 rows in the corpus).
+ * Pure view helper (FM-5/FM-6): one card per logical reference, vote-sorted
+ * descending with null and negative votes last.
+ *
+ * Direction asymmetry (CCOR-1/CAPI-2 — the Critical this fixes): range
+ * metadata always describes the TARGET side of an edge.
+ * - OUTGOING rows: verse_id IS the range start (the SQL representative
+ *   filter guarantees it), so ranges collapse to one card labeled
+ *   "…:4–5" (same chapter), "… 8:22–9:2" (same book), "… ff." (cross-book).
+ * - INCOMING rows: verse_id is the CITING verse; range fields describe a
+ *   range around the verse being read and are irrelevant to the card's
+ *   identity, label, and navigation — they are ignored entirely. Each
+ *   distinct citer is its own card.
  */
-export function groupCrossRefs(rows: Array<Omit<CrossRefRow, 'total'> & { total?: number }>): CrossRefCard[] {
+export function groupCrossRefs(rows: CrossRefRow[]): CrossRefCard[] {
   const seen = new Set<string>();
   const cards: CrossRefCard[] = [];
   for (const r of rows) {
-    const key = `${r.direction}:${r.range_start ?? r.verse_id}`;
+    const isRange = r.direction === 'outgoing' && r.range_start !== null;
+    const key = `${r.direction}:${r.verse_id}`;
     if (seen.has(key)) continue;
     seen.add(key);
     cards.push({
-      verse_id: r.range_start ?? r.verse_id,
-      label: rangeLabel(r.reference, r.range_start ?? r.verse_id, r.range_end),
+      verse_id: r.verse_id,
+      label: isRange ? rangeLabel(r.reference, r.verse_id, r.range_end) : r.reference,
       text: r.text,
       direction: r.direction,
       votes: r.votes,
-      range_end: r.range_end,
+      range_end: isRange ? r.range_end : null,
+      source: r.source ?? null,
     });
   }
   return cards.sort((a, b) => (b.votes ?? Number.NEGATIVE_INFINITY) - (a.votes ?? Number.NEGATIVE_INFINITY));

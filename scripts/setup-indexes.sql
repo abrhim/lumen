@@ -29,4 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_from ON lumen.edges (from_id);
 CREATE INDEX IF NOT EXISTS idx_edges_to ON lumen.edges (to_id);
 CREATE INDEX IF NOT EXISTS idx_edges_rel_type ON lumen.edges (rel_type);
 CREATE INDEX IF NOT EXISTS idx_edges_from_rel ON lumen.edges (from_id, rel_type);
+-- incoming mirror of idx_edges_from_rel (cross-ref "referenced by" lookups);
+-- also created by ingest-openbible-refs.mjs post-bulk-load
+CREATE INDEX IF NOT EXISTS idx_edges_to_rel ON lumen.edges (to_id, rel_type);
 CREATE INDEX IF NOT EXISTS idx_edges_collection ON lumen.edges (collection_id);
