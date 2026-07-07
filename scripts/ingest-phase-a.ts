@@ -810,6 +810,13 @@ async function importJst(pool: pg.Pool, dryRun: boolean): Promise<void> {
 // ── Main ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // TOMBSTONE (canon-spine, 2026-07-06): this script writes the PRE-SPINE
+  // shapes (book/chapter entities, old verses columns) and must not run again.
+  // Structure now lives in lumen.volumes/books/chapters — see
+  // scripts/migrate-canon-spine.mjs and docs/design/canon-spine.md.
+  console.error(JSON.stringify({ event: 'phase_a_frozen', see: 'docs/design/canon-spine.md' }));
+  throw new Error('ingest-phase-a is frozen by the canon-spine migration');
+
   const args = process.argv.slice(2);
   const dryRun = !args.includes('--write');
   const stepFilter = args.find(a => a.startsWith('--step='))?.split('=')[1];

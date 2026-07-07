@@ -164,11 +164,16 @@ async function main() {
   let exitCode = 0;
   try {
     // ---- desired state from Postgres ----
-    // Two node sources: entities carry their own collection_id; verses live in
-    // lumen.verses (no collection_id column) and are canon by construction.
+    // Spine tables are the structural source (canon-spine, DATA-2): the spine
+    // carries no collection_id — its graph mirrors are stamped 'canon' by
+    // construction. Knowledge entities keep their own collection_id.
+    // Deprecated structural entities are EXCLUDED here (spine supersedes them
+    // as mirror source); they remain in lumen.nodes for edge-endpoint lookup.
     const pgNodes = await sql`
       SELECT id, entity_type, collection_id, metadata->>'neo4j_id' AS neo4j_id
-      FROM lumen.entities WHERE collection_id IS NOT NULL`;
+      FROM lumen.entities
+      WHERE collection_id IS NOT NULL
+        AND entity_type NOT IN ('volume', 'book', 'chapter')`;
     const skippedNullNodes = Number((await sql`
       SELECT count(*)::int AS n FROM lumen.entities WHERE collection_id IS NULL`)[0].n);
     const nodeGroups = new Map(); // entity_type -> rows
@@ -177,6 +182,14 @@ async function main() {
       const list = nodeGroups.get(r.entity_type) ?? [];
       list.push(row);
       nodeGroups.set(r.entity_type, list);
+    }
+    for (const [type, table] of [
+      ['volume', sql`SELECT id FROM lumen.volumes`],
+      ['book', sql`SELECT id FROM lumen.books`],
+      ['chapter', sql`SELECT id FROM lumen.chapters`],
+    ]) {
+      const rows = await table;
+      nodeGroups.set(type, rows.map((r) => ({ id: r.id, cid: 'canon' })));
     }
     const verseIds = await sql`SELECT id FROM lumen.verses`;
     nodeGroups.set('verse', verseIds.map((r) => ({ id: r.id, cid: 'canon' })));

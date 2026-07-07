@@ -17,6 +17,8 @@ import {
 	getNeighborhood,
 	getPublicCollectionIds,
 	getChapterArt,
+	getChapterNumbers,
+	chapterUnit,
 	type CrossReference,
 	type NeighborhoodResult,
 	type VerseConnectionsResult,
@@ -294,7 +296,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		graphIdValid
@@ -303,6 +305,11 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		// art is an enhancement — its failure must never break the chapter
 		(getChapterArt(context.db, bookId, chapter) as Promise<ArtworkRow[]>).catch(
 			() => [] as ArtworkRow[],
+		),
+		// real prev/next bounds (FM-10), folded into the same round-trip window (PERF-2);
+		// on failure fall back to "next exists" so navigation is never over-restricted
+		(getChapterNumbers(context.db, bookId) as Promise<{ chapter_number: number }[]>).catch(
+			() => [] as { chapter_number: number }[],
 		),
 	]);
 
@@ -351,6 +358,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		graphDepth,
 		graph,
 		art: (artRows ?? []).map(toArtItem),
+		maxChapter: chapterRows.length > 0 ? Math.max(...chapterRows.map((c) => c.chapter_number)) : null,
 	};
 }
 
@@ -359,8 +367,9 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, graphId, graphDepth, graph, art } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
+	const unit = chapterUnit(bookId);
 	const navigation = useNavigation();
 	const navigationType = useNavigationType();
 	const navigate = useNavigate();
@@ -547,17 +556,19 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					{graphButton(`summary-${bookId}-${chapter}`, `Open the local graph for ${reference}`)}
 				</div>
 				<nav
-					aria-label="Chapter navigation"
+					aria-label={`${unit} navigation`}
 					className="mt-3 flex gap-3 font-ui text-sm font-semibold text-primary"
 				>
 					{chapter > 1 && (
 						<Link to={`/scripture/${bookId}/${chapter - 1}`} className="hover:underline">
-							← Chapter {chapter - 1}
+							← {unit} {chapter - 1}
 						</Link>
 					)}
-					<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
-						Chapter {chapter + 1} →
-					</Link>
+					{(maxChapter === null || chapter < maxChapter) && (
+						<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
+							{unit} {chapter + 1} →
+						</Link>
+					)}
 				</nav>
 			</header>
 

@@ -9,6 +9,7 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		getChapterSummary: vi.fn(),
 		getVerseConnections: vi.fn(),
 		getNeighborhood: vi.fn(),
+		getChapterNumbers: vi.fn(),
 	};
 });
 
@@ -17,6 +18,7 @@ import {
 	getChapterSummary,
 	getVerseConnections,
 	getNeighborhood,
+	getChapterNumbers,
 } from "@lumen/scripture";
 import { loader } from "../scripture";
 
@@ -57,6 +59,7 @@ beforeEach(() => {
 		verse_id: "1-ne-3-7", cross_references: [], principles: [], people: [],
 	} as any);
 	vi.mocked(getNeighborhood).mockResolvedValue(mockNeighborhood as any);
+	vi.mocked(getChapterNumbers).mockResolvedValue([{ chapter_number: 3 }] as any);
 });
 
 describe("scripture loader — ?graph param (graph-view harness)", () => {
