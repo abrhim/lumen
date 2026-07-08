@@ -271,3 +271,13 @@ html {
     @apply font-sans;
 	}
 }
+/* View transitions (art stack → gallery morph). Names are per-artwork; the
+   browser animates matching elements across the navigation. Reduced motion
+   disables the morph entirely. */
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
+}

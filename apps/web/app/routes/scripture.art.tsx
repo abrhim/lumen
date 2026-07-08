@@ -1,8 +1,16 @@
+import { useState } from "react";
 import { Link, isRouteErrorResponse } from "react-router";
 import { ArrowLeftIcon } from "lucide-react";
 import { parseReference, getChapterArt, getBook, chapterUnit } from "@lumen/scripture";
 import { ArtImage } from "~/components/ArtImage";
-import { toArtItem, safeHttpUrl, type ArtworkRow } from "~/lib/art";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "~/components/ui/dialog";
+import { toArtItem, safeHttpUrl, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture.art";
 
@@ -78,6 +86,8 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 	const unit = chapterUnit(bookId);
 	// the return path keeps the reader's verse selection (UX-5)
 	const backUrl = `/scripture/${bookId}/${chapter}${verse ? `?verse=${verse}` : ""}`;
+	// close-up view (Abram's design): select a piece, see it large in place
+	const [selected, setSelected] = useState<ArtItem | null>(null);
 
 	return (
 		<main className="mx-auto max-w-6xl px-6 py-10">
@@ -118,13 +128,22 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 				</p>
 			)}
 
-			{/* fixed aspect-ratio boxes: zero CLS on image load; tab order = DOM order (UX-4) */}
+			{/* fixed aspect-ratio boxes: zero CLS on image load; tab order = DOM order (UX-4).
+			    Cards open the close-up dialog; the outbound source link lives there. */}
 			<ul className="mt-8 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
-				{art.map((a) => {
-					const href = safeHttpUrl(a.sourceUrl) ?? safeHttpUrl(a.image);
-					const card = (
-						<>
-							<div className="aspect-[4/3] overflow-hidden rounded-lg border border-rule2 bg-panel">
+				{art.map((a) => (
+					<li key={a.id}>
+						<button
+							type="button"
+							onClick={() => setSelected(a)}
+							className="group block w-full text-left"
+							aria-label={`View ${a.title}${a.artist ? ` by ${a.artist}` : ""} up close`}
+						>
+							<div
+								className="aspect-[4/3] overflow-hidden rounded-lg border border-rule2 bg-panel"
+								// the stack's thumbs morph into these boxes on navigation
+								style={{ viewTransitionName: artTransitionName(a.id) }}
+							>
 								{/* decorative: title/artist are adjacent visible text (CUO-6) */}
 								<ArtImage art={a} decorative className="h-full w-full object-cover" />
 							</div>
@@ -134,22 +153,40 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 							<p className="truncate font-ui text-[10px] text-muted-foreground">
 								{[a.artist, a.year].filter(Boolean).join(" · ")}
 							</p>
-						</>
-					);
-					return (
-						<li key={a.id}>
-							{href ? (
-								<a href={href} target="_blank" rel="noreferrer" className="group block">
-									{card}
-								</a>
-							) : (
-								// visibly non-interactive — no hover affordance, no tab stop (CUO-4)
-								<div className="opacity-80">{card}</div>
-							)}
-						</li>
-					);
-				})}
+						</button>
+					</li>
+				))}
 			</ul>
+
+			<Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+				<DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+					{selected && (
+						<>
+							<DialogHeader>
+								<DialogTitle className="font-display text-xl">{selected.title}</DialogTitle>
+								<DialogDescription className="font-ui text-xs">
+									{[selected.artist, selected.year].filter(Boolean).join(" · ") || "Artist unknown"}
+								</DialogDescription>
+							</DialogHeader>
+							<img
+								src={safeHttpUrl(selected.image) ?? safeHttpUrl(selected.thumb) ?? ""}
+								alt={`${selected.title}${selected.artist ? ` — ${selected.artist}` : ""}`}
+								className="max-h-[65vh] w-full rounded-lg border border-rule2 object-contain"
+							/>
+							{safeHttpUrl(selected.sourceUrl) && (
+								<a
+									href={safeHttpUrl(selected.sourceUrl)!}
+									target="_blank"
+									rel="noreferrer"
+									className="font-ui text-sm font-semibold text-primary underline underline-offset-4"
+								>
+									View source ↗
+								</a>
+							)}
+						</>
+					)}
+				</DialogContent>
+			</Dialog>
 		</main>
 	);
 }
