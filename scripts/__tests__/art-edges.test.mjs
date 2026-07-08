@@ -2,7 +2,7 @@
 // Run: node --test scripts/__tests__/art-edges.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildArtEdges, ART_PERSON_MAP } from '../materialize-art-edges.mjs';
+import { buildArtEdges, ART_PERSON_MAP, ART_PERSON_BOOK_GATE } from '../materialize-art-edges.mjs';
 
 const artwork = (o = {}) => ({
   id: 'art:nativity-test',
@@ -92,16 +92,64 @@ test('single-verse cite (verse_end null) → chapter edge + ONE verse edge, no r
   assert.equal(verseEdges[0].metadata.range_start, null);
 });
 
-test('out-of-range verses in a VALID chapter are skipped+counted, never guessed (COR-4/SEC-3)', () => {
+test('out-of-range verses in a VALID chapter: chapter edge kept, verses PARTIAL-skipped, never guessed (COR-4/SEC-3/CCD-3)', () => {
   const chapterExists = (id) => id === 'john-3';
   const verseExists = (id) => /^john-3-(\d|1\d|2\d|3[0-6])$/.test(id); // john 3 has 36 verses
-  const { edges, skipped } = buildArtEdges(
+  const { edges, skipped, partial } = buildArtEdges(
     [{ id: 'art:x', metadata: { refs: [{ book_id: 'john', chapter: 3, verse_start: 35, verse_end: 40 }], biblical_character: [] } }],
     { chapterExists, verseExists, personExists: () => false },
   );
   assert.equal(edges.filter((e) => e.to_id.startsWith('john-3-')).length, 0);
-  assert.equal(skipped.length, 1);
-  assert.match(skipped[0], /verse bounds/);
+  assert.ok(edges.some((e) => e.to_id === 'john-3')); // the chapter anchor survives
+  assert.equal(skipped.length, 0); // whole-ref cap unaffected
+  assert.equal(partial.length, 1);
+  assert.match(partial[0], /verse bounds/);
+});
+
+test('polysemous slugs are book-gated per artwork (CCD-1: judas/jacob live wrong-edge class)', () => {
+  assert.deepEqual(ART_PERSON_BOOK_GATE.judas, ['matt', 'mark', 'luke', 'john', 'acts']);
+  const lookups = {
+    chapterExists: (id) => ['matt-26', 'ex-14', 'gen-32'].includes(id),
+    verseExists: () => true,
+    personExists: () => true,
+  };
+  // Judas Maccabeus-style work (no NT ref) → context-skipped, no FEATURES
+  const macc = buildArtEdges(
+    [{ id: 'art:maccabeus', metadata: { refs: [{ book_id: 'ex', chapter: 14, verse_start: null, verse_end: null }], biblical_character: ['judas'] } }],
+    lookups,
+  );
+  assert.equal(macc.edges.filter((e) => e.rel_type === 'FEATURES').length, 0);
+  assert.deepEqual(macc.contextSkipped, ['art:maccabeus:judas']);
+  // Gospel-anchored judas → mapped
+  const gospel = buildArtEdges(
+    [{ id: 'art:betrayal', metadata: { refs: [{ book_id: 'matt', chapter: 26, verse_start: null, verse_end: null }], biblical_character: ['judas'] } }],
+    lookups,
+  );
+  assert.ok(gospel.edges.some((e) => e.rel_type === 'FEATURES' && e.to_id === 'judas-iscariot-1'));
+  // Genesis jacob → mapped; Exodus "Israel" jacob → context-skipped
+  const patriarch = buildArtEdges(
+    [{ id: 'art:wrestle', metadata: { refs: [{ book_id: 'gen', chapter: 32, verse_start: null, verse_end: null }], biblical_character: ['jacob'] } }],
+    lookups,
+  );
+  assert.ok(patriarch.edges.some((e) => e.to_id === 'jacob-patriarch-1'));
+});
+
+test('every edge in an overlap group carries IDENTICAL range metadata (CCD-2 repro)', () => {
+  const chapterExists = (id) => id === 'luke-2';
+  const verseExists = (id) => /^luke-2-\d+$/.test(id);
+  const { edges } = buildArtEdges(
+    [{ id: 'art:x', metadata: { refs: [
+      { book_id: 'luke', chapter: 2, verse_start: 8, verse_end: 10 },
+      { book_id: 'luke', chapter: 2, verse_start: 9, verse_end: 12 },
+    ], biblical_character: [] } }],
+    { chapterExists, verseExists, personExists: () => false },
+  );
+  const verseEdges = edges.filter((e) => e.to_id.startsWith('luke-2-'));
+  assert.equal(verseEdges.length, 5); // 8..12, no duplicates
+  for (const e of verseEdges) {
+    assert.equal(e.metadata.range_start, 'luke-2-8');
+    assert.equal(e.metadata.range_end, 'luke-2-12');
+  }
 });
 
 test('is_primary merge is order-independent; overlapping duplicate verse refs union ranges (COR-5)', () => {

@@ -341,9 +341,19 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		graphIdValid
 			? (getPublicCollectionIds(context.db) as Promise<string[]>).catch(() => undefined)
 			: Promise.resolve(undefined),
-		// art is an enhancement — its failure must never break the chapter
+		// art is an enhancement — its failure must never break the chapter,
+		// but it must not vanish silently either (CUO-3)
 		(getChapterArt(context.db, bookId, chapter) as Promise<ArtworkRow[]>).catch(
-			() => [] as ArtworkRow[],
+			(error) => {
+				logEvent("art_gallery_degraded", {
+					name: error instanceof Error ? error.name : "unknown",
+					message: error instanceof Error ? error.message : String(error),
+					book: bookId,
+					chapter,
+					view: "chapter",
+				});
+				return [] as ArtworkRow[];
+			},
 		),
 		// real prev/next bounds (FM-10), folded into the same round-trip window (PERF-2);
 		// on failure fall back to "next exists" so navigation is never over-restricted
@@ -834,13 +844,25 @@ function PanelBody({
 						Art · {art.length}
 					</h3>
 					<ul className="mt-2 flex list-none gap-2 overflow-x-auto">
-						{art.slice(0, 6).map((a) => (
-							<li key={a.id} className="shrink-0">
-								<a href={a.sourceUrl || a.image} target="_blank" rel="noreferrer" title={`${a.title}${a.artist ? ` — ${a.artist}` : ""}`}>
-									<ArtImage art={a} className="h-20 w-28 rounded-md border border-rule2 object-cover" />
-								</a>
-							</li>
-						))}
+						{art.slice(0, 6).map((a) => {
+							// sanitized at construction; skip the anchor when neither
+							// field yields a URL (no href="" same-page trap, CSC-1)
+							const href = a.sourceUrl || a.image;
+							const thumb = (
+								<ArtImage art={a} className="h-20 w-28 rounded-md border border-rule2 object-cover" />
+							);
+							return (
+								<li key={a.id} className="shrink-0">
+									{href ? (
+										<a href={href} target="_blank" rel="noreferrer" title={`${a.title}${a.artist ? ` — ${a.artist}` : ""}`}>
+											{thumb}
+										</a>
+									) : (
+										thumb
+									)}
+								</li>
+							);
+						})}
 					</ul>
 				</div>
 			)}

@@ -65,7 +65,8 @@ try {
     SELECT to_id, metadata->>'range_start' AS rs, metadata->>'range_end' AS re
     FROM lumen.edges
     WHERE collection_id = 'art' AND rel_type = 'DEPICTS'
-      AND from_id = 'art:durer-title-page' AND to_id LIKE 'rev-1-%' ORDER BY to_id`;
+      AND from_id = 'art:durer-title-page'
+      AND to_id IN ('rev-1-1', 'rev-1-2', 'rev-1-3') ORDER BY to_id`;
   check('Dürer title page has per-verse DEPICTS rev-1-1..3 with range metadata',
     durer.length === 3 && durer.every((r) => r.rs === 'rev-1-1' && r.re === 'rev-1-3'),
     durer.map((r) => r.to_id).join(' '));

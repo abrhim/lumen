@@ -1,6 +1,6 @@
 import { Link, isRouteErrorResponse } from "react-router";
 import { ArrowLeftIcon } from "lucide-react";
-import { parseReference, getChapterArt, chapterUnit } from "@lumen/scripture";
+import { parseReference, getChapterArt, getBook, chapterUnit } from "@lumen/scripture";
 import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, safeHttpUrl, type ArtworkRow } from "~/lib/art";
 import { logEvent } from "../lib/log.server";
@@ -34,10 +34,15 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	}
 
 	// never-throw: art is an enhancement — degrade, log, keep the page (OBS-4)
+	const startedAt = Date.now();
 	let art: ArtworkRow[] = [];
+	let book: { name?: string } | null = null;
 	let degraded = false;
 	try {
-		art = (await getChapterArt(context.db, bookId, chapter, 100)) as ArtworkRow[];
+		[art, book] = await Promise.all([
+			getChapterArt(context.db, bookId, chapter, 100) as Promise<ArtworkRow[]>,
+			getBook(context.db, bookId) as Promise<{ name?: string } | null>,
+		]);
 	} catch (error) {
 		degraded = true;
 		logEvent("art_gallery_degraded", {
@@ -45,12 +50,17 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			message: error instanceof Error ? error.message : String(error),
 			book: bookId,
 			chapter,
+			elapsedMs: Date.now() - startedAt,
 		});
 	}
+
+	// human display reference, never the raw slug (CUO-1)
+	const reference = `${book?.name ?? bookId} ${chapter}`;
 
 	return {
 		bookId,
 		chapter,
+		reference,
 		degraded,
 		verse: url.searchParams.get("verse"),
 		art: art.map(toArtItem),
@@ -59,12 +69,12 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 
 export function meta({ data }: Route.MetaArgs) {
 	return [
-		{ title: data ? `Art · ${data.bookId} ${data.chapter} · Lumen` : "Lumen" },
+		{ title: data ? `Art · ${data.reference} · Lumen` : "Lumen" },
 	];
 }
 
 export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, art, degraded, verse } = loaderData;
+	const { bookId, chapter, reference, art, degraded, verse } = loaderData;
 	const unit = chapterUnit(bookId);
 	// the return path keeps the reader's verse selection (UX-5)
 	const backUrl = `/scripture/${bookId}/${chapter}${verse ? `?verse=${verse}` : ""}`;
@@ -80,14 +90,14 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 				<div className="mt-2 flex items-center gap-3">
 					<Link
 						to={backUrl}
-						aria-label={`Back to ${unit.toLowerCase()} ${chapter}`}
+						aria-label={`Back to ${reference}`}
 						className="-m-2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink"
 					>
 						<ArrowLeftIcon className="size-5" aria-hidden="true" />
 					</Link>
 					<h1 className="font-display text-3xl font-medium tracking-tight">
 						<Link to={backUrl} className="underline-offset-4 hover:underline hover:decoration-rule2">
-							{bookId} {chapter}
+							{reference}
 						</Link>{" "}
 						· Art
 					</h1>
@@ -115,7 +125,8 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 					const card = (
 						<>
 							<div className="aspect-[4/3] overflow-hidden rounded-lg border border-rule2 bg-panel">
-								<ArtImage art={a} className="h-full w-full object-cover" />
+								{/* decorative: title/artist are adjacent visible text (CUO-6) */}
+								<ArtImage art={a} decorative className="h-full w-full object-cover" />
 							</div>
 							<p className="mt-1.5 truncate font-ui text-xs font-semibold text-ink group-hover:text-primary">
 								{a.title}
@@ -132,7 +143,8 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 									{card}
 								</a>
 							) : (
-								<div>{card}</div>
+								// visibly non-interactive — no hover affordance, no tab stop (CUO-4)
+								<div className="opacity-80">{card}</div>
 							)}
 						</li>
 					);

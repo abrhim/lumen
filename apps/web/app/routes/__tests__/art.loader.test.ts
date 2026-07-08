@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Harness (art-graph): gallery route loader + card-stack pure helper.
 vi.mock("@lumen/scripture", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@lumen/scripture")>();
-	return { ...actual, getChapterArt: vi.fn() };
+	return {
+		...actual,
+		getChapterArt: vi.fn(),
+		getBook: vi.fn(async () => ({ name: "Luke" })),
+	};
 });
 
 import { getChapterArt } from "@lumen/scripture";
@@ -35,6 +39,7 @@ describe("gallery loader (FM-6)", () => {
 		expect(data.art[0].id).toBe("art:a");
 		expect(data.bookId).toBe("luke");
 		expect(data.chapter).toBe(2);
+		expect(data.reference).toBe("Luke 2"); // human name, never the slug (CUO-1)
 		expect(getChapterArt).toHaveBeenCalledWith(expect.anything(), "luke", 2, 100);
 	});
 
