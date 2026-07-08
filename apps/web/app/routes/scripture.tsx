@@ -29,6 +29,12 @@ import {
 } from "@lumen/scripture";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
+	Accordion,
+	AccordionItem,
+	AccordionTrigger,
+	AccordionContent,
+} from "~/components/ui/accordion";
+import {
 	Sheet,
 	SheetContent,
 	SheetDescription,
@@ -140,6 +146,7 @@ async function loadCrossRefs(
 			// BoM/D&C/PGP: the curated collection is the only verse↔verse source
 			const { refs, totals } = await getCrossReferences(db, verseId, {
 				collectionId: LEGACY_CROSSREF_COLLECTION,
+				limitPerDirection: 200,
 			});
 			return { degraded: false, cards: groupCrossRefs(refs), totals, curated };
 		}
@@ -148,9 +155,11 @@ async function loadCrossRefs(
 		// the old Neo4j panel had no collection filter, so Bible↔BoM bridges like
 		// 1 Cor 1:27 → Ether 12:27 were visible; keep them, drop the curated
 		// set's noisy Bible↔Bible refs that OpenBible replaces).
+		// generous limit: the accordion shows everything on expand ("see all");
+		// worst hub-verse fan-out in the corpus is ~2k rows, typical <150
 		const [openbible, legacy] = await Promise.all([
-			getCrossReferences(db, verseId, { collectionId: "openbible" }),
-			getCrossReferences(db, verseId, { collectionId: LEGACY_CROSSREF_COLLECTION }),
+			getCrossReferences(db, verseId, { collectionId: "openbible", limitPerDirection: 200 }),
+			getCrossReferences(db, verseId, { collectionId: LEGACY_CROSSREF_COLLECTION, limitPerDirection: 200 }),
 		]);
 		const crossCanon = legacy.refs.filter((r) => !BIBLE_BOOK_IDS.has(bookOfVerseId(r.verse_id)));
 		const cards = groupCrossRefs([...openbible.refs, ...crossCanon]);
@@ -876,14 +885,11 @@ function PanelBody({
 					</ul>
 				</div>
 			)}
-			{/* Cross-references resolve in the loader's critical path, so they render
-			    synchronously ABOVE the streamed chips — late-arriving chips append
-			    below and can never shift these cards (UX-1). */}
-			{isPending || crossRefs === null ? (
-				<CrossRefsSkeleton />
-			) : (
-				<CrossRefsSection panel={crossRefs} onNavigate={onCrossRefNavigate} />
-			)}
+			{/* Panel order (Abram's call): principles/people first, citations below.
+			    The streamed chips block keeps a reserved-shape skeleton so its
+			    resolve nudges the accordion headers below as little as possible;
+			    the accordion defaults collapsed, so the whole detail view stays
+			    scannable and citations expand to the full list on demand. */}
 			{isPending || connections === null ? (
 				<EntityChipsSkeleton />
 			) : (
@@ -896,6 +902,11 @@ function PanelBody({
 						{(panel) => <Connections panel={panel} onOpenGraph={onOpenGraph} />}
 					</Await>
 				</Suspense>
+			)}
+			{isPending || crossRefs === null ? (
+				<CrossRefsSkeleton />
+			) : (
+				<CrossRefsSection panel={crossRefs} onNavigate={onCrossRefNavigate} />
 			)}
 		</>
 	);
@@ -1013,8 +1024,9 @@ function CrossRefsSection({
 	);
 
 	return (
-		<div>
-			<CrossRefCards
+		<Accordion type="multiple" className="mt-5">
+			<CrossRefAccordionItem
+				value="references"
 				title="References"
 				accent="text-cites"
 				cards={references}
@@ -1023,7 +1035,8 @@ function CrossRefsSection({
 				onNavigate={onNavigate}
 				credit={credit}
 			/>
-			<CrossRefCards
+			<CrossRefAccordionItem
+				value="referenced-by"
 				title="Referenced by"
 				accent="text-citedby"
 				cards={referencedBy}
@@ -1032,7 +1045,7 @@ function CrossRefsSection({
 				onNavigate={onNavigate}
 				credit={references.length === 0 ? credit : null}
 			/>
-		</div>
+		</Accordion>
 	);
 }
 
@@ -1112,7 +1125,8 @@ const CURATED_SOURCE_LABELS: Record<string, string> = {
 	"lds-doc-project": "LDS Documentation Project",
 };
 
-function CrossRefCards({
+function CrossRefAccordionItem({
+	value,
 	title,
 	accent,
 	cards,
@@ -1121,6 +1135,7 @@ function CrossRefCards({
 	onNavigate,
 	credit,
 }: {
+	value: string;
 	title: string;
 	accent: string;
 	cards: CrossRefCard[];
@@ -1133,25 +1148,28 @@ function CrossRefCards({
 	// Truncation is disclosed, not silent (UX-2/A11Y-1) — but only when rows
 	// were actually cut by the limit: the SQL total counts pre-dedup rows, so
 	// "N of M" with untruncated cards would misread duplicates as hidden refs.
-	const truncated = cards.length >= 20 && total > cards.length;
+	const truncated = cards.length >= 200 && total > cards.length;
 	const count = truncated ? `${cards.length} of ${total}` : `${cards.length}`;
 	return (
-		<div className="mt-5">
-			<h3 className={`flex items-baseline gap-2 font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
-				<span>
-					{title} · {count}
-				</span>
-				{curated && (
-					// real visible text at 12px, not a decorative micro-label (A11Y-4);
-					// "Curated", never "legacy" (UX-4)
-					<span className="rounded border border-rule2 px-1.5 py-0.5 font-ui text-xs font-medium normal-case tracking-normal text-muted-foreground">
-						Curated
+		<AccordionItem value={value} className="border-rule2">
+			<AccordionTrigger className="py-3 hover:no-underline">
+				<span className={`flex items-baseline gap-2 font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
+					<span>
+						{title} · {count}
 					</span>
-				)}
-			</h3>
+					{curated && (
+						// real visible text at 12px, not a decorative micro-label (A11Y-4);
+						// "Curated", never "legacy" (UX-4)
+						<span className="rounded border border-rule2 px-1.5 py-0.5 font-ui text-xs font-medium normal-case tracking-normal text-muted-foreground">
+							Curated
+						</span>
+					)}
+				</span>
+			</AccordionTrigger>
+			<AccordionContent>
 			{/* CC-BY credit under the References header, per amendment 10 */}
 			{credit}
-			<ul className="mt-2 space-y-2">
+			<ul className="mt-1 space-y-2">
 				{cards.map((x) => {
 					const target = verseIdToTarget(x.verse_id);
 					// provenance stays visible on curated-source cards (the old
@@ -1190,7 +1208,8 @@ function CrossRefCards({
 					);
 				})}
 			</ul>
-		</div>
+			</AccordionContent>
+		</AccordionItem>
 	);
 }
 
