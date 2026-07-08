@@ -1,0 +1,13 @@
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/abram/code/lumen/scripts/ingest-strongs.mjs' imported from /Users/abram/code/lumen/scripts/__tests__/strongs.test.mjs
+ℹ pass 0
+ℹ fail 1
+Error: Cannot find module '../strongs' imported from '/Users/abram/code/lumen/packages/scripture/src/__tests__/strongs-queries.test.ts'
+ Test Files  1 failed (1)
+      Tests  no tests
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/__tests__/strongs-queries.test.ts
+ ❯ app/routes/__tests__/scripture.loader.test.ts (21 tests | 1 failed) 11ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 passed (21)
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run app/routes/__tests__/scripture.loader.test.ts
+EXIT=1 (initial: ingest-strongs.mjs + strongs.ts + loader wordTags absent)

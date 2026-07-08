@@ -12,6 +12,7 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		// shape MUST match the real contract — an [] here once made every
 		// crossRefs path throw-and-degrade while 19/19 tests stayed green (CAPI-1)
 		getCrossReferences: vi.fn(async () => ({ refs: [], totals: { outgoing: 0, incoming: 0 } })),
+		getWordTags: vi.fn(async () => []),
 	};
 });
 
@@ -170,6 +171,26 @@ describe("scripture loader — happy paths", () => {
 		expect(ids).toContain("ether-12-27");
 		expect(ids).not.toContain("rom-8-28");
 		expect(data.crossRefs!.totals.outgoing).toBe(2); // 1 openbible + 1 cross-canon
+	});
+
+	it("fetches word tags in the critical path for the selected BIBLE verse; happy path asserts real rows (strongs FM-6)", async () => {
+		const { getWordTags } = await import("@lumen/scripture");
+		vi.mocked(getWordTags as any).mockResolvedValue([
+			{ word_id: "john-3-16-w4", position: 4, char_start: 11, char_end: 16, strongs: ["G25"], morph: "robinson:V-AAI-3S", entries: [{ strongs_no: "G25", translit: "agapaō", gloss: "to love" }] },
+		]);
+		vi.mocked(getVersesByChapter).mockResolvedValue([
+			{ id: "john-3-16", verse_number: 16, text: "For God so loved…", reference: "John 3:16" },
+		] as any);
+		const data = await loader(makeArgs("john", "3", "?verse=16"));
+		expect(vi.mocked(getWordTags)).toHaveBeenCalledWith(expect.anything(), "john-3-16");
+		expect(data.wordTags).not.toBeNull();
+		expect(data.wordTags!.degraded).toBe(false);
+		expect(data.wordTags!.tags).toHaveLength(1);
+
+		// BoM verses have no tags — the query is skipped entirely
+		vi.mocked(getWordTags as any).mockClear();
+		await loader(makeArgs("1-ne", "3", "?verse=7"));
+		expect(vi.mocked(getWordTags)).not.toHaveBeenCalled();
 	});
 
 	it("keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)", async () => {
