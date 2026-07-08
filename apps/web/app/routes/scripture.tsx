@@ -3,7 +3,6 @@ import {
 	Await,
 	Link,
 	isRouteErrorResponse,
-	useFetcher,
 	useNavigate,
 	useNavigation,
 	useNavigationType,
@@ -23,6 +22,7 @@ import {
 	getCrossReferences,
 	groupCrossRefs,
 	getWordTags,
+	tokenize,
 	BIBLE_BOOK_IDS,
 	type CrossRefCard,
 	type WordTagRow,
@@ -47,7 +47,7 @@ import {
 import { useIsMobile } from "~/hooks/use-mobile";
 import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
-import { buildWordSegments } from "~/lib/word-study";
+import { strongsLanguage } from "~/lib/word-study";
 import { cachedJson } from "../lib/cache.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
@@ -177,6 +177,14 @@ async function loadCrossRefs(
 		});
 		return { degraded: true, cards: [], totals: { outgoing: 0, incoming: 0 }, curated };
 	}
+}
+
+/** One owner for the ?word grammar (1-based word position within the selected verse). */
+function parseWordParam(search: string): number | null {
+	const raw = new URLSearchParams(search).get("word");
+	if (raw === null || !/^\d+$/.test(raw)) return null;
+	const n = parseInt(raw, 10);
+	return n > 0 ? n : null;
 }
 
 /** One owner for the ?verse grammar — the loader and the optimistic client parse share it. */
@@ -420,6 +428,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const connections = selectedVerse !== null ? pendingConnections : null;
 	const crossRefs = selectedVerse !== null ? crossRefsRaw : null;
 	const wordTags = selectedVerse !== null ? wordTagsRaw : null;
+	const selectedWord = selectedVerse !== null ? parseWordParam(url.search) : null;
 
 	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
 	const graph: Promise<GraphPanelData> | null =
@@ -449,6 +458,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			reference: v.reference,
 		})),
 		selectedVerse,
+		selectedWord,
 		connections,
 		crossRefs,
 		wordTags,
@@ -465,7 +475,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, crossRefs, wordTags, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
 	const unit = chapterUnit(bookId);
 	const navigation = useNavigation();
@@ -474,6 +484,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const isMobile = useIsMobile();
 
 	const chapterUrl = `/scripture/${bookId}/${chapter}`;
+	// Bible chapters get the in-body word-study layer (BoM/D&C have no tags)
+	const isBibleBook = BIBLE_BOOK_IDS.has(bookId);
 	// "1 Nephi 3" → "1 Nephi" for the breadcrumb link
 	const bookName = reference.replace(/\s+\d+$/, "");
 	// History back when there is history; otherwise up to the chapter grid.
@@ -604,7 +616,6 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			isPending={isPending}
 			connections={connections}
 			crossRefs={crossRefs}
-			wordTags={wordTags}
 			art={verseArt}
 			onCrossRefNavigate={onCrossRefNavigate}
 			onOpenGraph={openGraph}
@@ -701,12 +712,34 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					<ol className="max-w-prose list-none">
 						{verses.map((verse) => {
 							const isActive = verse.verse_number === activeVerse;
+							const wordTag =
+								isActive && selectedWord !== null && wordTags !== null && !wordTags.degraded
+									? wordTags.tags.find((t) => t.position === selectedWord)
+									: undefined;
 							return (
 								<li key={verse.id} id={`v${verse.verse_number}`}>
 									<Link
 										to={isActive ? chapterUrl : `${chapterUrl}?verse=${verse.verse_number}`}
 										preventScrollReset
 										aria-current={isActive ? "true" : undefined}
+										onClick={(e) => {
+											// Abram's click rules: an active text selection never
+											// navigates; a WORD click opens word study (and selects
+											// the verse); anything else is a plain verse select.
+											const sel = window.getSelection();
+											if (sel && !sel.isCollapsed) {
+												e.preventDefault();
+												return;
+											}
+											const span = (e.target as HTMLElement).closest?.("[data-wpos]");
+											if (span && isBibleBook) {
+												e.preventDefault();
+												navigate(
+													`${chapterUrl}?verse=${verse.verse_number}&word=${span.getAttribute("data-wpos")}`,
+													{ preventScrollReset: true },
+												);
+											}
+										}}
 										className={`relative block rounded-lg py-2 pl-14 pr-4 font-reading text-[19px] leading-relaxed text-ink transition-colors duration-150 hover:bg-selbar/10 ${
 											isActive ? "bg-sel" : ""
 										}`}
@@ -718,8 +751,14 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										>
 											{verse.verse_number}
 										</span>
-										{verse.text}
+										{isBibleBook ? <VerseWords text={verse.text} /> : verse.text}
 									</Link>
+									{wordTag && (
+										<InlineWordCard
+											tag={wordTag}
+											closeUrl={`${chapterUrl}?verse=${verse.verse_number}`}
+										/>
+									)}
 								</li>
 							);
 						})}
@@ -893,7 +932,6 @@ function PanelBody({
 	isPending,
 	connections,
 	crossRefs,
-	wordTags,
 	art,
 	onCrossRefNavigate,
 	onOpenGraph,
@@ -902,14 +940,15 @@ function PanelBody({
 	isPending: boolean;
 	connections: Promise<VersePanelData> | null;
 	crossRefs: CrossRefsPanel | null;
-	wordTags: WordTagsPanel | null;
 	art: ArtItem[];
 	onCrossRefNavigate: (verse: number) => void;
 	onOpenGraph: (entityId: string) => void;
 }) {
 	return (
 		<>
-			<WordStudyVerse verseText={verseText} wordTags={isPending ? null : wordTags} />
+			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
+				{verseText}
+			</blockquote>
 			{art.length > 0 && (
 				<div className="mt-4">
 					<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
@@ -964,198 +1003,73 @@ function PanelBody({
 		</>
 	);
 }
-
-/** Amendment 6 (strongs): the verse quote with an OPT-IN interactive layer.
- * The toggle solves touch discoverability, AT wall-of-buttons, and tab
- * pollution in one move; while active, tagged words get dotted underlines,
- * padded hit areas, roving tabindex, and background-only selection (no
- * reflow). The text is always a SLICE of the original (FM-7). */
-function WordStudyVerse({
-	verseText,
-	wordTags,
-}: {
-	verseText: string;
-	wordTags: WordTagsPanel | null;
-}) {
-	const [study, setStudy] = useState(false);
-	const [active, setActive] = useState<WordTagRow | null>(null);
-	const [focusIdx, setFocusIdx] = useState(0);
-	const toggleRef = useRef<HTMLButtonElement | null>(null);
-	// reset interaction state when the verse changes
-	useEffect(() => {
-		setStudy(false);
-		setActive(null);
-		setFocusIdx(0);
-	}, [verseText]);
-
-	const hasTags = wordTags !== null && !wordTags.degraded && wordTags.tags.length > 0;
-	// focus never drops to <body> on toggle/Done/verse-change (CS-2)
-	const exitStudy = () => {
-		setStudy(false);
-		setActive(null);
-		queueMicrotask(() => toggleRef.current?.focus());
-	};
-
-	if (!hasTags || !study) {
-		return (
-			<>
-				<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
-					{verseText}
-				</blockquote>
-				{hasTags && (
-					<button
-						ref={toggleRef}
-						type="button"
-						onClick={() => setStudy(true)}
-						className="mt-2 rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
-					>
-						Word study
-					</button>
-				)}
-				{wordTags?.degraded && (
-					// degraded ≠ genuinely-untagged: say so instead of silently
-					// hiding the affordance (CS-5)
-					<p className="mt-2 font-ui text-[10px] italic text-faint">
-						Word study is unavailable right now.
-					</p>
-				)}
-			</>
+/** Bible verse text as word-boundary spans (client-side, SAME tokenizer as
+ * the ingest — offsets agree by construction). Spans carry data-wpos for the
+ * verse Link's click router; hover underline is CSS, hover-capable only. */
+function VerseWords({ text }: { text: string }) {
+	const tokens = tokenize(text);
+	const parts: React.ReactNode[] = [];
+	let cursor = 0;
+	for (const t of tokens) {
+		if (t.char_start > cursor) parts.push(text.slice(cursor, t.char_start));
+		parts.push(
+			<span key={t.position} data-wpos={t.position}>
+				{text.slice(t.char_start, t.char_end)}
+			</span>,
 		);
+		cursor = t.char_end;
 	}
-
-	const segments = buildWordSegments(verseText, wordTags.tags);
-	const tagged = segments.filter((s) => s.tag !== null);
-	const move = (delta: number) => {
-		const next = Math.min(tagged.length - 1, Math.max(0, focusIdx + delta));
-		setFocusIdx(next);
-		document.getElementById(`ws-${tagged[next]!.tag!.word_id}`)?.focus();
-	};
-
-	let tagIdx = -1;
-	return (
-		<>
-			<blockquote
-				role="group"
-				aria-label="Word study — arrow keys move between words"
-				className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground"
-				onKeyDown={(e) => {
-					if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
-					if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-				}}
-			>
-				{segments.map((s, i) => {
-					if (s.tag === null) return <span key={i}>{s.text}</span>;
-					tagIdx++;
-					const idx = tagIdx;
-					const isActive = active?.word_id === s.tag.word_id;
-					return (
-						<button
-							key={i}
-							id={`ws-${s.tag.word_id}`}
-							type="button"
-							// roving tabindex: ONE tab stop for the whole verse (UA-8)
-							tabIndex={idx === focusIdx ? 0 : -1}
-							aria-pressed={isActive}
-							onClick={() => { setActive(isActive ? null : s.tag); setFocusIdx(idx); }}
-							// hit area padded VERTICALLY only — horizontal expansion made
-							// adjacent words' boxes meet across the space glyph (CS-3);
-							// selection is background-only so the line never reflows (UA-5)
-							className={`-my-1 rounded py-1 font-reading italic underline decoration-dotted decoration-rule2 underline-offset-4 transition-colors duration-150 hover:decoration-primary ${
-								isActive ? "bg-sel text-ink" : ""
-							}`}
-						>
-							{s.text}
-						</button>
-					);
-				})}
-			</blockquote>
-			<div className="mt-1 flex items-center justify-between">
-				<button
-					type="button"
-					onClick={exitStudy}
-					className="rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-primary transition-colors duration-150 hover:border-primary"
-				>
-					Done
-				</button>
-				<span className="font-ui text-[10px] text-faint">
-					Lexicon:{" "}
-					<a href="https://github.com/STEPBible/STEPBible-Data" target="_blank" rel="noreferrer" className="underline hover:text-ink">
-						STEPBible
-					</a>{" "}
-					(CC BY 4.0)
-				</span>
-			</div>
-			{active && <WordStudyCard tag={active} />}
-		</>
-	);
+	if (cursor < text.length) parts.push(text.slice(cursor));
+	return <>{parts}</>;
 }
 
-/** The tapped word's entry — directly under the verse (UA-4: no far-accordion hop). */
-function WordStudyCard({ tag }: { tag: WordTagRow }) {
-	const [expanded, setExpanded] = useState(false);
-	const alsoIn = useFetcher<{ no: string; verses: { verse_id: string; reference: string }[] }>();
+/** The terse in-body word card (Abram's design): language, original script,
+ * transliteration, one-line meaning, Details → the word page. Renders below
+ * the tapped verse; the chapter gently slides down (reduced-motion: instant). */
+function InlineWordCard({ tag, closeUrl }: { tag: WordTagRow; closeUrl: string }) {
 	const primary = tag.entries[0];
-	useEffect(() => {
-		setExpanded(false);
-		// unconditional: the fetcher supersedes in-flight loads — the idle
-		// guard served the PREVIOUS word's verses under rapid taps (CS-1/CE-2)
-		if (primary) alsoIn.load(`/api/strongs/${primary.strongs_no}`);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [tag.word_id]);
-	// only the late-arriving list is a live region — the entries render
-	// immediately and would double-announce (CS-4)
-	const staleAlsoIn = alsoIn.data && primary && alsoIn.data.no !== primary.strongs_no;
-
+	if (!primary) return null;
+	const lang = strongsLanguage(primary.strongs_no);
 	return (
-		<div className="mt-2 rounded-lg border border-rule2 bg-surface p-3">
-			<ol className="list-none space-y-2">
-				{tag.entries.map((e) => (
-					<li key={e.strongs_no}>
-						<p className="font-ui text-xs font-semibold text-ink">
-							{e.translit && <span className="mr-1.5">{e.translit}</span>}
-							<span className="font-normal text-muted-foreground">{e.strongs_no}</span>
-						</p>
-						{e.gloss && <p className="mt-0.5 font-reading text-[13px] text-ink">{e.gloss}</p>}
-						{e.definition && (
-							<p className="mt-1 whitespace-pre-line font-reading text-[13px] leading-snug text-muted-foreground">
-								{expanded || e.definition.length <= 400 ? e.definition : `${e.definition.slice(0, 400)}…`}
-							</p>
-						)}
-					</li>
-				))}
-			</ol>
-			{tag.morph && (
-				<p className="mt-1.5 font-ui text-[10px] uppercase tracking-wide text-faint">{tag.morph}</p>
-			)}
-			{tag.entries.some((e) => (e.definition?.length ?? 0) > 400) && (
-				<button
-					type="button"
-					onClick={() => setExpanded((x) => !x)}
-					className="mt-1 font-ui text-[11px] font-semibold text-primary hover:underline"
-				>
-					{expanded ? "Show less" : "Show more"}
-				</button>
-			)}
-			{!staleAlsoIn && (alsoIn.data?.verses.length ?? 0) > 0 && (
-				<p aria-live="polite" className="mt-2 font-ui text-[11px] text-muted-foreground">
-					Also in:{" "}
-					{alsoIn.data!.verses.slice(0, 5).map((v, i) => {
-						const target = verseIdToTarget(v.verse_id);
-						return (
-							<span key={v.verse_id}>
-								{i > 0 && " · "}
-								{target ? (
-									<Link to={target.href} preventScrollReset className="text-primary hover:underline">
-										{v.reference}
-									</Link>
-								) : (
-									v.reference
-								)}
+		<div className="mx-14 my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out">
+			<div className="rounded-lg border border-rule2 bg-panel p-3">
+				<div className="flex items-baseline justify-between gap-3">
+					<p className="font-ui text-xs text-ink">
+						<span className="mr-2 rounded border border-rule2 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+							{lang}
+						</span>
+						{primary.original && (
+							<span className="mr-2 font-reading text-base" dir={lang === "Hebrew" ? "rtl" : "ltr"}>
+								{primary.original}
 							</span>
-						);
-					})}
-				</p>
-			)}
+						)}
+						{primary.translit && <span className="mr-1.5 font-semibold italic">{primary.translit}</span>}
+						<span className="text-faint">{primary.strongs_no}</span>
+					</p>
+					<Link
+						to={closeUrl}
+						preventScrollReset
+						aria-label="Close word study"
+						className="-m-1 p-1 text-muted-foreground transition-colors duration-150 hover:text-ink"
+					>
+						<XIcon className="size-3.5" aria-hidden="true" />
+					</Link>
+				</div>
+				{primary.gloss && (
+					<p className="mt-1 font-reading text-[15px] text-ink">{primary.gloss}</p>
+				)}
+				{tag.entries.length > 1 && (
+					<p className="mt-0.5 font-ui text-[10px] text-faint">
+						+{tag.entries.length - 1} more sense{tag.entries.length > 2 ? "s" : ""} on the detail page
+					</p>
+				)}
+				<Link
+					to={`/word/${primary.strongs_no}`}
+					className="mt-2 inline-block font-ui text-[11px] font-semibold text-primary hover:underline"
+				>
+					Details →
+				</Link>
+			</div>
 		</div>
 	);
 }

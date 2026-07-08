@@ -8,9 +8,39 @@ import type { Db } from './types';
 
 export interface WordTagEntry {
   strongs_no: string;
+  original: string | null;
   translit: string | null;
   gloss: string | null;
   definition: string | null;
+}
+
+export interface LexiconEntry {
+  strongs_no: string;
+  lang: string;
+  original: string | null;
+  translit: string | null;
+  gloss: string | null;
+  definition: string | null;
+}
+
+/** Full lexicon entry for the word detail page. */
+export async function getLexiconEntry(db: Db, strongsNo: string): Promise<LexiconEntry | null> {
+  const rows = (await db.execute(
+    sql`SELECT strongs_no, lang, original, translit, gloss, definition
+        FROM lumen.strongs_lexicon WHERE strongs_no = ${strongsNo} LIMIT 1`,
+  )) as unknown as LexiconEntry[];
+  return rows[0] ?? null;
+}
+
+/** True occurrence count for a Strong's number (word detail pagination). */
+export async function getStrongsOccurrenceCount(db: Db, strongsNo: string): Promise<number> {
+  const rows = (await db.execute(
+    sql`SELECT count(DISTINCT w.verse_id)::int AS n
+        FROM lumen.word_tags t
+        JOIN lumen.words w ON w.id = t.word_id
+        WHERE t.strongs @> ARRAY[${strongsNo}]::text[]`,
+  )) as unknown as { n: number }[];
+  return rows[0]?.n ?? 0;
 }
 
 export interface WordTagRow {
@@ -32,6 +62,7 @@ export async function getWordTags(db: Db, verseId: string): Promise<WordTagRow[]
           json_agg(
             json_build_object(
               'strongs_no', s.no,
+              'original', l.original,
               'translit', l.translit,
               'gloss', l.gloss,
               'definition', l.definition
@@ -53,7 +84,7 @@ export interface StrongsVerseRow {
   text: string;
 }
 
-export async function getVersesByStrongs(db: Db, strongsNo: string, limit = 20): Promise<StrongsVerseRow[]> {
+export async function getVersesByStrongs(db: Db, strongsNo: string, limit = 20, offset = 0): Promise<StrongsVerseRow[]> {
   return (await db.execute(
     sql`SELECT DISTINCT v.id AS verse_id, v.reference, v.text, v.chapter_id, v.verse_number
         FROM lumen.word_tags t
@@ -61,6 +92,6 @@ export async function getVersesByStrongs(db: Db, strongsNo: string, limit = 20):
         JOIN lumen.verses v ON v.id = w.verse_id
         WHERE t.strongs @> ARRAY[${strongsNo}]::text[]
         ORDER BY v.chapter_id, v.verse_number
-        LIMIT ${limit}`,
+        LIMIT ${limit} OFFSET ${offset}`,
   )) as unknown as StrongsVerseRow[];
 }

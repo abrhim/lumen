@@ -33,6 +33,7 @@ describe('getWordTags SQL shape (FM-6/FM-10)', () => {
 		expect(q).toContain('GROUP BY');
 		expect(q).toContain('json_agg');
 		expect(q).toContain('ORDINALITY');
+		expect(q).toContain('original'); // word page + inline card show the script
 	});
 });
 
