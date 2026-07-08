@@ -91,3 +91,8 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - tske: replacement features need a removed-behavior audit AT PLANNING (old path's filters/fields/labels vs new design) — the two product regressions were knowable from deleted code.
 - tske: independent convergence ≈ certainty — the Critical was found by 4 reviewers with 2 repros; the tautology check by 5.
 - tske: verify licenses before planning around a dataset — "TSKe is CC-BY" survived a whole session as false memory; one search flipped the source choice.
+
+## 2026-07-08 · feature: art-graph · tier: standard
+- art-graph: curated tag→entity maps must disambiguate per INSTANCE, not per tag — "judas"/"jacob" named different people per artwork (15 live wrong edges prevented).
+- art-graph: combined-role reviewers (3 briefs w/ pre-seeded traps) matched 6-role quality at half the cost; every seeded trap confirmed a bug or verified clean.
+- art-graph: panel-2 live-probing wrote exact prod expectations (16 Daniel skips) into the plan; the dry run matched to the row — plan-time data probes keep paying.
