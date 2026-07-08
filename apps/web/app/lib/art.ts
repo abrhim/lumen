@@ -55,6 +55,11 @@ export function toArtItem(row: ArtworkRow): ArtItem {
 	};
 }
 
+/** CSS custom-ident for view-transition-name — art ids carry ':' etc. */
+export function artTransitionName(id: string): string {
+	return `art-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 /** Top-N by fame (nulls last) + overflow count, for the chapter card stack. */
 export function pickArtStack<T extends { fame: number | null }>(
 	items: T[],

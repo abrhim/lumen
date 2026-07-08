@@ -43,7 +43,7 @@ import {
 } from "~/components/ui/sheet";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { ArtImage } from "~/components/ArtImage";
-import { toArtItem, pickArtStack, type ArtItem, type ArtworkRow } from "~/lib/art";
+import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { cachedJson } from "../lib/cache.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
@@ -794,6 +794,7 @@ function ChapterArtStack({
 	return (
 		<Link
 			to={galleryUrl}
+			viewTransition
 			aria-label={`View ${art.length} artwork${art.length === 1 ? "" : "s"} for ${reference}`}
 			className="group mt-6 inline-flex min-h-11 items-center gap-3 rounded-lg border border-rule2 bg-panel py-1.5 pl-1.5 pr-4 transition-colors duration-150 hover:border-primary"
 		>
@@ -802,7 +803,9 @@ function ChapterArtStack({
 					<span
 						key={a.id}
 						className={`block h-14 w-14 overflow-hidden rounded-md border-2 border-panel shadow-sm ${i > 0 ? "-ml-5" : ""}`}
-						style={{ zIndex: stack.length - i }}
+						// shared-element morph: this thumb glides to its gallery
+						// position during the navigation (Abram's design)
+						style={{ zIndex: stack.length - i, viewTransitionName: artTransitionName(a.id) }}
 					>
 						<ArtImage art={a} className="h-full w-full object-cover" />
 					</span>
