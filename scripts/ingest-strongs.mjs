@@ -170,7 +170,8 @@ export function skipCapVerdict(skipped, total, cap) {
   return { ratio: Number(ratio.toFixed(5)), pass: ratio < cap };
 }
 
-/** Lexicon TSV row → {strongs_no, translit, gloss, definition-as-plain-text}. */
+/** Lexicon TSV row → {strongs_no, original, translit, gloss, definition-as-plain-text}.
+ * `original` is the Greek/Hebrew script (col 3) — the word detail page shows it. */
 export function parseLexiconLine(line) {
   const cols = line.split('\t');
   if (cols.length < 8) return null;
@@ -180,6 +181,7 @@ export function parseLexiconLine(line) {
     s.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/[ \t]+/g, ' ').trim();
   return {
     strongs_no,
+    original: cols[3]?.trim() || null,
     translit: cols[4]?.trim() || null,
     gloss: plain(cols[6] ?? '') || null,
     definition: plain(cols[7] ?? '') || null,
@@ -216,6 +218,10 @@ async function main() {
   let exitCode = 0;
   try {
     await assertSessionMode(sql);
+    // Session-level override of Supabase disk-limit enforcement, which can lag a plan
+    // upgrade (Supavisor strips startup params, so SET explicitly; safe post-upgrade —
+    // a truly full disk still fails the write): supabase.com/docs/guides/platform/database-size
+    await sql.unsafe("SET default_transaction_read_only TO 'off'");
 
     // ---- parse the XML into per-verse spans ----
     const xml = readFileSync(XML_FILE, 'utf8');
@@ -316,10 +322,12 @@ async function main() {
         CREATE TABLE IF NOT EXISTS lumen.strongs_lexicon (
           strongs_no TEXT PRIMARY KEY,
           lang TEXT NOT NULL,
+          original TEXT,
           translit TEXT,
           gloss TEXT,
           definition TEXT
         );
+        ALTER TABLE lumen.strongs_lexicon ADD COLUMN IF NOT EXISTS original TEXT;
         ALTER TABLE lumen.word_tags ENABLE ROW LEVEL SECURITY;
         ALTER TABLE lumen.strongs_lexicon ENABLE ROW LEVEL SECURITY;
         DROP POLICY IF EXISTS word_tags_read ON lumen.word_tags;
@@ -345,9 +353,9 @@ async function main() {
       for (let i = 0; i < lexArr.length; i += BATCH_SIZE) {
         const batch = lexArr.slice(i, i + BATCH_SIZE);
         await tx`
-          INSERT INTO lumen.strongs_lexicon (strongs_no, lang, translit, gloss, definition)
-          SELECT r.strongs_no, r.lang, r.translit, r.gloss, r.definition
-          FROM jsonb_to_recordset(${tx.json(batch)}) AS r(strongs_no text, lang text, translit text, gloss text, definition text)`;
+          INSERT INTO lumen.strongs_lexicon (strongs_no, lang, original, translit, gloss, definition)
+          SELECT r.strongs_no, r.lang, r.original, r.translit, r.gloss, r.definition
+          FROM jsonb_to_recordset(${tx.json(batch)}) AS r(strongs_no text, lang text, original text, translit text, gloss text, definition text)`;
       }
 
       // GIN built AFTER the bulk load (PO-2 / CPERF-7 precedent)

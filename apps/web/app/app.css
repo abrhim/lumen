@@ -281,3 +281,23 @@ html {
 		animation: none !important;
 	}
 }
+
+/* In-body word study: underline only on hover-capable pointers (Abram's
+   rule — no underlines at rest, nothing on touch). */
+@media (hover: hover) {
+	.word-hover:hover {
+		text-decoration: underline dotted;
+		text-decoration-color: var(--color-primary, currentColor);
+		text-underline-offset: 4px;
+	}
+}
+
+/* In-body word study (Abram's design): no underlines at rest; a subtle dotted
+   underline appears on hover, hover-capable devices only. */
+@media (hover: hover) {
+	[data-wpos]:hover {
+		text-decoration: underline dotted;
+		text-decoration-color: var(--color-rule2, currentColor);
+		text-underline-offset: 4px;
+	}
+}
