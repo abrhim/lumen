@@ -7,6 +7,8 @@ import { Skeleton } from "~/components/ui/skeleton";
 import {
 	buildGraphVM,
 	filterVM,
+	clusterVerses,
+	VERSE_CLUSTER_PREFIX,
 	FORCE_NODE_LIMIT,
 	FORCE_EDGE_LIMIT,
 	type GraphVM,
@@ -17,6 +19,8 @@ import {
 // neighborhoods) never download the d3 physics stack (B23).
 const ForceLayout = lazy(() => import("./ForceLayout"));
 const RadialLayout = lazy(() => import("./RadialLayout"));
+
+const EMPTY_SET: ReadonlySet<string> = new Set();
 
 export type GraphPanelData =
 	| { degraded: false; neighborhood: NeighborhoodResult; entityId: string; depth: 1 | 2 | 3 }
@@ -225,10 +229,25 @@ function GraphBody({
 	const [layout, setLayout] = useState<"force" | "radial">("force");
 	const [view, setView] = useState<"graph" | "list">("graph");
 	const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+	// Verse altitude: chapter-level by default — a whole chapter's verse fan is
+	// noise. Expansion is client-side (clusterVerses is pure), no re-query.
+	const [verseMode, setVerseMode] = useState<"grouped" | "all">("grouped");
+	const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
 	const positionsRef = useRef(new Map<string, { x: number; y: number }>());
 	const listRef = useRef<HTMLDivElement>(null);
 
-	const filtered = useMemo(() => filterVM(vm, hiddenTypes), [vm, hiddenTypes]);
+	const fullyGrouped = useMemo(() => clusterVerses(vm, EMPTY_SET), [vm]);
+	const hasVerseGroups = fullyGrouped !== vm;
+	const baseVm = useMemo(
+		() =>
+			verseMode === "all" || !hasVerseGroups
+				? vm
+				: expandedClusters.size === 0
+					? fullyGrouped
+					: clusterVerses(vm, expandedClusters),
+		[vm, fullyGrouped, hasVerseGroups, verseMode, expandedClusters],
+	);
+	const filtered = useMemo(() => filterVM(baseVm, hiddenTypes), [baseVm, hiddenTypes]);
 
 	// The force sim is gated on BOTH node and edge volume (B4) and reduced
 	// motion; the control reflects what actually renders (B7 — no lying
@@ -248,7 +267,14 @@ function GraphBody({
 	const truncatedNotice = shown < total;
 	const allHidden = vm.nodes.length > 1 && filtered.nodes.length <= 1;
 	const isEmpty = vm.nodes.length <= 1;
-	const recenter = (id: string) => onNavigate(id, depth);
+	// A cluster click expands it in place; everything else recenters (fetch).
+	const recenter = (id: string) => {
+		if (id.startsWith(VERSE_CLUSTER_PREFIX)) {
+			setExpandedClusters((prev) => new Set(prev).add(id));
+			return;
+		}
+		onNavigate(id, depth);
+	};
 
 	return (
 		<div className="flex h-full flex-col">
@@ -291,6 +317,17 @@ function GraphBody({
 						options={["graph", "list"]}
 						onChange={(v) => setView(v as "graph" | "list")}
 					/>
+					{hasVerseGroups && (
+						<SegmentedToggle
+							label="Verses"
+							value={verseMode}
+							options={["grouped", "all"]}
+							onChange={(v) => {
+								setVerseMode(v as "grouped" | "all");
+								if (v === "grouped") setExpandedClusters(new Set());
+							}}
+						/>
+					)}
 					<CloseButton onClose={onClose} />
 				</div>
 			</header>
@@ -320,7 +357,7 @@ function GraphBody({
 					<Suspense fallback={null}>
 						{effectiveLayout === "force" ? (
 							<ForceLayout
-								vm={vm}
+								vm={baseVm}
 								hiddenTypes={hiddenTypes}
 								positions={positionsRef.current}
 								onRecenter={recenter}
@@ -333,7 +370,7 @@ function GraphBody({
 			</div>
 
 			<footer className="flex flex-wrap items-center gap-2 border-t border-rule px-5 py-3">
-				{vm.types.map((t) => {
+				{baseVm.types.map((t) => {
 					const hidden = hiddenTypes.has(t.type);
 					return (
 						<button
