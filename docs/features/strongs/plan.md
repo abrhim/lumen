@@ -124,9 +124,69 @@ scripts/setup-indexes.sql (inventory note).
 - Q4 lexicon entry length: TBESH definitions can be long. **Default: gloss +
   first ~400 chars with expand.**
 
+## Plan amendments (post-panel synthesis; gates delegated)
+
+1. **Parser hardening (CD-1/CD-2/CD-3/CD-4/CD-5):** span text extraction
+   STRIPS nested markup (divineName touches 5,816 verses — 18.7% of the
+   Bible; tagger-corrected count, would have tripped the abort cap); nested
+   tagged `<w>` inside transChange is extracted (34 live cases) while bare
+   transChange text stays untagged; Psalm-title spans live outside verse
+   milestones and are ignored (documented + fixture); `<q>` balance is never
+   tracked; the John 3:16 fixture is the verbatim byte range (double empty
+   `<w/>`). File read: single readFileSync + regex walk (25MB is fine).
+2. **FK survival (SC-3, Critical):** `word_tags.word_id REFERENCES
+   lumen.words(id) ON DELETE CASCADE`; ingest-words.mjs + ingest-strongs.mjs
+   headers document the coupling (words re-ingest cascades tags away →
+   re-run strongs); smoke-strongs re-run-stability check makes silent tag
+   loss visible.
+3. **Query shapes pinned (PO-3/CD-7/SC-4/SC-6):** getWordTags aggregates to
+   ONE row per word: GROUP BY + json_agg over unnest WITH ORDINALITY (entries
+   preserve strongs[] order); entries carry {strongs_no, translit, gloss,
+   definition}. getVersesByStrongs rows: {verse_id, reference, text}.
+4. **Ingest discipline (PO-2/PO-4/PO-6/CD-6):** GIN(strongs) built AFTER the
+   bulk load in-tx; BATCH_SIZE 5000 (~160 batches, est. 3–6 min); events
+   strongs_ingest_start / source_loaded / strongs_alignment_skipped
+   {count, ratio, sample} / strongs_lexicon_loaded / strongs_ingest_done
+   {deleted, inserted, elapsedMs}; lexicon is delete-then-insert in the same
+   tx (no upsert accretion).
+5. **License + attribution (SC-1/SC-2/SC-5):** CrossWire kjv.conf
+   DistributionLicense fetched and recorded verbatim in data/strongs/README;
+   abort the feature if it isn't public domain (it is expected to read
+   "Public Domain"). Word-study UI carries "Lexicon: STEPBible (CC BY 4.0)"
+   credit with link; lexicon text renders as plain JSX text (unit-asserted).
+6. **Word-study UX redesign (UA-1..8, tagger-B synthesis):** an explicit
+   "Word study" TOGGLE in the verse panel swaps the plain blockquote for the
+   interactive layer — opt-in solves touch discoverability, AT
+   wall-of-buttons, and tab pollution in one move. While active: tagged
+   words show a faint dotted underline, hit areas are padded beyond the
+   14px glyphs, selection styles background-only (no reflow), navigation is
+   roving tabindex (one tab stop, arrow keys), and the tapped word's entry
+   renders in a compact card DIRECTLY under the verse text (not in the far
+   accordion — kills the UA-4 distance problem). Multi-strongs entries are
+   an ordered list; definitions clamp ~400 chars with expand.
+7. **Loader (PO-1):** word-tags join the existing Promise.all (7th query,
+   bible verses only); pool max:5 → worst case two queued queries ≈ one
+   extra RT (~10–50ms); measured at verify.
+8. **Vendoring:** kjvfull.xml + TBESH/TBESG vendored under data/strongs/
+   (~35MB; reproducible ingest, no network at admin-DSN time — house rule).
+
+## Decisions
+| Finding(s) | Resolution |
+|---|---|
+| CD-1, CD-2, CD-7 · SC-1, SC-2, SC-3, SC-4, SC-6 · PO-1, PO-2, PO-3, PO-4, PO-7 · UA-1, UA-2, UA-4, UA-5, UA-6, UA-7, UA-8 | incorporated (amendments above) |
+| UA-3 | rejected-with-rationale per tag (risky) — substance delivered by amendment 6's opt-in toggle (lighter than the proposed dual-render) |
+| CD-3, CD-4, CD-5 | rejected-with-rationale per tag (risky = fixture-only asks) — fixtures added anyway in amendment 1 at near-zero cost |
+| CD-6, SC-5 | rejected-with-rationale per tag (risky) — substance delivered by amendments 4–5 |
+| PO-5, PO-6 | dropped-as-noise (self-resolving phrasing; events now named anyway) |
+
+Panel-2 dissent: 26/28 = **0.93** (12+8 material, 6 risky). Tagger-A catch:
+CD-2's 633 was wrong by an order of magnitude (5,816 verses) — in the
+UNDERSTATING direction; recorded for retro as "verify the counts of your
+verifiers."
+
 ## Harness scope
 **behavior** — harness-first; must fail initially.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: PENDING
-- harness-hash: PENDING
+- plan-hash: 0ef6a56a80d2d6dc
+- harness-hash: 3aafe3d9cc10624f
