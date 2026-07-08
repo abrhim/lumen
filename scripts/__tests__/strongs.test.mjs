@@ -124,6 +124,23 @@ test('lexicon dedup is FIRST-occurrence-wins — sub-entries never overwrite the
   assert.equal(byNo.get('H430').gloss, 'God');
 });
 
+test('bare numbers alias to their A sub-entry when no base row exists (smoke-caught: H1121 class)', () => {
+  const lines = [
+    'H1121a\tH1121a =\tH1121a\tבֵּן\tben\tH:N-M\tson: child\ta son',
+    'H1121b\tH1121b =\tH1121b\tבְּנוֹ\tbe.no\tN:N-M\tBeno\ta Levite',
+  ];
+  const byNo = new Map();
+  for (const line of lines) {
+    const r = parseLexiconLine(line);
+    if (r && !byNo.has(r.strongs_no)) byNo.set(r.strongs_no, r);
+  }
+  for (const [no, row] of [...byNo]) {
+    const m = no.match(/^([HG]\d+)A$/);
+    if (m && !byNo.has(m[1])) byNo.set(m[1], { ...row, strongs_no: m[1] });
+  }
+  assert.equal(byNo.get('H1121').gloss, 'son: child');
+});
+
 test('skipCapVerdict: 1% boundary exclusive (FM-5)', () => {
   assert.equal(skipCapVerdict(310, 31000, 0.01).pass, false);
   assert.equal(skipCapVerdict(309, 31000, 0.01).pass, true);

@@ -284,6 +284,14 @@ async function main() {
     for (const r of lexRows) {
       if (!lexByNo.has(r.strongs_no)) lexByNo.set(r.strongs_no, r);
     }
+    // Bare-number aliasing (smoke-caught): for many high-frequency words the
+    // lexicons carry ONLY extended sub-entries (H1121A 'son', no bare H1121)
+    // while KJV2006 tags the bare number — alias base → the A entry (primary
+    // sense by the files' own convention). 542 distinct numbers affected.
+    for (const [no, row] of [...lexByNo]) {
+      const m = no.match(/^([HG]\d+)A$/);
+      if (m && !lexByNo.has(m[1])) lexByNo.set(m[1], { ...row, strongs_no: m[1] });
+    }
 
     // CASCADE retrofit guard (CE-4): IF NOT EXISTS never alters an existing
     // FK — fail loudly if a pre-CASCADE table survives from an older run
