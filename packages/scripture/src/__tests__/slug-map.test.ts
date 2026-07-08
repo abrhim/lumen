@@ -84,7 +84,14 @@ describe('constants', () => {
     expect(VOLUME_ID_LIST).toEqual(['ot', 'nt', 'bom', 'dc', 'pgp']);
   });
 
-  it('exports RELATIONSHIP_TYPES', () => {
+  it('exports RELATIONSHIP_TYPES — exhaustive, so silent drift fails loudly (CSC-2)', () => {
+    expect([...RELATIONSHIP_TYPES].sort()).toEqual([
+      'APPEARS_IN', 'CONTRASTS', 'COVERS', 'CROSS_REF', 'DEPICTS', 'EXTENDS',
+      'FEATURES', 'HAS_JST', 'HAS_SUMMARY', 'HAS_SYMBOL', 'IN_BOOK',
+      'IN_CHAPTER', 'IN_VOLUME', 'LOCATED_AT', 'MAPS_TO', 'MENTIONS',
+      'PARALLELS', 'PARENT_OF', 'REFERENCES', 'SETTING_OF', 'SUMMARIZES',
+      'TEACHES', 'TYPIFIES', 'USES_WORD',
+    ]);
     expect(RELATIONSHIP_TYPES).toContain('TEACHES');
     expect(RELATIONSHIP_TYPES).toContain('CROSS_REF');
     expect(RELATIONSHIP_TYPES.length).toBeGreaterThan(5);

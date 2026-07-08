@@ -174,4 +174,6 @@ export const RELATIONSHIP_TYPES = [
   // semantic verse relations confirmed live in the graph (graph-view feature)
   'PARALLELS', 'EXTENDS', 'CONTRASTS', 'TYPIFIES', 'HAS_SYMBOL', 'SETTING_OF',
   'SUMMARIZES', 'APPEARS_IN', 'FEATURES', 'COVERS',
+  // artwork → chapter/verse anchors (art-graph feature)
+  'DEPICTS',
 ] as const;

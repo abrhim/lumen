@@ -1,0 +1,44 @@
+# Panel-2 adversarial — api-contract + data-integrity + observability (art-graph)
+
+Verified against: `apps/web/app/routes/scripture.tsx` (`ArtItem`/`toArtItem`/`ArtImage`/loader/`getChapterArt` call),
+`apps/web/app/routes/__tests__/art.loader.test.ts`, `packages/scripture/src/queries.ts` (`getChapterArt`),
+`packages/scripture/src/slug-map.ts` (`RELATIONSHIP_TYPES` + `slug-map.test.ts`),
+`scripts/__tests__/art-edges.test.mjs` (harness for the not-yet-written `materialize-art-edges.mjs`),
+`scripts/backfill-neo4j-collections.mjs`, `scripts/ingest-openbible-refs.mjs`.
+
+## API (api-contract)
+
+| ID | Severity | Tag | Stance |
+|---|---|---|---|
+| API-1 | high | **material** | Confirmed live: `getChapterArt` (queries.ts:151-158) selects the full `metadata` column and even `ORDER BY (metadata->>'fame')`, but `ArtworkRow`/`ArtItem`/`toArtItem` (scripture.tsx:66-101) never surface `fame`. The gallery harness (`art.loader.test.ts:13-17,54-62`) already mocks `metadata.fame` and asserts `pickArtStack` ranks by it — the fix is required for the harness's own fixtures to be honest, not hypothetical. |
+| API-2 | high | **material** | Confirmed: `art-edges.test.mjs:18` `personExists` mock is `['jesus-christ','mary-1','moses-1']` — 3 entries — while the plan (L89-90, FM-3) promises an exhaustive test against the live-probed ~3,869-id snapshot. `materialize-art-edges.mjs` doesn't exist yet (harness-first, correctly failing), so this is fixable before real risk, but as written the harness would pass while silently permitting `ART_PERSON_MAP` values with no live person. |
+| API-3 | med | **material** | Confirmed: `slug-map.ts:169-177` `RELATIONSHIP_TYPES` has `FEATURES` but no `DEPICTS`; `slug-map.test.ts:87-91` only asserts `toContain('TEACHES')`/`length > 5` — no exhaustive-membership guard exists yet either, so today nothing would even fail if `DEPICTS` ships unlisted. Plan should add both the constant entry and tighten the test to exhaustive membership (matching the DATA/OBS convention of listing every live rel_type). |
+| API-4 | med | **material** | Confirmed: `scripture.tsx:342-348` redirects book aliases with a 301 on the chapter route; `art.loader.test.ts:41-44` only covers unknown-book and non-numeric-chapter 404s, no alias case. Plan text for the gallery route never mentions alias handling at all — silent inconsistency risk (e.g. `/scripture/1ne/2/art` behaving differently than `/scripture/1-nephi/2/art`) if the loader is a naive rewrite of the 404 checks only. |
+| API-5 | low | **material** | Confirmed: `ArtImage` (scripture.tsx:826) is a bare `function`, not exported. Plan's gallery card field list (image/title/artist·year/source link) never states reuse. Cheap, real fix — export it (or move to a shared module) before `scripture.art.tsx` is written, otherwise a second thumb-fallback implementation is the likely default. |
+| API-6 | low | **noise** | Not an independent defect — it's a documentation cross-reference that self-resolves once API-1 lands (the "no loader change" claim becomes true again once `fame` is added to the existing `ArtItem` shape rather than a new field bolted on separately). No separate fix needed beyond API-1. |
+
+## DATA (data-integrity)
+
+| ID | Severity | Tag | Stance |
+|---|---|---|---|
+| DATA-1 | High | **material** | Confirmed: `art-edges.test.mjs` exercises `chapterExists`-driven skip (L56-63, invalid book) but has no case for `verse_start`/`verse_end` beyond the mocked chapter's real range, and the plan has no analog to openbible's `UNMAPPED_CAP`/ratio-abort (`ingest-openbible-refs.mjs:22,113-120`). Given the plan's own zero-orphan in-tx invariant hard-aborts the transaction (per the openbible precedent it's modeled on), an unvalidated out-of-range verse ref would generate an orphan edge and abort all ~15k rows on one bad source record. Real, high-consequence gap — needs a per-verse existence gate plus a tolerance ratio like FM-11.
+| DATA-2 | Medium | **material** | Confirmed: `backfill-neo4j-collections.mjs` queries `lumen.entities`/`lumen.edges` with no collection filter (L163-166 nodes, L197-203 edges) and already documents *some* expected-missing classes (jst/strongs/naves, deprecated structural types) in comments/log fields (`missingFromGraph`, B15 comment L219-224) — but nothing art-specific. ~4.4k artwork entities + ~15k DEPICTS/FEATURES edges will land in that same `missingFromGraph`/unstamped-edges bucket unexplained, which erodes the signal the backfill's own "distinguish real regressions" design depends on. Cheap doc/comment fix. |
+| DATA-3 | Medium | **material** | Confirmed: Scope §4 (plan.md L58) names exactly two spot checks (chapter-level DEPICTS, one FEATURES) and nothing for the verse-range expansion path — the most structurally complex logic per FM-2 (766 works, one-edge-per-verse-in-range). Openbible's own smoke precedent spot-checks a range case; art-graph's plan currently doesn't mirror that for its own range logic. |
+| DATA-4 | Low | **noise** | The plan text panel-1 flagged already names `lumen.edges` in the same bullet/sentence ("`lumen.edges` gains DEPICTS/FEATURES rows... delete scope = collection_id='art' AND rel_type IN (...)") — the delete-scope clause is contextually anchored to the immediately preceding "lumen.edges gains rows" clause, not floating ambiguously. Misapplication risk against `lumen.entities` is low; restating the table name in the script header (which will happen naturally when the script is written, per every other script in this repo) covers it without a plan amendment. |
+
+## OBS (observability)
+
+| ID | Severity | Tag | Stance |
+|---|---|---|---|
+| OBS-1 | Medium | **material** | Confirmed no event names in plan.md L46 ("unmatched slugs counted + reported") vs. the established convention `openbible_unmapped_refs {count, ratio, sample:10}` (`ingest-openbible-refs.mjs:198-202`). Same repo, same script family, same review cycle — no reason to skip the naming convention here. |
+| OBS-2 | Medium | **material** | Confirmed: plan.md L47 says "re-run stability marker" with no key name; precedent keys (`'openbible-ingest'`, `'canon-spine-p3-verified'`) are all named and consumed by a paired smoke script (`smoke-openbible.mjs:42`). `smoke-art-edges.mjs` doesn't exist yet — nothing for it to diff against without a named key up front. |
+| OBS-3 | High | **material** | Confirmed: plan.md L58 says only "a Luke 2 nativity work" / "jesus-tagged work" — generic, not a probed artwork id. The plan's own "Live facts (probed 2026-07-07)" section (L26-31) shows this project already does concrete live probing (4,461 artworks, tag counts, etc.) — the same discipline should apply to naming the actual `art:<id>` used in smoke, exactly as openbible named `gen-1-1 → heb-11-3 votes=271`. Without it the smoke check is either untestable as written or will be filled in ad hoc at implementation time with no plan-level review. |
+| OBS-4 | High | **material** | Confirmed: `scripture.tsx:376-378` already swallows `getChapterArt` failures to `[]` with **no log call** (unlike the `neo4j_degraded` pattern at L309-317 for connections). The gallery loader test (`art.loader.test.ts`) has zero coverage for a `getChapterArt` rejection — only happy-path and true-empty-array cases (L46-50). Failure mode #6 in the plan explicitly conflates "empty art" with "loader threw," which this test file's gap reproduces exactly. Needs its own test + named degraded event, distinct from empty-state. |
+| OBS-5 | Low | **material** | Confirmed: `scripture.tsx` chapter loader logs `scripture_404` with a `cause` taxonomy (`unknown_book`/`invalid_chapter`/`empty_chapter`, L331/L337/L393) before every 404 throw. `art.loader.test.ts:41-44` tests the 404 status but the plan never states a matching log call for the gallery route — cheap, consistent fix given the sibling route already sets the pattern. |
+| OBS-6 | Low | **out-of-scope (for this role)** | The underlying fix (export/reuse `ArtImage`, confirmed not exported today — scripture.tsx:826) is real, but it's a UI-component-reuse concern, not an observability concern — no logging/telemetry angle here. It's already correctly owned by API-5 in the api-contract review; flagging it a second time under "observability" invites two independent fixes for one change. Fold into API-5, don't track separately in this lane. |
+
+## Summary
+- **Material and worth blocking on before implementation:** API-1, API-2, API-3, API-4, API-5, DATA-1, DATA-2, DATA-3, OBS-1, OBS-2, OBS-3, OBS-4, OBS-5 (13 of 16 hold up under direct source verification).
+- **Noise:** API-6 (self-resolves with API-1), DATA-4 (already contextually unambiguous in plan text).
+- **Out-of-scope for its assigned role:** OBS-6 (real fix, wrong lane — belongs to API-5).
+- Every "material" tag above was checked against a real file/line, not just plan prose — see inline citations.
