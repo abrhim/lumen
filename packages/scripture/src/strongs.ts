@@ -58,7 +58,7 @@ export interface WordTagRow {
 export async function getWordTags(db: Db, verseId: string): Promise<WordTagRow[]> {
   return (await db.execute(
     sql`SELECT w.id AS word_id, w.position, w.char_start, w.char_end,
-          t.strongs, t.morph,
+          to_json(t.strongs) AS strongs, t.morph,
           json_agg(
             json_build_object(
               'strongs_no', s.no,

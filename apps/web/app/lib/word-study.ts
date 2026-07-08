@@ -58,3 +58,33 @@ export function structureDefinition(definition: string): DefinitionLine[] {
 export function strongsLanguage(strongsNo: string): "Hebrew" | "Greek" {
 	return strongsNo.startsWith("H") ? "Hebrew" : "Greek";
 }
+
+/** Pure function words the KJV tagging prefixes onto content words: the Greek
+ * article (ὁ) and the Hebrew object marker (אֵת). "taxing" arrives as
+ * [G3588, G582] — showing the article's "the/this/who" reads as no definition. */
+const FUNCTION_WORD_NOS = new Set(["G3588", "H853"]);
+
+/** The entry the inline card should lead with: the first content-bearing one,
+ * falling back to entries[0] when the word IS a function word. */
+export function primaryEntry<T extends { strongs_no: string }>(entries: T[]): T | undefined {
+	return entries.find((e) => !FUNCTION_WORD_NOS.has(e.strongs_no)) ?? entries[0];
+}
+
+/**
+ * The contiguous run of word positions sharing `position`'s exact Strong's
+ * signature — several English words rendering one original word ("to be
+ * taxed" ← ἀπογράφω) highlight as a group.
+ */
+export function wordGroupPositions(tags: WordTagRow[], position: number): Set<number> {
+	// drivers disagree on TEXT[] decoding (worker: raw '{G583}' string) — the
+	// signature only needs equality, so stringify whatever shape arrives
+	const sigByPos = new Map(
+		tags.map((t) => [t.position, Array.isArray(t.strongs) ? t.strongs.join(" ") : String(t.strongs)]),
+	);
+	const sig = sigByPos.get(position);
+	const group = new Set([position]);
+	if (sig === undefined) return group;
+	for (let p = position - 1; sigByPos.get(p) === sig; p--) group.add(p);
+	for (let p = position + 1; sigByPos.get(p) === sig; p++) group.add(p);
+	return group;
+}
