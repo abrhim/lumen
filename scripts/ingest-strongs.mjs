@@ -70,6 +70,9 @@ export function parseVerseSpans(verseXml) {
     const attrs = m[1];
     const inner = m[2];
     if (inner === undefined) continue; // self-closed <w/>
+    if (/<w[\s>]/.test(inner)) continue; // defensive: a truly nested <w> would
+    // truncate silently under the non-greedy close (CE-3; zero live instances
+    // — the verse then fails alignment and is VISIBLY skipped)
     // KJV2006 joins compound names with EN DASH (Baal–hanan) and keeps
     // ligatures (Cæsar, Judæa); our corpus is ASCII (hyphens, 'ae') —
     // normalize or ~1,700 verses fail alignment (measured classes)
@@ -274,8 +277,24 @@ async function main() {
       }
       log('strongs_lexicon_loaded', { lang, entries: n });
     }
-    // last-write-wins de-dup on strongs_no (files can repeat base entries)
-    const lexByNo = new Map(lexRows.map((r) => [r.strongs_no, r]));
+    // FIRST-occurrence-wins de-dup (CE-1, Critical): TBESH/TBESG list the
+    // BASE sense first and proper-noun/derived sub-entries after — last-write
+    // shipped H430 'God' glossed as '(Gibeath)-elohim' (1,057 numbers affected)
+    const lexByNo = new Map();
+    for (const r of lexRows) {
+      if (!lexByNo.has(r.strongs_no)) lexByNo.set(r.strongs_no, r);
+    }
+
+    // CASCADE retrofit guard (CE-4): IF NOT EXISTS never alters an existing
+    // FK — fail loudly if a pre-CASCADE table survives from an older run
+    const fkRule = await sql`
+      SELECT rc.delete_rule FROM information_schema.referential_constraints rc
+      JOIN information_schema.table_constraints tc
+        ON tc.constraint_name = rc.constraint_name AND tc.constraint_schema = rc.constraint_schema
+      WHERE tc.table_schema = 'lumen' AND tc.table_name = 'word_tags'`;
+    if (fkRule.length > 0 && fkRule[0].delete_rule !== 'CASCADE') {
+      throw new Error('lumen.word_tags exists with a non-CASCADE FK — drop it or migrate before re-running (CE-4)');
+    }
 
     // ---- ONE transaction ----
     let deletedTags = 0;

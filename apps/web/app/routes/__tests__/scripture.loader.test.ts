@@ -206,6 +206,19 @@ describe("scripture loader — happy paths", () => {
 		expect(getVerseConnections).not.toHaveBeenCalled();
 	});
 
+	it("verse-selected Bible view stays bounded too — the word-tags 7th query participates exactly once (CS-6)", async () => {
+		const { getCrossReferences, getWordTags } = (await import("@lumen/scripture")) as any;
+		vi.mocked(getVersesByChapter).mockResolvedValue([
+			{ id: "john-3-16", verse_number: 16, text: "For God so loved…", reference: "John 3:16" },
+		] as any);
+		await loader(makeArgs("john", "3", "?verse=16"));
+		expect(vi.mocked(getWordTags)).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(getCrossReferences)).toHaveBeenCalledTimes(2); // openbible + cross-canon
+		expect(getVersesByChapter).toHaveBeenCalledTimes(1);
+		expect(getChapterSummary).toHaveBeenCalledTimes(1);
+		expect(getChapterNumbers).toHaveBeenCalledTimes(1);
+	});
+
 	it("includes reference on every verse in the loader data", async () => {
 		const data = await loader(makeArgs("1-ne", "3"));
 		expect(data.verses[0].reference).toBe("1 Nephi 3:1");

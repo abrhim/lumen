@@ -9,6 +9,7 @@ import {
   parseVerseSpans,
   alignSpansToWords,
   skipCapVerdict,
+  parseLexiconLine,
   _setTokenizer,
 } from '../ingest-strongs.mjs';
 
@@ -97,6 +98,30 @@ test('alignSpansToWords: untagged trailing words are fine (transChange gaps)', (
   const result = alignSpansToWords(spans, words);
   assert.equal(result.ok, true);
   assert.equal(result.tags.length, 4); // 'that' (transChange) untagged
+});
+
+test('lexicon: base sense parses; HTML stripped to plain text (SC-5); real TBESH row', () => {
+  const row = parseLexiconLine('H0006\tH0006 =\tH0006\tאָבַד\ta.vad\tH:V\tto perish\t1) perish<br>1a) (Qal)<br>1a1) die');
+  assert.equal(row.strongs_no, 'H6');
+  assert.equal(row.translit, 'a.vad');
+  assert.equal(row.gloss, 'to perish');
+  assert.ok(!row.definition.includes('<br>'));
+  assert.ok(row.definition.includes('\n'));
+});
+
+test('lexicon dedup is FIRST-occurrence-wins — sub-entries never overwrite the base sense (CE-1 Critical)', () => {
+  // simulates the H430 corruption class: base 'God' row precedes the
+  // '(Gibeath)-elohim' proper-noun sub-row in TBESH
+  const lines = [
+    'H0430\tH0430 =\tH0430\tאֱלֹהִים\te.lo.him\tH:N-M\tGod\tgods, God',
+    'H0430\tH0430 = sub\tH0430\tאֱלֹהִים\te.lo.him\tN:N--L\t(Gibeath)-elohim\ta place',
+  ];
+  const byNo = new Map();
+  for (const line of lines) {
+    const r = parseLexiconLine(line);
+    if (r && !byNo.has(r.strongs_no)) byNo.set(r.strongs_no, r);
+  }
+  assert.equal(byNo.get('H430').gloss, 'God');
 });
 
 test('skipCapVerdict: 1% boundary exclusive (FM-5)', () => {

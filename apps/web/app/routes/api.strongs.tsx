@@ -9,6 +9,7 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 	if (!/^[HG]\d{1,5}[A-Z]?$/.test(no)) {
 		throw new Response("Invalid Strong's number.", { status: 400 });
 	}
+	const startedAt = Date.now();
 	try {
 		const verses = await getVersesByStrongs(context.db, no, 6);
 		return { no, verses };
@@ -17,6 +18,7 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 			name: error instanceof Error ? error.name : "unknown",
 			message: error instanceof Error ? error.message : String(error),
 			no,
+			elapsedMs: Date.now() - startedAt,
 		});
 		return { no, verses: [] };
 	}

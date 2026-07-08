@@ -980,6 +980,7 @@ function WordStudyVerse({
 	const [study, setStudy] = useState(false);
 	const [active, setActive] = useState<WordTagRow | null>(null);
 	const [focusIdx, setFocusIdx] = useState(0);
+	const toggleRef = useRef<HTMLButtonElement | null>(null);
 	// reset interaction state when the verse changes
 	useEffect(() => {
 		setStudy(false);
@@ -988,6 +989,12 @@ function WordStudyVerse({
 	}, [verseText]);
 
 	const hasTags = wordTags !== null && !wordTags.degraded && wordTags.tags.length > 0;
+	// focus never drops to <body> on toggle/Done/verse-change (CS-2)
+	const exitStudy = () => {
+		setStudy(false);
+		setActive(null);
+		queueMicrotask(() => toggleRef.current?.focus());
+	};
 
 	if (!hasTags || !study) {
 		return (
@@ -997,12 +1004,20 @@ function WordStudyVerse({
 				</blockquote>
 				{hasTags && (
 					<button
+						ref={toggleRef}
 						type="button"
 						onClick={() => setStudy(true)}
 						className="mt-2 rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
 					>
 						Word study
 					</button>
+				)}
+				{wordTags?.degraded && (
+					// degraded ≠ genuinely-untagged: say so instead of silently
+					// hiding the affordance (CS-5)
+					<p className="mt-2 font-ui text-[10px] italic text-faint">
+						Word study is unavailable right now.
+					</p>
 				)}
 			</>
 		);
@@ -1042,9 +1057,10 @@ function WordStudyVerse({
 							tabIndex={idx === focusIdx ? 0 : -1}
 							aria-pressed={isActive}
 							onClick={() => { setActive(isActive ? null : s.tag); setFocusIdx(idx); }}
-							// padded hit area beyond the 14px glyphs (UA-1); selection is
-							// background-only so the line never reflows (UA-5)
-							className={`-mx-0.5 -my-1 rounded px-0.5 py-1 font-reading italic underline decoration-dotted decoration-rule2 underline-offset-4 transition-colors duration-150 hover:decoration-primary ${
+							// hit area padded VERTICALLY only — horizontal expansion made
+							// adjacent words' boxes meet across the space glyph (CS-3);
+							// selection is background-only so the line never reflows (UA-5)
+							className={`-my-1 rounded py-1 font-reading italic underline decoration-dotted decoration-rule2 underline-offset-4 transition-colors duration-150 hover:decoration-primary ${
 								isActive ? "bg-sel text-ink" : ""
 							}`}
 						>
@@ -1056,7 +1072,7 @@ function WordStudyVerse({
 			<div className="mt-1 flex items-center justify-between">
 				<button
 					type="button"
-					onClick={() => { setStudy(false); setActive(null); }}
+					onClick={exitStudy}
 					className="rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-primary transition-colors duration-150 hover:border-primary"
 				>
 					Done
@@ -1081,14 +1097,17 @@ function WordStudyCard({ tag }: { tag: WordTagRow }) {
 	const primary = tag.entries[0];
 	useEffect(() => {
 		setExpanded(false);
-		if (primary && alsoIn.state === "idle") {
-			alsoIn.load(`/api/strongs/${primary.strongs_no}`);
-		}
+		// unconditional: the fetcher supersedes in-flight loads — the idle
+		// guard served the PREVIOUS word's verses under rapid taps (CS-1/CE-2)
+		if (primary) alsoIn.load(`/api/strongs/${primary.strongs_no}`);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tag.word_id]);
+	// only the late-arriving list is a live region — the entries render
+	// immediately and would double-announce (CS-4)
+	const staleAlsoIn = alsoIn.data && primary && alsoIn.data.no !== primary.strongs_no;
 
 	return (
-		<div aria-live="polite" className="mt-2 rounded-lg border border-rule2 bg-surface p-3">
+		<div className="mt-2 rounded-lg border border-rule2 bg-surface p-3">
 			<ol className="list-none space-y-2">
 				{tag.entries.map((e) => (
 					<li key={e.strongs_no}>
@@ -1117,8 +1136,8 @@ function WordStudyCard({ tag }: { tag: WordTagRow }) {
 					{expanded ? "Show less" : "Show more"}
 				</button>
 			)}
-			{(alsoIn.data?.verses.length ?? 0) > 0 && (
-				<p className="mt-2 font-ui text-[11px] text-muted-foreground">
+			{!staleAlsoIn && (alsoIn.data?.verses.length ?? 0) > 0 && (
+				<p aria-live="polite" className="mt-2 font-ui text-[11px] text-muted-foreground">
 					Also in:{" "}
 					{alsoIn.data!.verses.slice(0, 5).map((v, i) => {
 						const target = verseIdToTarget(v.verse_id);
