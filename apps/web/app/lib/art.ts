@@ -60,6 +60,36 @@ export function artTransitionName(id: string): string {
 	return `art-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+/**
+ * Size-capped image URL for CARD contexts. Museum "originals" can be
+ * enormous (measured: 103 MB single Wikimedia file); when no 800px thumb
+ * exists, derive a resized variant instead of ever loading the original:
+ * - Wikimedia Special:FilePath supports ?width=
+ * - Met CRDImages serve a web-large rendition alongside original
+ * Unknown hosts fall back to the full image (rare) — never null when a
+ * thumb or image exists.
+ */
+export function cardImageUrl(art: Pick<ArtItem, "thumb" | "image">, width = 800): string {
+	if (art.thumb) return art.thumb;
+	return resizedImageUrl(art.image, width) ?? art.image;
+}
+
+/** Close-up context: bigger, but still never the raw 100 MB original. */
+export function closeUpImageUrl(art: Pick<ArtItem, "thumb" | "image">): string {
+	return resizedImageUrl(art.image, 1600) ?? art.image ?? art.thumb ?? "";
+}
+
+function resizedImageUrl(url: string | null, width: number): string | null {
+	if (!url) return null;
+	if (/commons\.wikimedia\.org\/wiki\/Special:FilePath\//i.test(url)) {
+		return `${url}${url.includes("?") ? "&" : "?"}width=${width}`;
+	}
+	if (/images\.metmuseum\.org\/CRDImages\//i.test(url) && url.includes("/original/")) {
+		return url.replace("/original/", "/web-large/");
+	}
+	return null;
+}
+
 /** Top-N by fame (nulls last) + overflow count, for the chapter card stack. */
 export function pickArtStack<T extends { fame: number | null }>(
 	items: T[],

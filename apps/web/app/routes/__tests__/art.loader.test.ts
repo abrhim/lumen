@@ -6,6 +6,7 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 	return {
 		...actual,
 		getChapterArt: vi.fn(),
+		getChapterArtCount: vi.fn(async () => 2),
 		getBook: vi.fn(async () => ({ name: "Luke" })),
 	};
 });
@@ -40,7 +41,9 @@ describe("gallery loader (FM-6)", () => {
 		expect(data.bookId).toBe("luke");
 		expect(data.chapter).toBe(2);
 		expect(data.reference).toBe("Luke 2"); // human name, never the slug (CUO-1)
-		expect(getChapterArt).toHaveBeenCalledWith(expect.anything(), "luke", 2, 100);
+		expect(data.total).toBe(2);
+		expect(data.totalPages).toBe(1);
+		expect(getChapterArt).toHaveBeenCalledWith(expect.anything(), "luke", 2, 24, 0); // page 1, 24/page
 	});
 
 	it("404s an unknown book and a non-numeric chapter", async () => {

@@ -174,14 +174,16 @@ describe("scripture loader — happy paths", () => {
 	});
 
 	it("fetches word tags in the critical path for the selected BIBLE verse; happy path asserts real rows (strongs FM-6)", async () => {
-		const { getWordTags } = await import("@lumen/scripture");
+		// `as any`: getWordTags doesn't exist until the strongs module lands —
+		// this harness test must fail at RUNTIME, not block typecheck (harness-first)
+		const { getWordTags } = (await import("@lumen/scripture")) as any;
 		vi.mocked(getWordTags as any).mockResolvedValue([
 			{ word_id: "john-3-16-w4", position: 4, char_start: 11, char_end: 16, strongs: ["G25"], morph: "robinson:V-AAI-3S", entries: [{ strongs_no: "G25", translit: "agapaō", gloss: "to love" }] },
 		]);
 		vi.mocked(getVersesByChapter).mockResolvedValue([
 			{ id: "john-3-16", verse_number: 16, text: "For God so loved…", reference: "John 3:16" },
 		] as any);
-		const data = await loader(makeArgs("john", "3", "?verse=16"));
+		const data = (await loader(makeArgs("john", "3", "?verse=16"))) as any;
 		expect(vi.mocked(getWordTags)).toHaveBeenCalledWith(expect.anything(), "john-3-16");
 		expect(data.wordTags).not.toBeNull();
 		expect(data.wordTags!.degraded).toBe(false);

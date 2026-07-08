@@ -630,10 +630,14 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				</nav>
 			</header>
 
+			{/* Mobile only — desktop's stack lives at the top of the verse-detail
+			    rail (Abram's placement call); mobile has no rail, so discovery
+			    stays near the header. */}
 			<ChapterArtStack
 				art={art}
 				reference={reference}
 				galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
+				className="mt-6 lg:hidden"
 			/>
 
 			<div className="mt-8 gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -689,6 +693,13 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 						aria-label="Verse connections"
 						className="hidden h-fit rounded-xl border border-rule bg-panel p-5 lg:sticky lg:top-6 lg:block lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
 					>
+						{/* full rail width, right above the verse detail (Abram's call) */}
+						<ChapterArtStack
+							art={art}
+							reference={reference}
+							galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
+							className="mb-5 flex w-full"
+						/>
 						{selected ? (
 							<>
 								<div className="flex items-baseline justify-between gap-3">
@@ -784,19 +795,23 @@ function ChapterArtStack({
 	art,
 	reference,
 	galleryUrl,
+	className = "",
 }: {
 	art: ArtItem[];
 	reference: string;
 	galleryUrl: string;
+	className?: string;
 }) {
 	if (art.length === 0) return null;
-	const { stack, more } = pickArtStack(art, 3);
+	const { stack, more } = pickArtStack(art, 5);
+	// loader caps at 24; the gallery shows the true count
+	const countLabel = `${art.length}${art.length >= 24 ? "+" : ""}`;
 	return (
 		<Link
 			to={galleryUrl}
 			viewTransition
-			aria-label={`View ${art.length} artwork${art.length === 1 ? "" : "s"} for ${reference}`}
-			className="group mt-6 inline-flex min-h-11 items-center gap-3 rounded-lg border border-rule2 bg-panel py-1.5 pl-1.5 pr-4 transition-colors duration-150 hover:border-primary"
+			aria-label={`View ${countLabel} artworks for ${reference}`}
+			className={`group inline-flex min-h-11 items-center gap-3 rounded-lg border border-rule2 bg-panel py-1.5 pl-1.5 pr-4 transition-colors duration-150 hover:border-primary ${className}`}
 		>
 			<span aria-hidden="true" className="flex items-center">
 				{stack.map((a, i) => (
@@ -812,7 +827,7 @@ function ChapterArtStack({
 				))}
 			</span>
 			<span className="font-ui text-xs font-semibold text-ink group-hover:text-primary">
-				Art · {art.length}
+				Art · {countLabel}
 				{more > 0 && <span className="ml-1 font-normal text-muted-foreground">view all</span>}
 			</span>
 		</Link>

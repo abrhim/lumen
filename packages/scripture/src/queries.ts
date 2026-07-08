@@ -148,14 +148,25 @@ export async function getChapterSummary(db: Db, bookId: string, chapter: number)
   return rows[0] ?? null;
 }
 
-export async function getChapterArt(db: Db, bookId: string, chapter: number, limit = 24) {
+export async function getChapterArt(db: Db, bookId: string, chapter: number, limit = 24, offset = 0) {
   return db.execute(
     sql`SELECT id, name, metadata FROM lumen.entities
         WHERE entity_type = 'artwork'
           AND metadata->'refs' @> ${JSON.stringify([{ book_id: bookId, chapter }])}::jsonb
         ORDER BY (metadata->>'fame')::numeric DESC NULLS LAST, id
-        LIMIT ${limit}`,
+        LIMIT ${limit} OFFSET ${offset}`,
   );
+}
+
+/** True total for a chapter's art — one count source for stack labels and
+ * gallery pagination (art retro punch item). */
+export async function getChapterArtCount(db: Db, bookId: string, chapter: number): Promise<number> {
+  const rows = (await db.execute(
+    sql`SELECT count(*)::int AS n FROM lumen.entities
+        WHERE entity_type = 'artwork'
+          AND metadata->'refs' @> ${JSON.stringify([{ book_id: bookId, chapter }])}::jsonb`,
+  )) as { n: number }[];
+  return rows[0]?.n ?? 0;
 }
 
 export async function getPublicCollectionIds(db: Db) {
