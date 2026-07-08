@@ -292,12 +292,14 @@ html {
 	}
 }
 
-/* In-body word study (Abram's design): no underlines at rest; a subtle dotted
-   underline appears on hover, hover-capable devices only. */
+/* In-body word study (Abram's design): no underlines at rest; a dotted
+   underline appears on hover, hover-capable devices only. Theme accent +
+   2px dots — the cue has to survive sitting on the active verse's bg-sel. */
 @media (hover: hover) {
 	[data-wpos]:hover {
 		text-decoration: underline dotted;
-		text-decoration-color: var(--color-rule2, currentColor);
+		text-decoration-color: var(--color-selbar, currentColor);
+		text-decoration-thickness: 2px;
 		text-underline-offset: 4px;
 	}
 }

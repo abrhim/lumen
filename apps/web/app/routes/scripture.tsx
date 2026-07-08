@@ -47,7 +47,7 @@ import {
 import { useIsMobile } from "~/hooks/use-mobile";
 import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
-import { strongsLanguage } from "~/lib/word-study";
+import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
 import { cachedJson } from "../lib/cache.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
@@ -716,6 +716,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 								isActive && selectedWord !== null && wordTags !== null && !wordTags.degraded
 									? wordTags.tags.find((t) => t.position === selectedWord)
 									: undefined;
+							// the selected word's whole original-language group ("to be
+							// taxed" is ONE Greek word) highlights together
+							const wordGroup =
+								wordTag && selectedWord !== null
+									? wordGroupPositions(wordTags!.tags, selectedWord)
+									: undefined;
 							return (
 								<li key={verse.id} id={`v${verse.verse_number}`}>
 									<Link
@@ -740,7 +746,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												);
 											}
 										}}
-										className={`relative block rounded-lg py-2 pl-14 pr-4 font-reading text-[19px] leading-relaxed text-ink transition-colors duration-150 hover:bg-selbar/10 ${
+										className={`relative block rounded-lg py-2 pl-14 pr-4 font-reading text-[19px] leading-relaxed text-ink transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 ${
 											isActive ? "bg-sel" : ""
 										}`}
 									>
@@ -751,7 +757,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										>
 											{verse.verse_number}
 										</span>
-										{isBibleBook ? <VerseWords text={verse.text} /> : verse.text}
+										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
 									</Link>
 									{wordTag && (
 										<InlineWordCard
@@ -1005,15 +1011,21 @@ function PanelBody({
 }
 /** Bible verse text as word-boundary spans (client-side, SAME tokenizer as
  * the ingest — offsets agree by construction). Spans carry data-wpos for the
- * verse Link's click router; hover underline is CSS, hover-capable only. */
-function VerseWords({ text }: { text: string }) {
+ * verse Link's click router; hover underline is CSS, hover-capable only.
+ * `highlight` marks the selected word's whole same-Strong's run — several
+ * English words often render ONE original word ("to be taxed" ← ἀπογράφω). */
+function VerseWords({ text, highlight }: { text: string; highlight?: ReadonlySet<number> }) {
 	const tokens = tokenize(text);
 	const parts: React.ReactNode[] = [];
 	let cursor = 0;
 	for (const t of tokens) {
 		if (t.char_start > cursor) parts.push(text.slice(cursor, t.char_start));
 		parts.push(
-			<span key={t.position} data-wpos={t.position}>
+			<span
+				key={t.position}
+				data-wpos={t.position}
+				className={highlight?.has(t.position) ? "rounded-[3px] bg-selbar/20" : undefined}
+			>
 				{text.slice(t.char_start, t.char_end)}
 			</span>,
 		);
@@ -1027,7 +1039,9 @@ function VerseWords({ text }: { text: string }) {
  * transliteration, one-line meaning, Details → the word page. Renders below
  * the tapped verse; the chapter gently slides down (reduced-motion: instant). */
 function InlineWordCard({ tag, closeUrl }: { tag: WordTagRow; closeUrl: string }) {
-	const primary = tag.entries[0];
+	// lead with the content word, not a tag-along function word — "taxing" is
+	// [G3588 ὁ, G582 ἀπογραφή] and the article's gloss reads as no definition
+	const primary = primaryEntry(tag.entries);
 	if (!primary) return null;
 	const lang = strongsLanguage(primary.strongs_no);
 	return (
