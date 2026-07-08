@@ -101,6 +101,31 @@ knowledge layer instead of living in a JSON blob only `getChapterArt` reads.
 ## Harness scope
 **behavior** — harness-first required; must fail initially.
 
+## Plan amendments (post-panel synthesis)
+
+1. **Stack semantics (UX-1/2/3):** ONE `<button aria-label="View {N} artworks for {reference}">` ≥44px; overlapping images aria-hidden; static (no fan animation).
+2. **Gallery grid (UX-4):** CSS grid, fixed `aspect-ratio` placeholder boxes (no masonry); tab order = DOM order; alias books 301 to canonical like the sibling route (API-4).
+3. **Return path (UX-5, code-verified):** gallery links carry `?verse=` through; back preserves chapter scroll/selection.
+4. **URL scheme allowlist (SEC-1/2):** shared `safeHttpUrl()` helper gates every `href`/`src` from art metadata (strip + stack + gallery). Live scan: 0/4,461 bad today; zero code defense existed.
+5. **Verse/chapter bounds (SEC-3/DATA-1/COR-4; COR-2's drift measured ZERO and merged here):** build-time gating against live chapter/verse counts; skipped refs counted with a 2% abort cap; the 16 apocryphal Daniel 13–14 refs are the documented expected skips.
+6. **ART_PERSON_MAP rule (COR-3, escalated):** ambiguity is systemic (joseph 11 candidates, mary 7, judas 5…). Rule: map a slug only when one person entity clearly dominates by existing edge degree (jesus-christ 10,569 vs jesus-1 1); no clear winner → slug stays unmapped and reported. Exhaustive test asserts every map value against the live person-id snapshot (API-2).
+7. **Contract fixes (API-1/3/5):** `fame` added to ArtItem/toArtItem (stack ranked on all-nulls otherwise); `DEPICTS` added to RELATIONSHIP_TYPES + exhaustive membership test; `ArtImage` exported and reused by stack + gallery.
+8. **Observability (OBS-1..5, DATA-3):** events `art_edges_unmapped_slugs`/`art_edges_skipped_refs` {count, sample:10}; marker key `art-edges-materialize` {at, inserted, deleted, byRelType}; smoke canaries pinned to live-probed artwork ids at implement start, including a verse-RANGE work's per-verse rows; gallery loader logs `art_gallery_degraded` (never-throw + happy-path test — tske B2) and `art_gallery_404` {cause}.
+9. **Backfill baseline (DATA-2):** known-missing note (+~4.4k art entities, ~15k art edges) added to backfill-neo4j-collections.mjs header.
+10. **Merge policy (COR-1/5):** single-verse cite (verse_end null → start); is_primary true wins regardless of order; overlapping duplicate verse refs union their range metadata; all unit-tested.
+
+## Decisions
+
+| Finding(s) | Resolution |
+|---|---|
+| UX-1, UX-4, UX-5 · COR-1, COR-3, COR-4, COR-5 · SEC-1..4 · API-1..5 · DATA-1..3 · OBS-1..5 | incorporated (amendments above) |
+| UX-2, UX-3 | rejected-with-rationale per tag (risky); substance delivered by amendment 1's single-button + static spec |
+| COR-2 | rejected-with-rationale: live-measured zero within-chapter drift; merged into amendment 5 |
+| COR-6, UX-6, UX-7, DATA-4, API-6 | dropped-as-noise (route collision affirmatively ruled out; stack-behind-click is the owner's chosen design) |
+| OBS-6 | folded into API-5 (right fix, wrong lane) |
+
+Panel-2 dissent: 25/31 = **0.806**.
+
 ## Open questions (for human gate)
 - Q1 stack size: how many cards visibly stacked. **Default: 3 (+N chip).**
 - Q2 gallery limit. **Default: 100, fame-ranked (no pagination v1).**
@@ -110,5 +135,5 @@ knowledge layer instead of living in a JSON blob only `getChapterArt` reads.
 - Q4 verse-level DEPICTS: include verse edges now (766 works). **Default: yes.**
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: PENDING
-- harness-hash: PENDING
+- plan-hash: 8085483808274b84
+- harness-hash: af6d43ca3d60cfd3

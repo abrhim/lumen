@@ -1,0 +1,8 @@
+# Panel 1 — data-integrity review: art-graph
+
+| ID | Severity | Where in plan | Problem (≤ 25 words) | Fix (≤ 30 words) |
+|---|---|---|---|---|
+| DATA-1 | High | Scope §1 + Failure modes 1–2 | No failure-mode/test for verse_start/verse_end exceeding the chapter's real max, and no tolerance cap (unlike openbible's 0.5% FM-11) — one bad ref hard-aborts the whole ~15k-edge tx via the in-tx invariant. | Add unit test: verseExists must gate per-target-verse (not just chapterExists); add a skip-ratio cap so isolated bad refs are skipped+counted, not fatal. |
+| DATA-2 | Medium | Public contract / Out-of-scope "Neo4j mirroring" | `backfill-neo4j-collections.mjs` queries `lumen.entities`/`lumen.edges` unfiltered by collection, so ~4,461 artwork entities + ~15k DEPICTS/FEATURES edges become permanently unmatched "missing" against Neo4j — undocumented as a plan side effect. | Document expected new artwork/DEPICTS/FEATURES entries in backfill's known-missing baseline (comment + run book) so real regressions stay distinguishable. |
+| DATA-3 | Medium | Scope §4 smoke spot checks | Smoke only spot-checks one chapter-level DEPICTS and one FEATURES edge; the verse-range expansion path (766 works, the most complex logic) has no live spot check. | Add a live spot check asserting a known verse-range work produced correct per-verse DEPICTS rows + range_start/range_end metadata. |
+| DATA-4 | Low | Public contract (delete scope) | Delete scope "collection_id='art' AND rel_type IN (...)" is stated without naming `lumen.edges`; collection 'art' also labels artwork rows in `lumen.entities`, inviting a future misapplied delete. | State the DELETE explicitly against `lumen.edges` in plan/script header, matching the openbible script's explicit table-qualified phrasing. |
