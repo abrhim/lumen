@@ -3,3 +3,6 @@
 Error: Cannot find module '../scripture.art' imported from '/Users/abram/code/lumen/apps/web/app/routes/__tests__/art.loader.test.ts'
       Tests  no tests
 EXIT=1 (art-edges: materialize-art-edges.mjs absent; gallery: scripture.art + lib/art absent)
+ℹ pass 11
+ℹ fail 0
+EXIT=1 (initial: materialize-art-edges.mjs + scripture.art + lib/art absent)
