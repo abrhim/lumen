@@ -42,6 +42,8 @@ import {
 	SheetTitle,
 } from "~/components/ui/sheet";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { ArtImage } from "~/components/ArtImage";
+import { toArtItem, pickArtStack, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { cachedJson } from "../lib/cache.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
@@ -61,50 +63,8 @@ interface VerseRow {
 	reference: string;
 }
 
-interface ArtRef {
-	book_id: string;
-	chapter: number;
-	verse_start: number | null;
-	verse_end: number | null;
-	is_primary?: boolean;
-}
-
-export interface ArtItem {
-	id: string;
-	title: string;
-	artist: string | null;
-	year: number | null;
-	thumb: string | null;
-	image: string;
-	sourceUrl: string;
-	refs: ArtRef[];
-}
-
-interface ArtworkRow {
-	id: string;
-	name: string;
-	metadata: {
-		artist_name?: string;
-		year?: number | null;
-		thumbnail_800_url?: string | null;
-		image_url?: string;
-		source_url?: string;
-		refs?: ArtRef[];
-	};
-}
-
-function toArtItem(row: ArtworkRow): ArtItem {
-	return {
-		id: row.id,
-		title: row.name,
-		artist: row.metadata.artist_name ?? null,
-		year: row.metadata.year ?? null,
-		thumb: row.metadata.thumbnail_800_url ?? null,
-		image: row.metadata.image_url ?? "",
-		sourceUrl: row.metadata.source_url ?? "",
-		refs: row.metadata.refs ?? [],
-	};
-}
+// Art types + toArtItem (now carrying fame, API-1) live in ~/lib/art;
+// the shared ArtImage (thumb→full fallback) in ~/components/ArtImage.
 
 /** Resolved shape of the streamed panel promise — degradation is a value, not a rejection.
  * Cross-references left this payload for the critical path (Postgres) with the
@@ -660,7 +620,11 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				</nav>
 			</header>
 
-			<ChapterArtStrip art={art} />
+			<ChapterArtStack
+				art={art}
+				reference={reference}
+				galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
+			/>
 
 			<div className="mt-8 gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
 				<main>
@@ -803,47 +767,42 @@ function scrollVerseIntoView(verseNumber: number, behavior: ScrollBehavior) {
 	});
 }
 
-function ChapterArtStrip({ art }: { art: ArtItem[] }) {
+/** Compact stack of the chapter's top artworks — ONE ≥44px button (amendment 1):
+ * overlapping images are decorative (aria-hidden), the button navigates to the
+ * chapter gallery, and the whole affordance is static (no fan animation). */
+function ChapterArtStack({
+	art,
+	reference,
+	galleryUrl,
+}: {
+	art: ArtItem[];
+	reference: string;
+	galleryUrl: string;
+}) {
 	if (art.length === 0) return null;
+	const { stack, more } = pickArtStack(art, 3);
 	return (
-		<section aria-label="Artwork for this chapter" className="mt-6">
-			<ul className="flex list-none gap-4 overflow-x-auto pb-2">
-				{art.slice(0, 12).map((a) => (
-					<li key={a.id} className="w-56 shrink-0">
-						<a
-							href={a.sourceUrl || a.image}
-							target="_blank"
-							rel="noreferrer"
-							className="group block"
-						>
-							<ArtImage art={a} className="h-36 w-full rounded-lg border border-rule2 object-cover" />
-							<p className="mt-1.5 truncate font-ui text-xs font-semibold text-ink group-hover:text-primary">
-								{a.title}
-							</p>
-							<p className="truncate font-ui text-[10px] text-muted-foreground">
-								{[a.artist, a.year].filter(Boolean).join(" · ")}
-							</p>
-						</a>
-					</li>
+		<Link
+			to={galleryUrl}
+			aria-label={`View ${art.length} artwork${art.length === 1 ? "" : "s"} for ${reference}`}
+			className="group mt-6 inline-flex min-h-11 items-center gap-3 rounded-lg border border-rule2 bg-panel py-1.5 pl-1.5 pr-4 transition-colors duration-150 hover:border-primary"
+		>
+			<span aria-hidden="true" className="flex items-center">
+				{stack.map((a, i) => (
+					<span
+						key={a.id}
+						className={`block h-14 w-14 overflow-hidden rounded-md border-2 border-panel shadow-sm ${i > 0 ? "-ml-5" : ""}`}
+						style={{ zIndex: stack.length - i }}
+					>
+						<ArtImage art={a} className="h-full w-full object-cover" />
+					</span>
 				))}
-			</ul>
-		</section>
-	);
-}
-
-/** Thumbnail with full-image fallback — the 800px thumbs live on a third-party bucket. */
-function ArtImage({ art, className }: { art: ArtItem; className: string }) {
-	return (
-		<img
-			src={art.thumb ?? art.image}
-			alt={`${art.title}${art.artist ? ` — ${art.artist}` : ""}`}
-			loading="lazy"
-			className={className}
-			onError={(e) => {
-				const img = e.currentTarget;
-				if (art.thumb && img.src !== art.image && art.image) img.src = art.image;
-			}}
-		/>
+			</span>
+			<span className="font-ui text-xs font-semibold text-ink group-hover:text-primary">
+				Art · {art.length}
+				{more > 0 && <span className="ml-1 font-normal text-muted-foreground">view all</span>}
+			</span>
+		</Link>
 	);
 }
 

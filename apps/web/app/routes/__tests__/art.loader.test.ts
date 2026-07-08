@@ -47,6 +47,45 @@ describe("gallery loader (FM-6)", () => {
 		vi.mocked(getChapterArt).mockResolvedValue([] as any);
 		const data = await loader(makeArgs("gen", "1"));
 		expect(data.art).toEqual([]);
+		expect(data.degraded).toBe(false);
+	});
+
+	it("301-redirects alias book slugs like the sibling chapter route (API-4)", async () => {
+		let thrown: Response | undefined;
+		try {
+			await loader(makeArgs("1ne", "3"));
+		} catch (e) {
+			thrown = e as Response;
+		}
+		expect(thrown?.status).toBe(301);
+		expect(thrown?.headers.get("Location")).toBe("/scripture/1-ne/3/art");
+	});
+
+	it("degrades (never throws) when getChapterArt fails — distinct from empty (OBS-4)", async () => {
+		vi.mocked(getChapterArt).mockRejectedValue(new Error("pg down"));
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const data = await loader(makeArgs("luke", "2"));
+		expect(data.degraded).toBe(true);
+		expect(data.art).toEqual([]);
+		const logged = [...errorSpy.mock.calls, ...logSpy.mock.calls].flat().join(" ");
+		expect(logged).toContain("art_gallery_degraded");
+		errorSpy.mockRestore();
+		logSpy.mockRestore();
+	});
+});
+
+describe("safeHttpUrl (SEC-1/SEC-2)", () => {
+	it("passes http(s), rejects javascript:/data:/relative/empty", async () => {
+		const { safeHttpUrl } = await import("../../lib/art");
+		expect(safeHttpUrl("https://x.org/a.jpg")).toBe("https://x.org/a.jpg");
+		expect(safeHttpUrl("http://x.org")).toBe("http://x.org");
+		// eslint-disable-next-line no-script-url
+		expect(safeHttpUrl("javascript:alert(1)")).toBeNull();
+		expect(safeHttpUrl("data:text/html,x")).toBeNull();
+		expect(safeHttpUrl("//x.org/a.jpg")).toBeNull();
+		expect(safeHttpUrl("")).toBeNull();
+		expect(safeHttpUrl(null)).toBeNull();
 	});
 });
 

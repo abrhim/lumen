@@ -62,6 +62,72 @@ test('invalid chapter refs are skipped and counted, never guessed (FM-1)', () =>
   assert.equal(skipped.length, 1);
 });
 
+test('ART_PERSON_MAP values all exist in the live person-id snapshot (FM-3/API-2, probed 2026-07-07)', () => {
+  const LIVE_PERSON_IDS = new Set([
+    'jesus-christ', 'david-1', 'jacob-patriarch-1', 'person:moses-1',
+    'john-the-baptist-1', 'abraham-1', 'judas-iscariot-1', 'mary-1',
+    'mary-magdalene-1', 'elijah-tishbite', 'person:job-1', 'solomon-1',
+    'peter-1', 'esther-1', 'person:jonah-1', 'paul-1', 'isaac-1', 'eve-1',
+    'person:ruth-1', 'adam-1', 'samson-1',
+  ]);
+  for (const [slug, personId] of Object.entries(ART_PERSON_MAP)) {
+    assert.ok(LIVE_PERSON_IDS.has(personId), `${slug} → ${personId} not in the live snapshot`);
+  }
+  // ambiguous slugs stay deliberately unmapped (amendment 6)
+  for (const slug of ['joseph', 'noah', 'daniel']) {
+    assert.equal(ART_PERSON_MAP[slug], undefined, `${slug} must remain unmapped`);
+  }
+});
+
+test('single-verse cite (verse_end null) → chapter edge + ONE verse edge, no range metadata (COR-1)', () => {
+  const chapterExists = (id) => id === 'john-3';
+  const verseExists = (id) => id === 'john-3-16';
+  const { edges, skipped } = buildArtEdges(
+    [{ id: 'art:x', metadata: { refs: [{ book_id: 'john', chapter: 3, verse_start: 16, verse_end: null }], biblical_character: [] } }],
+    { chapterExists, verseExists, personExists: () => false },
+  );
+  assert.equal(skipped.length, 0);
+  const verseEdges = edges.filter((e) => e.to_id === 'john-3-16');
+  assert.equal(verseEdges.length, 1);
+  assert.equal(verseEdges[0].metadata.range_start, null);
+});
+
+test('out-of-range verses in a VALID chapter are skipped+counted, never guessed (COR-4/SEC-3)', () => {
+  const chapterExists = (id) => id === 'john-3';
+  const verseExists = (id) => /^john-3-(\d|1\d|2\d|3[0-6])$/.test(id); // john 3 has 36 verses
+  const { edges, skipped } = buildArtEdges(
+    [{ id: 'art:x', metadata: { refs: [{ book_id: 'john', chapter: 3, verse_start: 35, verse_end: 40 }], biblical_character: [] } }],
+    { chapterExists, verseExists, personExists: () => false },
+  );
+  assert.equal(edges.filter((e) => e.to_id.startsWith('john-3-')).length, 0);
+  assert.equal(skipped.length, 1);
+  assert.match(skipped[0], /verse bounds/);
+});
+
+test('is_primary merge is order-independent; overlapping duplicate verse refs union ranges (COR-5)', () => {
+  const chapterExists = (id) => id === 'luke-2';
+  const verseExists = (id) => /^luke-2-\d+$/.test(id);
+  const mk = (refs) => buildArtEdges(
+    [{ id: 'art:x', metadata: { refs, biblical_character: [] } }],
+    { chapterExists, verseExists, personExists: () => false },
+  ).edges.find((e) => e.to_id === 'luke-2');
+  const a = { book_id: 'luke', chapter: 2, verse_start: null, verse_end: null, is_primary: true };
+  const b = { book_id: 'luke', chapter: 2, verse_start: null, verse_end: null, is_primary: false };
+  assert.equal(mk([a, b]).metadata.is_primary, true);
+  assert.equal(mk([b, a]).metadata.is_primary, true); // false-then-true also wins
+
+  const { edges } = buildArtEdges(
+    [{ id: 'art:x', metadata: { refs: [
+      { book_id: 'luke', chapter: 2, verse_start: 8, verse_end: 10 },
+      { book_id: 'luke', chapter: 2, verse_start: 9, verse_end: 12 },
+    ], biblical_character: [] } }],
+    { chapterExists, verseExists, personExists: () => false },
+  );
+  const nine = edges.find((e) => e.to_id === 'luke-2-9');
+  assert.equal(nine.metadata.range_start, 'luke-2-8');
+  assert.equal(nine.metadata.range_end, 'luke-2-12');
+});
+
 test('duplicate refs dedupe to one edge per (from, to, rel_type) (FM-4)', () => {
   const { edges } = buildArtEdges(
     [artwork({ refs: [

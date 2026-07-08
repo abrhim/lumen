@@ -9,6 +9,13 @@
 // failure or verify mismatches. Idempotent: SET to the same value is a no-op;
 // re-run after every ingest until an outbox/CDC pattern exists (plan DATA-9).
 //
+// KNOWN-MISSING baseline (art-graph DATA-2): PG-only content with no Neo4j
+// mirror is EXPECTED to show as missing in --verify — currently the openbible
+// collection (~614k edges), the art collection (~4.4k artwork entities +
+// ~15k DEPICTS/FEATURES edges), and deprecated structural entities. A real
+// regression is a MISMATCHED value on a node/edge that exists in both stores,
+// not a PG row with no Neo4j counterpart.
+//
 // Join subtleties (plan DATA-1/DATA-2): phase-b entity ids that collided in
 // Postgres were namespaced to `{type}:{id}` with the original graph id kept in
 // metadata.neo4j_id — the graph is matched on the resolved id. Parallel
