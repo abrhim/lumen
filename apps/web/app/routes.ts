@@ -5,4 +5,5 @@ export default [
 	route("scripture/:book", "routes/book.tsx"),
 	route("scripture/:book/:chapter", "routes/scripture.tsx"),
 	route("scripture/:book/:chapter/art", "routes/scripture.art.tsx"),
+	route("api/strongs/:no", "routes/api.strongs.tsx"),
 ] satisfies RouteConfig;

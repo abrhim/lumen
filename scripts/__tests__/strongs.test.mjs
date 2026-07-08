@@ -45,6 +45,30 @@ const gen11Words = [
   id: `gen-1-1-w${i + 1}`, position: i + 1, surface, normalized: surface.toLowerCase(),
 }));
 
+test('nested divineName/seg markup inside <w> is STRIPPED to text, never read as empty (CD-2 — 18.7% of verses)', () => {
+  const PS_STYLE = `<verse osisID="Ps.23.1" sID="Ps.23.1"/><w lemma="strong:H03068"><seg><divineName>Lord</divineName></seg></w> <w lemma="strong:H07462">is my shepherd</w><verse eID="Ps.23.1"/>`;
+  const spans = parseVerseSpans(PS_STYLE);
+  assert.equal(spans.length, 2);
+  assert.deepEqual(spans[0], { text: 'Lord', strongs: ['H3068'], morph: null });
+});
+
+test('tagged <w> nested inside transChange is extracted; note content is excluded (CD-1)', () => {
+  const MIXED = `<verse osisID="X.1.1" sID="X.1.1"/><transChange type="added">it <w lemma="strong:G1096">to be</w></transChange> <note>study <w lemma="strong:G9999">noise</w></note><w lemma="strong:G3779">so</w><verse eID="X.1.1"/>`;
+  const spans = parseVerseSpans(MIXED);
+  assert.deepEqual(spans.map((s) => s.text), ['to be', 'so']);
+  assert.ok(!spans.some((s) => s.strongs.includes('G9999')));
+});
+
+test('EN DASH compound names normalize to ASCII hyphen (live 1Chr.1.49 class — 1,187 verses)', () => {
+  const CHR = `<verse osisID="1Chr.1.49" sID="x"/><w lemma="strong:H01177">Baal–hanan</w><verse eID="x"/>`;
+  const spans = parseVerseSpans(CHR);
+  assert.equal(spans[0].text, 'Baal-hanan');
+  const words = [{ id: 'w1', position: 1, surface: 'Baal-hanan', normalized: 'baal-hanan' }];
+  const { ok, tags } = alignSpansToWords(spans, words);
+  assert.equal(ok, true);
+  assert.deepEqual(tags[0].strongs, ['H1177']);
+});
+
 test('alignSpansToWords: phrase spans tag every member word; sequential and deterministic (FM-2/Q3)', () => {
   const spans = parseVerseSpans(GEN_1_1);
   const result = alignSpansToWords(spans, gen11Words);
