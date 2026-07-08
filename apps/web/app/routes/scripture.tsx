@@ -1,8 +1,9 @@
-import { Suspense, lazy, useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import {
 	Await,
 	Link,
 	isRouteErrorResponse,
+	useFetcher,
 	useNavigate,
 	useNavigation,
 	useNavigationType,
@@ -21,8 +22,10 @@ import {
 	chapterUnit,
 	getCrossReferences,
 	groupCrossRefs,
+	getWordTags,
 	BIBLE_BOOK_IDS,
 	type CrossRefCard,
+	type WordTagRow,
 	type NeighborhoodResult,
 	type VerseConnectionsResult,
 	type VerseEntityRef,
@@ -44,6 +47,7 @@ import {
 import { useIsMobile } from "~/hooks/use-mobile";
 import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
+import { buildWordSegments } from "~/lib/word-study";
 import { cachedJson } from "../lib/cache.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
@@ -85,6 +89,36 @@ interface CrossRefsPanel {
 	totals: { outgoing: number; incoming: number };
 	/** true when served from the curated fallback collection (chip + copy differ) */
 	curated: boolean;
+}
+
+/** Word-study tags for the selected Bible verse — degradation is a value (strongs FM-6). */
+interface WordTagsPanel {
+	degraded: boolean;
+	tags: WordTagRow[];
+}
+
+async function loadWordTags(
+	db: Route.LoaderArgs["context"]["db"],
+	bookId: string,
+	chapter: number,
+	verse: number,
+): Promise<WordTagsPanel> {
+	const verseId = buildVerseId(bookId, chapter, verse);
+	const startedAt = Date.now();
+	try {
+		const tags = await getWordTags(db, verseId);
+		return { degraded: false, tags };
+	} catch (error) {
+		logEvent("wordtags_degraded", {
+			name: error instanceof Error ? error.name : "unknown",
+			message: error instanceof Error ? error.message : String(error),
+			book: bookId,
+			chapter,
+			verse,
+			elapsedMs: Date.now() - startedAt,
+		});
+		return { degraded: true, tags: [] };
+	}
 }
 
 const LEGACY_CROSSREF_COLLECTION = "phase-b";
@@ -335,7 +369,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		graphIdValid
@@ -366,6 +400,11 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		requestedVerse !== null
 			? loadCrossRefs(context.db, bookId, chapter, requestedVerse)
 			: Promise.resolve(null),
+		// word-study tags: Bible verses only (no tags exist elsewhere); 7th
+		// parallel query vs pool max:5 → worst case one extra queued RT (PO-1)
+		requestedVerse !== null && BIBLE_BOOK_IDS.has(bookId)
+			? loadWordTags(context.db, bookId, chapter, requestedVerse)
+			: Promise.resolve(null),
 	]);
 
 	if (verses.length === 0) {
@@ -380,6 +419,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			: null;
 	const connections = selectedVerse !== null ? pendingConnections : null;
 	const crossRefs = selectedVerse !== null ? crossRefsRaw : null;
+	const wordTags = selectedVerse !== null ? wordTagsRaw : null;
 
 	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
 	const graph: Promise<GraphPanelData> | null =
@@ -411,6 +451,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		selectedVerse,
 		connections,
 		crossRefs,
+		wordTags,
 		graphId,
 		graphDepth,
 		graph,
@@ -424,7 +465,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, crossRefs, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, connections, crossRefs, wordTags, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
 	const unit = chapterUnit(bookId);
 	const navigation = useNavigation();
@@ -563,6 +604,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			isPending={isPending}
 			connections={connections}
 			crossRefs={crossRefs}
+			wordTags={wordTags}
 			art={verseArt}
 			onCrossRefNavigate={onCrossRefNavigate}
 			onOpenGraph={openGraph}
@@ -689,17 +731,20 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				    panel isn't reconciled twice; the CSS classes keep it hidden on
 				    mobile before hydration. */}
 				{!isMobile && (
-					<section
-						aria-label="Verse connections"
-						className="hidden h-fit rounded-xl border border-rule bg-panel p-5 lg:sticky lg:top-6 lg:block lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
-					>
-						{/* full rail width, right above the verse detail (Abram's call) */}
+					<div className="hidden lg:block">
+						{/* a DISTINCT card above the verse detail — the whole card is
+						    the link to the chapter gallery (Abram's design) */}
 						<ChapterArtStack
 							art={art}
 							reference={reference}
 							galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
-							className="mb-5 flex w-full"
+							variant="card"
+							className="mb-4"
 						/>
+						<section
+							aria-label="Verse connections"
+							className="h-fit rounded-xl border border-rule bg-panel p-5 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
+						>
 						{selected ? (
 							<>
 								<div className="flex items-baseline justify-between gap-3">
@@ -724,7 +769,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 								cross-references.
 							</p>
 						)}
-					</section>
+						</section>
+					</div>
 				)}
 			</div>
 
@@ -795,23 +841,31 @@ function ChapterArtStack({
 	art,
 	reference,
 	galleryUrl,
+	variant = "chip",
 	className = "",
 }: {
 	art: ArtItem[];
 	reference: string;
 	galleryUrl: string;
+	/** chip: compact inline affordance (mobile header). card: a distinct
+	 * full-width card — the ENTIRE card is the link (Abram's rail design). */
+	variant?: "chip" | "card";
 	className?: string;
 }) {
 	if (art.length === 0) return null;
 	const { stack, more } = pickArtStack(art, 5);
 	// loader caps at 24; the gallery shows the true count
 	const countLabel = `${art.length}${art.length >= 24 ? "+" : ""}`;
+	const variantClasses =
+		variant === "card"
+			? "flex w-full rounded-xl border border-rule bg-panel p-4"
+			: "inline-flex rounded-lg border border-rule2 bg-panel py-1.5 pl-1.5 pr-4";
 	return (
 		<Link
 			to={galleryUrl}
 			viewTransition
 			aria-label={`View ${countLabel} artworks for ${reference}`}
-			className={`group inline-flex min-h-11 items-center gap-3 rounded-lg border border-rule2 bg-panel py-1.5 pl-1.5 pr-4 transition-colors duration-150 hover:border-primary ${className}`}
+			className={`group min-h-11 items-center gap-3 transition-colors duration-150 hover:border-primary ${variantClasses} ${className}`}
 		>
 			<span aria-hidden="true" className="flex items-center">
 				{stack.map((a, i) => (
@@ -839,6 +893,7 @@ function PanelBody({
 	isPending,
 	connections,
 	crossRefs,
+	wordTags,
 	art,
 	onCrossRefNavigate,
 	onOpenGraph,
@@ -847,15 +902,14 @@ function PanelBody({
 	isPending: boolean;
 	connections: Promise<VersePanelData> | null;
 	crossRefs: CrossRefsPanel | null;
+	wordTags: WordTagsPanel | null;
 	art: ArtItem[];
 	onCrossRefNavigate: (verse: number) => void;
 	onOpenGraph: (entityId: string) => void;
 }) {
 	return (
 		<>
-			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
-				{verseText}
-			</blockquote>
+			<WordStudyVerse verseText={verseText} wordTags={isPending ? null : wordTags} />
 			{art.length > 0 && (
 				<div className="mt-4">
 					<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
@@ -908,6 +962,201 @@ function PanelBody({
 				<CrossRefsSection panel={crossRefs} onNavigate={onCrossRefNavigate} />
 			)}
 		</>
+	);
+}
+
+/** Amendment 6 (strongs): the verse quote with an OPT-IN interactive layer.
+ * The toggle solves touch discoverability, AT wall-of-buttons, and tab
+ * pollution in one move; while active, tagged words get dotted underlines,
+ * padded hit areas, roving tabindex, and background-only selection (no
+ * reflow). The text is always a SLICE of the original (FM-7). */
+function WordStudyVerse({
+	verseText,
+	wordTags,
+}: {
+	verseText: string;
+	wordTags: WordTagsPanel | null;
+}) {
+	const [study, setStudy] = useState(false);
+	const [active, setActive] = useState<WordTagRow | null>(null);
+	const [focusIdx, setFocusIdx] = useState(0);
+	const toggleRef = useRef<HTMLButtonElement | null>(null);
+	// reset interaction state when the verse changes
+	useEffect(() => {
+		setStudy(false);
+		setActive(null);
+		setFocusIdx(0);
+	}, [verseText]);
+
+	const hasTags = wordTags !== null && !wordTags.degraded && wordTags.tags.length > 0;
+	// focus never drops to <body> on toggle/Done/verse-change (CS-2)
+	const exitStudy = () => {
+		setStudy(false);
+		setActive(null);
+		queueMicrotask(() => toggleRef.current?.focus());
+	};
+
+	if (!hasTags || !study) {
+		return (
+			<>
+				<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
+					{verseText}
+				</blockquote>
+				{hasTags && (
+					<button
+						ref={toggleRef}
+						type="button"
+						onClick={() => setStudy(true)}
+						className="mt-2 rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
+					>
+						Word study
+					</button>
+				)}
+				{wordTags?.degraded && (
+					// degraded ≠ genuinely-untagged: say so instead of silently
+					// hiding the affordance (CS-5)
+					<p className="mt-2 font-ui text-[10px] italic text-faint">
+						Word study is unavailable right now.
+					</p>
+				)}
+			</>
+		);
+	}
+
+	const segments = buildWordSegments(verseText, wordTags.tags);
+	const tagged = segments.filter((s) => s.tag !== null);
+	const move = (delta: number) => {
+		const next = Math.min(tagged.length - 1, Math.max(0, focusIdx + delta));
+		setFocusIdx(next);
+		document.getElementById(`ws-${tagged[next]!.tag!.word_id}`)?.focus();
+	};
+
+	let tagIdx = -1;
+	return (
+		<>
+			<blockquote
+				role="group"
+				aria-label="Word study — arrow keys move between words"
+				className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground"
+				onKeyDown={(e) => {
+					if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
+					if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+				}}
+			>
+				{segments.map((s, i) => {
+					if (s.tag === null) return <span key={i}>{s.text}</span>;
+					tagIdx++;
+					const idx = tagIdx;
+					const isActive = active?.word_id === s.tag.word_id;
+					return (
+						<button
+							key={i}
+							id={`ws-${s.tag.word_id}`}
+							type="button"
+							// roving tabindex: ONE tab stop for the whole verse (UA-8)
+							tabIndex={idx === focusIdx ? 0 : -1}
+							aria-pressed={isActive}
+							onClick={() => { setActive(isActive ? null : s.tag); setFocusIdx(idx); }}
+							// hit area padded VERTICALLY only — horizontal expansion made
+							// adjacent words' boxes meet across the space glyph (CS-3);
+							// selection is background-only so the line never reflows (UA-5)
+							className={`-my-1 rounded py-1 font-reading italic underline decoration-dotted decoration-rule2 underline-offset-4 transition-colors duration-150 hover:decoration-primary ${
+								isActive ? "bg-sel text-ink" : ""
+							}`}
+						>
+							{s.text}
+						</button>
+					);
+				})}
+			</blockquote>
+			<div className="mt-1 flex items-center justify-between">
+				<button
+					type="button"
+					onClick={exitStudy}
+					className="rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-primary transition-colors duration-150 hover:border-primary"
+				>
+					Done
+				</button>
+				<span className="font-ui text-[10px] text-faint">
+					Lexicon:{" "}
+					<a href="https://github.com/STEPBible/STEPBible-Data" target="_blank" rel="noreferrer" className="underline hover:text-ink">
+						STEPBible
+					</a>{" "}
+					(CC BY 4.0)
+				</span>
+			</div>
+			{active && <WordStudyCard tag={active} />}
+		</>
+	);
+}
+
+/** The tapped word's entry — directly under the verse (UA-4: no far-accordion hop). */
+function WordStudyCard({ tag }: { tag: WordTagRow }) {
+	const [expanded, setExpanded] = useState(false);
+	const alsoIn = useFetcher<{ no: string; verses: { verse_id: string; reference: string }[] }>();
+	const primary = tag.entries[0];
+	useEffect(() => {
+		setExpanded(false);
+		// unconditional: the fetcher supersedes in-flight loads — the idle
+		// guard served the PREVIOUS word's verses under rapid taps (CS-1/CE-2)
+		if (primary) alsoIn.load(`/api/strongs/${primary.strongs_no}`);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tag.word_id]);
+	// only the late-arriving list is a live region — the entries render
+	// immediately and would double-announce (CS-4)
+	const staleAlsoIn = alsoIn.data && primary && alsoIn.data.no !== primary.strongs_no;
+
+	return (
+		<div className="mt-2 rounded-lg border border-rule2 bg-surface p-3">
+			<ol className="list-none space-y-2">
+				{tag.entries.map((e) => (
+					<li key={e.strongs_no}>
+						<p className="font-ui text-xs font-semibold text-ink">
+							{e.translit && <span className="mr-1.5">{e.translit}</span>}
+							<span className="font-normal text-muted-foreground">{e.strongs_no}</span>
+						</p>
+						{e.gloss && <p className="mt-0.5 font-reading text-[13px] text-ink">{e.gloss}</p>}
+						{e.definition && (
+							<p className="mt-1 whitespace-pre-line font-reading text-[13px] leading-snug text-muted-foreground">
+								{expanded || e.definition.length <= 400 ? e.definition : `${e.definition.slice(0, 400)}…`}
+							</p>
+						)}
+					</li>
+				))}
+			</ol>
+			{tag.morph && (
+				<p className="mt-1.5 font-ui text-[10px] uppercase tracking-wide text-faint">{tag.morph}</p>
+			)}
+			{tag.entries.some((e) => (e.definition?.length ?? 0) > 400) && (
+				<button
+					type="button"
+					onClick={() => setExpanded((x) => !x)}
+					className="mt-1 font-ui text-[11px] font-semibold text-primary hover:underline"
+				>
+					{expanded ? "Show less" : "Show more"}
+				</button>
+			)}
+			{!staleAlsoIn && (alsoIn.data?.verses.length ?? 0) > 0 && (
+				<p aria-live="polite" className="mt-2 font-ui text-[11px] text-muted-foreground">
+					Also in:{" "}
+					{alsoIn.data!.verses.slice(0, 5).map((v, i) => {
+						const target = verseIdToTarget(v.verse_id);
+						return (
+							<span key={v.verse_id}>
+								{i > 0 && " · "}
+								{target ? (
+									<Link to={target.href} preventScrollReset className="text-primary hover:underline">
+										{v.reference}
+									</Link>
+								) : (
+									v.reference
+								)}
+							</span>
+						);
+					})}
+				</p>
+			)}
+		</div>
 	);
 }
 

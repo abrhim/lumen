@@ -8,3 +8,4 @@ export * from './mode-instructions';
 export * from './graph/index';
 export * from './osis-map';
 export * from './crossrefs';
+export * from './strongs';

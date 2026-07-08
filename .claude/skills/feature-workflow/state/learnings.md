@@ -96,3 +96,9 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - art-graph: curated tag→entity maps must disambiguate per INSTANCE, not per tag — "judas"/"jacob" named different people per artwork (15 live wrong edges prevented).
 - art-graph: combined-role reviewers (3 briefs w/ pre-seeded traps) matched 6-role quality at half the cost; every seeded trap confirmed a bug or verified clean.
 - art-graph: panel-2 live-probing wrote exact prod expectations (16 Daniel skips) into the plan; the dry run matched to the row — plan-time data probes keep paying.
+
+## 2026-07-08 · feature: strongs · tier: large
+- strongs: reference CONTENT needs value assertions — existence checks passed while H430 shipped glossed '(Gibeath)-elohim' (executing the dedup against live files was the only way to see it).
+- strongs: when a cap gate rejects, histogram ALL first-divergences before fixing — three rejections were three clean mechanical classes (en-dash, ligatures, 1769 spellings), zero debugging.
+- strongs: one pre-plan source probe overturned the whole feature premise (fuzzy 83% → deterministic 93.5%); probe before you plan around a dataset.
+- strongs: verify the counts of your verifiers — panel-2 corrected panel-1's divineName figure by 10× in the understating direction.

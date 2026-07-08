@@ -25,6 +25,15 @@ describe('getWordTags SQL shape (FM-6/FM-10)', () => {
 		expect(q).toContain('strongs_lexicon');
 		expect(q).toContain('char_start');
 	});
+
+	it('aggregates to ONE row per word with ordered entries (PO-3/CD-7 pinned — CS-7)', async () => {
+		const { db, captured } = capturingDb([]);
+		await getWordTags(db, 'john-3-16');
+		const q = captured.join();
+		expect(q).toContain('GROUP BY');
+		expect(q).toContain('json_agg');
+		expect(q).toContain('ORDINALITY');
+	});
 });
 
 describe('getVersesByStrongs SQL shape (FM-9)', () => {
