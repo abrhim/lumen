@@ -772,8 +772,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 									</Link>
 									{showWordCard && (
 										<InlineWordCard
+											// on mobile ?verse alone means "drawer open", so the X
+											// clears the verse too — close must not summon the sheet
 											tag={wordTag ?? null}
-											closeUrl={`${chapterUrl}?verse=${verse.verse_number}`}
+											closeUrl={
+												isMobile ? chapterUrl : `${chapterUrl}?verse=${verse.verse_number}`
+											}
 											detailUrl={
 												isMobile ? `${chapterUrl}?verse=${verse.verse_number}` : undefined
 											}
