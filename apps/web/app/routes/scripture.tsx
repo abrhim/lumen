@@ -1080,7 +1080,7 @@ function InlineWordCard({
 		return (
 			<div
 				ref={cardRef}
-				className="mx-14 my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out"
+				className="my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out"
 			>
 				<div className="rounded-lg border border-rule2 bg-panel p-3">
 					<div className="flex items-baseline justify-between gap-3">
@@ -1113,7 +1113,7 @@ function InlineWordCard({
 	return (
 		<div
 			ref={cardRef}
-			className="mx-14 my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out"
+			className="my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out"
 		>
 			<div className="rounded-lg border border-rule2 bg-panel p-3">
 				<div className="flex items-baseline justify-between gap-3">
