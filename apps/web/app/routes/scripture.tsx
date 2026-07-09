@@ -513,6 +513,14 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const isPending = navHere !== null && activeVerse !== selectedVerse;
 	const selected =
 		activeVerse !== null ? verses.find((v) => v.verse_number === activeVerse) : undefined;
+	// The word selection needs the SAME optimistic treatment: the sheet must
+	// know a word tap is in flight or it flashes open for the round-trip, then
+	// closes when the loader's selectedWord lands (mobile drawer flicker).
+	const activeWord = navHere
+		? validVerse(navHere.search) !== null
+			? parseWordParam(navHere.search)
+			: null
+		: selectedWord;
 
 	// Cross-reference jumps record their target here (a ref, not location.state:
 	// state persists on history entries and would replay the scroll on back/forward).
@@ -834,7 +842,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					// mutually exclusive with the graph overlay (UX-1): one dialog, one Esc
 					// target — and a WORD tap renders the inline card instead (the sheet
 					// would cover it); its "Full verse detail" link drops ?word to open this
-					open={selected !== undefined && selectedWord === null && effectiveGraphId === null}
+					open={selected !== undefined && activeWord === null && effectiveGraphId === null}
 					onOpenChange={(open) => {
 						if (!open) navigate(chapterUrl, { preventScrollReset: true });
 					}}
