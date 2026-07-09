@@ -712,10 +712,13 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					<ol className="max-w-prose list-none">
 						{verses.map((verse) => {
 							const isActive = verse.verse_number === activeVerse;
-							const wordTag =
-								isActive && selectedWord !== null && wordTags !== null && !wordTags.degraded
-									? wordTags.tags.find((t) => t.position === selectedWord)
-									: undefined;
+							// a selected word always renders a card — tagged or not (an
+							// untagged word must not be a dead tap, especially on mobile)
+							const showWordCard =
+								isActive && selectedWord !== null && wordTags !== null && !wordTags.degraded;
+							const wordTag = showWordCard
+								? wordTags!.tags.find((t) => t.position === selectedWord)
+								: undefined;
 							// the selected word's whole original-language group ("to be
 							// taxed" is ONE Greek word) highlights together
 							const wordGroup =
@@ -759,10 +762,13 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										</span>
 										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
 									</Link>
-									{wordTag && (
+									{showWordCard && (
 										<InlineWordCard
-											tag={wordTag}
+											tag={wordTag ?? null}
 											closeUrl={`${chapterUrl}?verse=${verse.verse_number}`}
+											detailUrl={
+												isMobile ? `${chapterUrl}?verse=${verse.verse_number}` : undefined
+											}
 										/>
 									)}
 								</li>
@@ -825,8 +831,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			    modal would open on desktop too, blocking the page behind its overlay. */}
 			{isMobile && (
 				<Sheet
-					// mutually exclusive with the graph overlay (UX-1): one dialog, one Esc target
-					open={selected !== undefined && effectiveGraphId === null}
+					// mutually exclusive with the graph overlay (UX-1): one dialog, one Esc
+					// target — and a WORD tap renders the inline card instead (the sheet
+					// would cover it); its "Full verse detail" link drops ?word to open this
+					open={selected !== undefined && selectedWord === null && effectiveGraphId === null}
 					onOpenChange={(open) => {
 						if (!open) navigate(chapterUrl, { preventScrollReset: true });
 					}}
@@ -1037,15 +1045,68 @@ function VerseWords({ text, highlight }: { text: string; highlight?: ReadonlySet
 
 /** The terse in-body word card (Abram's design): language, original script,
  * transliteration, one-line meaning, Details → the word page. Renders below
- * the tapped verse; the chapter gently slides down (reduced-motion: instant). */
-function InlineWordCard({ tag, closeUrl }: { tag: WordTagRow; closeUrl: string }) {
+ * the tapped verse; the chapter gently slides down (reduced-motion: instant).
+ * `tag: null` = an untagged word — still a card, never a dead tap. `detailUrl`
+ * (mobile, where the word tap suppresses the verse sheet) escalates to the
+ * full verse detail by dropping ?word from the URL. */
+function InlineWordCard({
+	tag,
+	closeUrl,
+	detailUrl,
+}: {
+	tag: WordTagRow | null;
+	closeUrl: string;
+	detailUrl?: string;
+}) {
+	const cardRef = useRef<HTMLDivElement>(null);
+	// tapping a word near the viewport's bottom edge renders the card out of
+	// view — nudge minimally ('nearest': a no-op when already visible)
+	useEffect(() => {
+		const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		cardRef.current?.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+	}, [tag?.position]);
 	// lead with the content word, not a tag-along function word — "taxing" is
 	// [G3588 ὁ, G582 ἀπογραφή] and the article's gloss reads as no definition
-	const primary = primaryEntry(tag.entries);
-	if (!primary) return null;
+	const primary = tag ? primaryEntry(tag.entries) : undefined;
+	if (!primary) {
+		return (
+			<div
+				ref={cardRef}
+				className="mx-14 my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out"
+			>
+				<div className="rounded-lg border border-rule2 bg-panel p-3">
+					<div className="flex items-baseline justify-between gap-3">
+						<p className="font-reading text-sm italic text-muted-foreground">
+							No original-language data recorded for this word.
+						</p>
+						<Link
+							to={closeUrl}
+							preventScrollReset
+							aria-label="Close word study"
+							className="-m-1 p-1 text-muted-foreground transition-colors duration-150 hover:text-ink"
+						>
+							<XIcon className="size-3.5" aria-hidden="true" />
+						</Link>
+					</div>
+					{detailUrl && (
+						<Link
+							to={detailUrl}
+							preventScrollReset
+							className="mt-2 inline-block font-ui text-[11px] font-semibold text-primary hover:underline"
+						>
+							Full verse detail →
+						</Link>
+					)}
+				</div>
+			</div>
+		);
+	}
 	const lang = strongsLanguage(primary.strongs_no);
 	return (
-		<div className="mx-14 my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out">
+		<div
+			ref={cardRef}
+			className="mx-14 my-1 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200 motion-safe:ease-out"
+		>
 			<div className="rounded-lg border border-rule2 bg-panel p-3">
 				<div className="flex items-baseline justify-between gap-3">
 					<p className="font-ui text-xs text-ink">
@@ -1077,12 +1138,23 @@ function InlineWordCard({ tag, closeUrl }: { tag: WordTagRow; closeUrl: string }
 						+{tag.entries.length - 1} more sense{tag.entries.length > 2 ? "s" : ""} on the detail page
 					</p>
 				)}
-				<Link
-					to={`/word/${primary.strongs_no}`}
-					className="mt-2 inline-block font-ui text-[11px] font-semibold text-primary hover:underline"
-				>
-					Details →
-				</Link>
+				<div className="mt-2 flex gap-4">
+					<Link
+						to={`/word/${primary.strongs_no}`}
+						className="font-ui text-[11px] font-semibold text-primary hover:underline"
+					>
+						Details →
+					</Link>
+					{detailUrl && (
+						<Link
+							to={detailUrl}
+							preventScrollReset
+							className="font-ui text-[11px] font-semibold text-primary hover:underline"
+						>
+							Full verse detail →
+						</Link>
+					)}
+				</div>
 			</div>
 		</div>
 	);
