@@ -39,6 +39,7 @@ Minimal. The plan's `?code=`-primary framing (later demoted to fallback under to
 ```json
 {
   "feature": "supabase-auth",
+  "feature_slug": "supabase-auth",
   "tier": "large",
   "gates_waived": ["1b", "7"],
   "panels": { "plan": [3, 2], "code": [3, 3] },
@@ -51,6 +52,8 @@ Minimal. The plan's `?code=`-primary framing (later demoted to fallback under to
   "adversarial_fixes_corrected": 1,
   "convergence_events": 2,
   "reversals": 1,
+  "plan_to_code_drift": 0,
+  "panel_2_dissent_rate": 0.33,
   "preplan_probes": 2,
   "tests_added": 27,
   "commits": ["8d69537", "b643bd2", "f8267a7"],
