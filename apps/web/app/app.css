@@ -173,6 +173,9 @@
 	--popover-foreground: #e8e6e1;
 	--primary: #a9bcf0;
 	--primary-foreground: #17181c;
+	/* lighter red on the dark canvas — the base --destructive is ~3.5:1 here
+	   (fails AA for error text); this lands ≥4.5:1 on --t-paper #17181c */
+	--destructive: #f0908a;
 }
 
 html {
