@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
 import { getAuth, getSessionUser } from "~/lib/auth.server";
@@ -56,14 +56,12 @@ export default function Login({ actionData }: Route.ComponentProps) {
 	const sent = actionData?.sent === true;
 
 	// resend guard: the built-in mailer is small, and each resend supersedes
-	// the previous link — don't invite hammering (plan D10)
+	// the previous link — don't invite hammering (plan D10). Re-arm on every
+	// send: RR returns a fresh actionData object per submit (incl. same-email
+	// resends), so keying on its identity restarts the countdown each time.
 	const [cooldown, setCooldown] = useState(0);
-	const sentAt = useRef<string | null>(null);
 	useEffect(() => {
-		if (sent && sentAt.current !== actionData.email) {
-			sentAt.current = actionData.email;
-			setCooldown(RESEND_SECONDS);
-		}
+		if (sent) setCooldown(RESEND_SECONDS);
 	}, [sent, actionData]);
 	useEffect(() => {
 		if (cooldown <= 0) return;

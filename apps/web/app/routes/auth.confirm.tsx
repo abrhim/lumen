@@ -50,6 +50,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
+	// verifyOtp mints a session with no cookie/verifier dependence, so a
+	// cross-site auto-POST could sign a victim into an attacker's session
+	// (login CSRF / fixation). Reject anything not same-origin (D14 gates
+	// nothing today, but this is latent the moment per-user state ships).
+	const site = request.headers.get("Sec-Fetch-Site");
+	const origin = request.headers.get("Origin");
+	const crossSite =
+		(site && site !== "same-origin") ||
+		(origin !== null && origin !== new URL(request.url).origin);
+	if (crossSite) {
+		return data({ error: "This request didn't come from Lumen. Start again from your email." }, { status: 403 });
+	}
 	const form = await request.formData();
 	const token_hash = form.get("token_hash");
 	const code = form.get("code");

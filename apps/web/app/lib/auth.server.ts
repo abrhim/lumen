@@ -98,10 +98,17 @@ export async function getSessionUser(
 	getAuthImpl: (request: Request, env: AuthEnv) => RequestAuth = getAuth,
 ): Promise<{ user: SessionUser | null; headers: Headers }> {
 	const started = Date.now();
-	const { supabase, commitHeaders } = getAuthImpl(request, env);
-	if (!hasAuthCookie(request)) return { user: null, headers: commitHeaders() };
+	// captured before the throw-prone getClaims so a mid-refresh rotation's
+	// Set-Cookie still rides the response even when we degrade to null (D5/H6);
+	// stays null only if construction itself threw (empty env — B6)
+	let commitHeaders: (() => Headers) | null = null;
 	try {
-		const { data, error } = await supabase.auth.getClaims();
+		// construct INSIDE the try — createServerClient throws synchronously on
+		// empty env, and the root loader runs on every request (D5 never-throw)
+		const auth = getAuthImpl(request, env);
+		commitHeaders = auth.commitHeaders;
+		if (!hasAuthCookie(request)) return { user: null, headers: commitHeaders() };
+		const { data, error } = await auth.supabase.auth.getClaims();
 		if (error || !data?.claims?.sub) return { user: null, headers: commitHeaders() };
 		return {
 			user: {
@@ -115,7 +122,9 @@ export async function getSessionUser(
 			message: err instanceof Error ? err.message : String(err),
 			elapsedMs: Date.now() - started,
 		});
-		return { user: null, headers: commitHeaders() };
+		// preserve any cookies the client wrote before throwing; fresh Headers
+		// only if construction itself failed
+		return { user: null, headers: commitHeaders ? commitHeaders() : new Headers() };
 	}
 }
 
@@ -137,9 +146,16 @@ export function clearAuthCookieHeaders(request: Request, headers: Headers): Head
 	return headers;
 }
 
-/** logout returnTo guard (plan D7): same-origin PATH only. */
+/** logout returnTo guard (plan D7): same-origin PATH only. Resolve-and-compare
+ * against a throwaway origin — a char-class guard misses backslashes, which
+ * browsers normalize to `/` in Location headers ("/\evil.com" → https://evil.com/,
+ * a real open redirect). Anything that resolves off-origin collapses to "/". */
 export function safeReturnTo(value: FormDataEntryValue | null): string {
-	if (typeof value !== "string") return "/";
-	if (!value.startsWith("/") || value.startsWith("//") || value.includes(":")) return "/";
-	return value;
+	if (typeof value !== "string" || !value.startsWith("/")) return "/";
+	try {
+		const u = new URL(value, "http://localhost");
+		return u.origin === "http://localhost" ? u.pathname + u.search + u.hash : "/";
+	} catch {
+		return "/";
+	}
 }

@@ -99,6 +99,22 @@ describe("H3 confirm route", () => {
 		expect(res.data).toMatchObject({ state: "error", reason: "expired" });
 	});
 
+	it("B4: cross-site POST is rejected 403 before verifyOtp runs (login-CSRF guard)", async () => {
+		const request = postForm("https://x/auth/confirm", { token_hash: "th" });
+		request.headers.set("Sec-Fetch-Site", "cross-site");
+		const res = await confirmAction(args(request));
+		expect(res.init?.status).toBe(403);
+		expect(verifyOtp).not.toHaveBeenCalled();
+	});
+
+	it("B4: hostile Origin header (no Sec-Fetch-Site) is also rejected", async () => {
+		const request = postForm("https://x/auth/confirm", { token_hash: "th" });
+		request.headers.set("Origin", "https://evil.example");
+		const res = await confirmAction(args(request));
+		expect(res.init?.status).toBe(403);
+		expect(verifyOtp).not.toHaveBeenCalled();
+	});
+
 	it("POST token_hash → verifyOtp, success redirects / with committed headers", async () => {
 		verifyOtp.mockResolvedValue({ error: null });
 		await expect(

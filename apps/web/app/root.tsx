@@ -35,7 +35,14 @@ import "./app.css";
 /** Session read for the whole app (plan D5: the SINGLE auth-read site).
  * getClaims verifies locally against cached JWKS (ES256 — probed); when the
  * token was refreshed mid-read the rotated cookies MUST ride this response,
- * even when user is null. */
+ * even when user is null.
+ *
+ * INVARIANT (verified against react-router 7.9.6): a thrown `redirect()` from
+ * ANY loader short-circuits and does NOT merge this root loader's Set-Cookie.
+ * So every auth route that redirects must self-carry commitHeaders() on its
+ * redirect (login/confirm do; logout is a resource route where this loader
+ * never runs). Do not add a route that redirects while relying on the root
+ * loader to persist a token rotation — the rotated cookie would be dropped. */
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	return data({ user }, { headers });
@@ -143,7 +150,11 @@ function AccountChip() {
 						name="returnTo"
 						value={location.pathname + location.search}
 					/>
-					<DropdownMenuItem asChild>
+					{/* preventDefault on the menu's OWN select event keeps the item's
+					    <Form> mounted long enough for the native submit to fire —
+					    otherwise Radix unmounts it synchronously (no exit anim = dead
+					    sign-out). The button click still submits. */}
+					<DropdownMenuItem asChild onSelect={(e) => e.preventDefault()}>
 						<button type="submit" className="w-full cursor-pointer">
 							Sign out
 						</button>

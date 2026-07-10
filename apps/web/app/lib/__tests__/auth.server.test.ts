@@ -105,6 +105,18 @@ describe("H5 getSessionUser — both directions (tske B2)", () => {
 		);
 		expect(user).toBeNull();
 	});
+
+	it("B6: a factory that throws synchronously (empty env) still degrades, never 500s", async () => {
+		const { user, headers } = await getSessionUser(
+			req("https://x/", "sb-proj-auth-token=jwt"),
+			ENV,
+			() => {
+				throw new Error("supabaseUrl is required");
+			},
+		);
+		expect(user).toBeNull();
+		expect(headers).toBeInstanceOf(Headers);
+	});
 });
 
 describe("H6 rotation commit (D5 — the silent-sign-out killer)", () => {
@@ -154,12 +166,27 @@ describe("clearAuthCookieHeaders (D6 — unconditional clearing)", () => {
 	});
 });
 
-describe("safeReturnTo (D7)", () => {
-	it("allows same-origin paths, rejects everything else", () => {
+describe("safeReturnTo (D7 — incl. the B1 backslash open redirect)", () => {
+	it("preserves legitimate same-origin paths, including hyphenated slugs", () => {
 		expect(safeReturnTo("/scripture/john/3?verse=16")).toBe("/scripture/john/3?verse=16");
-		expect(safeReturnTo("https://evil.example/")).toBe("/");
-		expect(safeReturnTo("//evil.example")).toBe("/");
-		expect(safeReturnTo("/x:javascript")).toBe("/");
-		expect(safeReturnTo(null)).toBe("/");
+		// hyphenated routes are real here — the panel's char-class fix ate these
+		expect(safeReturnTo("/scripture/john-3-16")).toBe("/scripture/john-3-16");
+		expect(safeReturnTo("/word/G1223")).toBe("/word/G1223");
+		expect(safeReturnTo("/cross-references#top")).toBe("/cross-references#top");
+	});
+
+	it("rejects every off-origin vector — the browser resolves these cross-origin", () => {
+		for (const v of [
+			"https://evil.example/",
+			"//evil.example",
+			"/\\evil.com", // single backslash — browsers normalize \\ → / in Location
+			"/\\\\evil.com",
+			"/\\/evil.com",
+			"\\/evil.com",
+			null,
+			42 as unknown as string,
+		]) {
+			expect(safeReturnTo(v as never)).toBe("/");
+		}
 	});
 });
