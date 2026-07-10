@@ -98,3 +98,4 @@ Tie-break precedence honored: human > panel-2 > panel-1. Labels per skill: incor
 ## Drift baseline
 - plan.md (pre-hash): 372c3cc4838038a9
 - harness: apps/web/app/lib/__tests__/auth.server.test.ts + apps/web/app/routes/__tests__/auth.routes.test.ts (H1-H6) — hashed at implement-exit
+- auth.server.test.ts: 944713d29fcfe9d0 · auth.routes.test.ts: 8314a67ced0a2fc7 (implement-exit)

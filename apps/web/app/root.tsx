@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import {
+	Form,
 	isRouteErrorResponse,
 	Links,
 	Meta,
 	Outlet,
 	Scripts,
 	ScrollRestoration,
+	data,
+	useLocation,
+	useRouteLoaderData,
 } from "react-router";
 import { PaletteIcon } from "lucide-react";
 
@@ -16,8 +20,26 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "~/components/ui/select";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { getSessionUser } from "~/lib/auth.server";
 import type { Route } from "./+types/root";
 import "./app.css";
+
+/** Session read for the whole app (plan D5: the SINGLE auth-read site).
+ * getClaims verifies locally against cached JWKS (ES256 — probed); when the
+ * token was refreshed mid-read the rotated cookies MUST ride this response,
+ * even when user is null. */
+export async function loader({ request, context }: Route.LoaderArgs) {
+	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
+	return data({ user }, { headers });
+}
 
 const THEMES = ["paper", "parchment", "linen", "ink"] as const;
 
@@ -45,7 +67,8 @@ function ThemeSelect() {
 			<SelectTrigger
 				aria-label="Theme"
 				size="sm"
-				className="fixed right-4 top-4 z-40 bg-surface font-ui text-xs font-semibold text-muted-foreground shadow-sm"
+				// visual h-7 with a 44px hit box (after: overlay) — Emil touch rule
+				className="relative bg-surface font-ui text-xs font-semibold text-muted-foreground shadow-sm after:absolute after:-inset-2 after:content-['']"
 			>
 				<PaletteIcon className="size-3.5" aria-hidden="true" />
 				<SelectValue />
@@ -93,10 +116,51 @@ export function Layout({ children }: { children: React.ReactNode }) {
 	);
 }
 
+/** Signed-in presence in the fixed chrome (plan D10): chip only — the
+ * signed-out invitation lives on the home header, never over a chapter. */
+function AccountChip() {
+	const root = useRouteLoaderData<typeof loader>("root");
+	const location = useLocation();
+	const user = root?.user;
+	if (!user) return null;
+	const email = user.email ?? "Account";
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger
+				aria-label={`Account: ${email}`}
+				className="relative flex size-7 items-center justify-center rounded-full border border-rule2 bg-panel2 font-ui text-xs font-semibold uppercase text-ink shadow-sm outline-none transition-colors duration-150 hover:border-primary focus-visible:border-primary after:absolute after:-inset-2 after:content-['']"
+			>
+				{email.slice(0, 1)}
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="font-ui text-xs">
+				<DropdownMenuLabel className="max-w-56 truncate font-normal text-muted-foreground">
+					{email}
+				</DropdownMenuLabel>
+				<DropdownMenuSeparator />
+				<Form method="post" action="/logout">
+					<input
+						type="hidden"
+						name="returnTo"
+						value={location.pathname + location.search}
+					/>
+					<DropdownMenuItem asChild>
+						<button type="submit" className="w-full cursor-pointer">
+							Sign out
+						</button>
+					</DropdownMenuItem>
+				</Form>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
 export default function App() {
 	return (
 		<>
-			<ThemeSelect />
+			<div className="fixed right-4 top-4 z-40 flex items-center gap-2">
+				<AccountChip />
+				<ThemeSelect />
+			</div>
 			<Outlet />
 		</>
 	);

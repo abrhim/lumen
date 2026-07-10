@@ -1,0 +1,151 @@
+import { Form, Link, data, redirect } from "react-router";
+import type { EmailOtpType } from "@supabase/supabase-js";
+import type { Route } from "./+types/auth.confirm";
+import { getAuth, getSessionUser } from "~/lib/auth.server";
+
+/**
+ * Magic-link landing (plan D2/D3). Three arrival shapes:
+ *  - ?token_hash=&type=   primary (after the email-template edit; cross-device)
+ *  - ?code=               PKCE fallback (default template; same-device only)
+ *  - ?error_code=         Supabase verify-failure redirects (e.g. otp_expired)
+ * GET renders a POST interstitial — email scanners follow GETs and would burn
+ * the one-time token; no auto-submit (scanners execute JS too).
+ */
+
+export function meta(_args: Route.MetaArgs) {
+	return [{ title: "Sign in — Lumen" }];
+}
+
+type ConfirmState =
+	| { state: "already" }
+	| { state: "confirm"; token_hash: string | null; type: string | null; code: string | null }
+	| { state: "error"; reason: "expired" | "missing" };
+
+export async function loader({ request, context }: Route.LoaderArgs) {
+	const url = new URL(request.url);
+	const token_hash = url.searchParams.get("token_hash");
+	const code = url.searchParams.get("code");
+	const errorCode = url.searchParams.get("error_code");
+
+	// most common visitor to this page's error states: someone ALREADY signed
+	// in who clicked the link again — never show them a false failure (D3)
+	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
+	if (user) return data({ state: "already" } satisfies ConfirmState, { headers });
+
+	if (token_hash || code) {
+		return data(
+			{
+				state: "confirm",
+				token_hash,
+				type: url.searchParams.get("type"),
+				code,
+			} satisfies ConfirmState,
+			{ headers },
+		);
+	}
+	return data(
+		{ state: "error", reason: errorCode === "otp_expired" ? "expired" : "missing" } satisfies ConfirmState,
+		{ headers },
+	);
+}
+
+export async function action({ request, context }: Route.ActionArgs) {
+	const form = await request.formData();
+	const token_hash = form.get("token_hash");
+	const code = form.get("code");
+	const { supabase, commitHeaders } = getAuth(request, context.cloudflare.env);
+
+	if (typeof token_hash === "string" && token_hash) {
+		const type = (typeof form.get("type") === "string" && form.get("type")
+			? form.get("type")
+			: "email") as EmailOtpType;
+		const { error } = await supabase.auth.verifyOtp({ type, token_hash });
+		if (!error) throw redirect("/", { headers: commitHeaders() });
+		return data({ error: mapVerifyError(error.code, error.message) }, { headers: commitHeaders() });
+	}
+
+	if (typeof code === "string" && code) {
+		const { error } = await supabase.auth.exchangeCodeForSession(code);
+		if (!error) throw redirect("/", { headers: commitHeaders() });
+		return data({ error: mapVerifyError(error.code, error.message) }, { headers: commitHeaders() });
+	}
+
+	return data({ error: mapVerifyError(undefined, "missing token") }, { headers: commitHeaders() });
+}
+
+function mapVerifyError(code: string | undefined, message: string): string {
+	if (/code verifier|verifier missing/i.test(message)) {
+		return "This link was opened in a different browser than the one that requested it — some email apps open links in their own built-in browser. Request a new link here and open it directly.";
+	}
+	if (code === "otp_expired" || /expired|invalid/i.test(message)) {
+		return "This link has expired or was already used. Request a new one — if you asked more than once, only the newest email works.";
+	}
+	return "This link couldn't sign you in. Request a fresh one below.";
+}
+
+export default function AuthConfirm({ loaderData, actionData }: Route.ComponentProps) {
+	return (
+		<main className="mx-auto max-w-md px-6 py-16">
+			<Link
+				to="/"
+				className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint transition-colors duration-150 hover:text-ink"
+			>
+				Lumen
+			</Link>
+
+			{loaderData.state === "already" ? (
+				<>
+					<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">
+						You're already signed in
+					</h1>
+					<Link
+						to="/"
+						className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground transition-opacity duration-150 hover:opacity-90"
+					>
+						Continue reading
+					</Link>
+				</>
+			) : loaderData.state === "confirm" && !actionData?.error ? (
+				<>
+					<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">
+						Finish signing in
+					</h1>
+					<p className="mt-3 font-reading text-[17px] leading-relaxed text-ink">
+						One tap to confirm it's you.
+					</p>
+					<Form method="post" className="mt-6">
+						{loaderData.token_hash && (
+							<input type="hidden" name="token_hash" value={loaderData.token_hash} />
+						)}
+						{loaderData.type && <input type="hidden" name="type" value={loaderData.type} />}
+						{loaderData.code && <input type="hidden" name="code" value={loaderData.code} />}
+						<button
+							type="submit"
+							className="min-h-11 w-full rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground transition-opacity duration-150 hover:opacity-90"
+						>
+							Continue to sign in
+						</button>
+					</Form>
+				</>
+			) : (
+				<>
+					<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">
+						That link didn't work
+					</h1>
+					<p className="mt-3 font-reading text-[17px] leading-relaxed text-ink">
+						{actionData?.error ??
+							(loaderData.state === "error" && loaderData.reason === "expired"
+								? "This link has expired or was already used. Request a new one — if you asked more than once, only the newest email works."
+								: "This page needs a sign-in link from your email. Request one below.")}
+					</p>
+					<Link
+						to="/login"
+						className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground transition-opacity duration-150 hover:opacity-90"
+					>
+						Request a new link
+					</Link>
+				</>
+			)}
+		</main>
+	);
+}

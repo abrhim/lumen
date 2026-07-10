@@ -1,5 +1,7 @@
 import { getVolumeList, getAllBooks } from "@lumen/scripture";
+import { Link, useRouteLoaderData } from "react-router";
 import type { Route } from "./+types/home";
+import type { loader as rootLoader } from "../root";
 
 interface VolumeRow {
 	id: string;
@@ -51,12 +53,26 @@ export function meta(_args: Route.MetaArgs) {
 
 export default function Home({ loaderData }: Route.ComponentProps) {
 	const { volumes } = loaderData;
+	const root = useRouteLoaderData<typeof rootLoader>("root");
+	const signedOut = !root?.user;
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					Lumen
-				</p>
+				<div className="flex items-baseline justify-between gap-4">
+					<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
+						Lumen
+					</p>
+					{/* sign-in invitation lives HERE only (plan D10) — never in the
+					    fixed chrome over a chapter */}
+					{signedOut && (
+						<Link
+							to="/login"
+							className="-m-2 p-2 font-ui text-xs font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+						>
+							Sign in
+						</Link>
+					)}
+				</div>
 				<h1 className="mt-2 font-display text-4xl font-medium tracking-tight">
 					The Library
 				</h1>
