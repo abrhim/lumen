@@ -133,7 +133,7 @@ export default function AuthConfirm({ loaderData, actionData }: Route.ComponentP
 						{loaderData.code && <input type="hidden" name="code" value={loaderData.code} />}
 						<button
 							type="submit"
-							className="min-h-11 w-full rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground transition-opacity duration-150 hover:opacity-90"
+							className="min-h-11 w-full rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground outline-none transition-opacity duration-150 hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
 						>
 							Continue to sign in
 						</button>

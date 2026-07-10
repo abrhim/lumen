@@ -135,7 +135,7 @@ function AccountChip() {
 		<DropdownMenu>
 			<DropdownMenuTrigger
 				aria-label={`Account: ${email}`}
-				className="relative flex size-7 items-center justify-center rounded-full border border-rule2 bg-panel2 font-ui text-xs font-semibold uppercase text-ink shadow-sm outline-none transition-colors duration-150 hover:border-primary focus-visible:border-primary after:absolute after:-inset-2 after:content-['']"
+				className="relative flex size-7 items-center justify-center rounded-full border border-rule2 bg-panel2 font-ui text-xs font-semibold uppercase text-ink shadow-sm outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 after:absolute after:-inset-2 after:content-['']"
 			>
 				{email.slice(0, 1)}
 			</DropdownMenuTrigger>
