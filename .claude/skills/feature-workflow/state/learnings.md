@@ -102,3 +102,10 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - strongs: when a cap gate rejects, histogram ALL first-divergences before fixing — three rejections were three clean mechanical classes (en-dash, ligatures, 1769 spellings), zero debugging.
 - strongs: one pre-plan source probe overturned the whole feature premise (fuzzy 83% → deterministic 93.5%); probe before you plan around a dataset.
 - strongs: verify the counts of your verifiers — panel-2 corrected panel-1's divineName figure by 10× in the understating direction.
+
+## 2026-07-10 · feature: supabase-auth · tier: large
+- supabase-auth: a panel's RECOMMENDED FIX needs adversarial review as much as the bug — two proposed remedies (getClaims timeout; safeReturnTo regex `[\\:\s -]`) were themselves broken (would create a session-death bug; ate hyphen route slugs). Code-adversarial must re-run the proposed remedy against the same vectors.
+- supabase-auth: probe the deploy target's LIVE behavior, not just its config API — settings said "email provider on" but a live verify-redirect probe proved Site URL unset (magic links → localhost:3000 today). One curl of real redirect behavior at plan time.
+- supabase-auth: the highest-value plan-stage find was a would-ship-broken protocol mechanic (signInWithOtp writes the PKCE verifier cookie → login action MUST commit Set-Cookie) — invisible to the harness, only a docs-reading security specialist caught it. Auth features: read the SDK's cookie side-effects, don't infer them.
+- supabase-auth: framework header-on-redirect semantics are unit-test-invisible — RR7 drops root-loader Set-Cookie on any thrown redirect short-circuit; our routes survive only by self-carrying headers. Verify header-merge behavior at plan time and encode it as a code invariant comment, not a test.
+- supabase-auth: reframing the risk model beats enumerating risks — product-adversarial moved "hollow auth" (a non-problem) to "silent sign-out via dropped token rotation" (the real one), which directly authored harness H6; H6 then caught a fix-induced regression the same hour.
