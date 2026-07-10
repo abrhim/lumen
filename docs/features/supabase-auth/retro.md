@@ -21,9 +21,39 @@ Minimal. The plan's `?code=`-primary framing (later demoted to fallback under to
 2. **Probe the deploy target's live state, not just its API.** The adversarial live-probe found the Site URL is literally unset today (links → localhost:3000). Auth features should curl the real redirect behavior during planning — a settings-endpoint check said "email on" but not "redirects go nowhere useful."
 3. **Framework header-merge semantics deserve a source citation in the plan, not a test.** The RR7 redirect-drops-root-headers behavior is invisible to unit tests (our routes self-carry headers by luck of structure); it's now a code comment invariant. Future stacks: verify the framework's header-on-redirect behavior at plan time.
 
+## Provenance histogram
+- security: 2 confirmed (backslash open-redirect CRIT, login-CSRF MED) + 1 plan-stage would-ship-broken (verifier commit)
+- platform: 2 confirmed (cooldown re-arm, never-throw env gap) + 1 advisory (RR7 header-drop invariant)
+- ux/theme: 2 confirmed (Radix sign-out no-op, --destructive ink contrast)
+- adversarial: upheld 6/6 with executed evidence, refuted 0, corrected 1 proposed fix
+- convergence: cooldown ×2 reviewers; "the fix is broken" ×2 adversarial
+- reversals: 1 (getClaims timeout removed)
+
 ## Quality signals
 - plan-stage dissent: healthy (UX self-adopted, product self-refuted one attack)
 - code-stage yield: 6 real bugs, 1 CRITICAL harness-invisible, 0 false-positives to fix
 - convergence events: 2 (cooldown ×2 reviewers; fix-is-broken ×2 adversarial)
 - reversals: 1 (getClaims timeout — plan → panel → adversarial confirmed removal)
 - probe ROI: 2 pre-plan probes each collapsed a major open question
+
+```json
+{
+  "feature": "supabase-auth",
+  "tier": "large",
+  "gates_waived": ["1b", "7"],
+  "panels": { "plan": [3, 2], "code": [3, 3] },
+  "bugs_confirmed": 6,
+  "bugs_critical": 1,
+  "harness_invisible_bugs": 1,
+  "false_positives_to_fix": 0,
+  "adversarial_upheld": 6,
+  "adversarial_refuted": 0,
+  "adversarial_fixes_corrected": 1,
+  "convergence_events": 2,
+  "reversals": 1,
+  "preplan_probes": 2,
+  "tests_added": 27,
+  "commits": ["8d69537", "b643bd2", "f8267a7"],
+  "deployed": "aee6080a"
+}
+```
