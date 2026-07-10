@@ -18,8 +18,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export async function action({ request, context }: Route.ActionArgs) {
 	const form = await request.formData();
 	const email = String(form.get("email") ?? "").trim();
+	// resend failures must NOT collapse the success state — the earlier link
+	// still works, so the UI stays on "check your email" and errs inline
+	const isResend = form.get("intent") === "resend";
 	if (!EMAIL_RE.test(email)) {
-		return data({ sent: false as const, email, error: "Enter a valid email address." });
+		return data({ sent: false as const, isResend, email, error: "Enter a valid email address." });
 	}
 	const { supabase, commitHeaders } = getAuth(request, context.cloudflare.env);
 	const origin = new URL(request.url).origin;
@@ -37,6 +40,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 		return data(
 			{
 				sent: false as const,
+				isResend,
 				email,
 				error: rateLimited
 					? "The mailer only sends about two emails an hour and it's at its limit. Try again a little later."
@@ -45,7 +49,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 			{ headers },
 		);
 	}
-	return data({ sent: true as const, email, error: null }, { headers });
+	return data({ sent: true as const, isResend, email, error: null }, { headers });
 }
 
 const RESEND_SECONDS = 60;
@@ -54,6 +58,10 @@ export default function Login({ actionData }: Route.ComponentProps) {
 	const navigation = useNavigation();
 	const pending = navigation.state === "submitting";
 	const sent = actionData?.sent === true;
+	// a failed RESEND keeps the success layout — the earlier link still works
+	const failedResend = actionData?.sent === false && actionData.isResend;
+	const showSuccess = sent || failedResend;
+	const successEmail = actionData?.email ?? "";
 
 	// resend guard: the built-in mailer is small, and each resend supersedes
 	// the previous link — don't invite hammering (plan D10). Re-arm on every
@@ -82,31 +90,37 @@ export default function Login({ actionData }: Route.ComponentProps) {
 			{/* pre-mounted live region — announcements only work if the container
 			    exists before the content arrives */}
 			<div aria-live="polite">
-				{sent ? (
+				{showSuccess ? (
 					<div className="mt-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
 						<p className="font-reading text-[17px] leading-relaxed text-ink">
 							Check your email. A sign-in link is on its way to{" "}
-							<strong className="font-semibold">{actionData.email}</strong> — open it in this
+							<strong className="font-semibold">{successEmail}</strong> — open it in this
 							browser.
 						</p>
 						<p className="mt-3 font-reading text-sm leading-relaxed text-muted-foreground">
 							If you request another link, only the newest email works.
 						</p>
 						<Form method="post" className="mt-6">
-							<input type="hidden" name="email" value={actionData.email} />
+							<input type="hidden" name="email" value={successEmail} />
+							<input type="hidden" name="intent" value="resend" />
 							<button
 								type="submit"
 								disabled={cooldown > 0 || pending}
-								className="min-h-11 rounded-md border border-rule2 px-4 font-ui text-sm font-semibold text-ink transition-colors duration-150 hover:border-primary disabled:cursor-default disabled:opacity-50"
+								className="min-h-11 rounded-md border border-rule2 px-4 font-ui text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
 							>
 								{cooldown > 0 ? `Resend in ${cooldown}s` : "Resend the link"}
 							</button>
 						</Form>
+						{/* failed resend errs here, inside the kept success layout — the
+						    earlier link still works */}
+						<p className="mt-2 min-h-6 font-ui text-sm text-destructive" role="alert">
+							{failedResend ? actionData.error : ""}
+						</p>
 					</div>
 				) : null}
 			</div>
 
-			{!sent && (
+			{!showSuccess && (
 				<Form method="post" className="mt-6">
 					<label
 						htmlFor="email"
@@ -123,16 +137,18 @@ export default function Login({ actionData }: Route.ComponentProps) {
 						autoCapitalize="none"
 						spellCheck={false}
 						defaultValue={actionData?.email ?? ""}
-						className="mt-1.5 block h-11 w-full rounded-md border border-rule2 bg-surface px-3 font-reading text-base text-ink outline-none transition-colors duration-150 focus-visible:border-primary"
+						aria-invalid={actionData?.error ? true : undefined}
+						aria-describedby="email-error"
+						className="mt-1.5 block h-11 w-full rounded-md border border-rule2 bg-surface px-3 font-reading text-base text-ink outline-none transition-colors duration-150 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive"
 					/>
 					{/* reserved slot — errors never shift the layout */}
-					<p className="mt-1.5 min-h-6 font-ui text-sm text-destructive" role="alert">
+					<p id="email-error" className="mt-1.5 min-h-6 font-ui text-sm text-destructive" role="alert">
 						{actionData?.error ?? ""}
 					</p>
 					<button
 						type="submit"
 						disabled={pending}
-						className="min-h-11 w-full rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground transition-opacity duration-150 hover:opacity-90 disabled:opacity-60"
+						className="min-h-11 w-full rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground outline-none transition-opacity duration-150 hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
 					>
 						{pending ? "Sending…" : "Email me a sign-in link"}
 					</button>

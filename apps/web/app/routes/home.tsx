@@ -67,7 +67,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 					{signedOut && (
 						<Link
 							to="/login"
-							className="-m-2 p-2 font-ui text-xs font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+							className="-mx-2 -my-3.5 px-2 py-3.5 font-ui text-xs font-semibold text-muted-foreground outline-none transition-colors duration-150 hover:text-ink focus-visible:text-ink focus-visible:underline"
 						>
 							Sign in
 						</Link>
