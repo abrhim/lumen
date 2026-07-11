@@ -6,6 +6,9 @@ read the same way `scripts/ingest-strongs.mjs:207` reads it) via the vendored `p
 `prepare:false`, `max:1`. No DDL/DML/EMAIL issued. Web-verified Supabase/PG17 claims. Tags:
 [CONFIRMED-HARDER] / [REFUTED] / [NEW] / [ESCALATE] / [CUT].
 
+> Note (worklist P3/P7): the ad-hoc item numbering skips 7–9 — a self-numbering artifact
+> of drafting, not missing findings. Items 1–6b and 10 are the complete set.
+
 ---
 
 ## Item 1 (THE CRUX) — [CONFIRMED-HARDER] the admin DSN's role IS bypassrls; the view recipe does NOT ship empty
