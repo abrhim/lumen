@@ -39,10 +39,12 @@ import "./app.css";
  *
  * INVARIANT (verified against react-router 7.9.6): a thrown `redirect()` from
  * ANY loader short-circuits and does NOT merge this root loader's Set-Cookie.
- * So every auth route that redirects must self-carry commitHeaders() on its
- * redirect (login/confirm do; logout is a resource route where this loader
- * never runs). Do not add a route that redirects while relying on the root
- * loader to persist a token rotation — the rotated cookie would be dropped. */
+ * So EVERY route that throws a redirect must self-carry the session commit
+ * headers on it — not just auth routes: login/confirm do, and the content
+ * alias 301s in scripture.tsx/book.tsx do too (F3); logout is a resource
+ * route where this loader never runs. Do not add a route that redirects while
+ * relying on the root loader to persist a token rotation — the rotated cookie
+ * would be dropped (an intermittent silent sign-out). */
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	return data({ user }, { headers });

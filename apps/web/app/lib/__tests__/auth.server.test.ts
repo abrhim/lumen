@@ -144,10 +144,16 @@ describe("H6 rotation commit (D5 — the silent-sign-out killer)", () => {
 });
 
 describe("hasAuthCookie", () => {
-	it("matches chunked and unchunked sb auth cookies, not other sb- or lookalike cookies", () => {
+	it("matches chunked and unchunked sb SESSION cookies only — not the code-verifier (F5)", () => {
 		expect(hasAuthCookie(req("https://x/", "sb-proj-auth-token=v"))).toBe(true);
 		expect(hasAuthCookie(req("https://x/", "a=1; sb-proj-auth-token.0=v"))).toBe(true);
-		expect(hasAuthCookie(req("https://x/", "sb-proj-auth-token-code-verifier=v"))).toBe(true);
+		expect(hasAuthCookie(req("https://x/", "sb-proj-auth-token.1=v"))).toBe(true);
+		// stuck-mid-login: verifier alone must NOT trigger getClaims on every request
+		expect(hasAuthCookie(req("https://x/", "sb-proj-auth-token-code-verifier=v"))).toBe(false);
+		// but verifier + session together still matches (the session cookie wins)
+		expect(
+			hasAuthCookie(req("https://x/", "sb-proj-auth-token-code-verifier=v; sb-proj-auth-token=s")),
+		).toBe(true);
 		expect(hasAuthCookie(req("https://x/", "theme=paper"))).toBe(false);
 		expect(hasAuthCookie(req("https://x/"))).toBe(false);
 	});

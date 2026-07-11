@@ -79,10 +79,13 @@ export interface SessionUser {
 	email: string | null;
 }
 
-/** True when the request carries any Supabase auth cookie — signed-out
- * visitors (most traffic) skip all auth work in the root loader. */
+/** True when the request carries a Supabase SESSION cookie (`sb-*-auth-token`,
+ * chunked or not) — signed-out visitors (most traffic) skip all auth work in
+ * the root loader. Deliberately does NOT match `-auth-token-code-verifier`
+ * (F5): a visitor stuck mid-login holds only the verifier cookie and must not
+ * pay a getClaims round trip on every request (COR-2). */
 export function hasAuthCookie(request: Request): boolean {
-	return /(?:^|;\s*)sb-[^=;]*auth-token[^=;]*=/.test(request.headers.get("Cookie") ?? "");
+	return /(?:^|;\s*)sb-[^=;]*-auth-token(?:\.\d+)?=/.test(request.headers.get("Cookie") ?? "");
 }
 
 /**

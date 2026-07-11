@@ -1,5 +1,6 @@
 import { Link, isRouteErrorResponse } from "react-router";
 import { parseReference, getChapterNumbers, getBook, chapterUnit } from "@lumen/scripture";
+import { getSessionUser } from "../lib/auth.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/book";
 
@@ -7,7 +8,7 @@ interface ChapterRow {
 	chapter_number: number;
 }
 
-export async function loader({ params, context }: Route.LoaderArgs) {
+export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const rawBook = params.book ?? "";
 
 	// Same acceptance as the chapter route: "dc" parses as a volume but carries
@@ -20,9 +21,15 @@ export async function loader({ params, context }: Route.LoaderArgs) {
 	}
 	const bookId = parsed.bookId;
 
-	// One canonical URL per book — aliases redirect (API-1 precedent).
+	// One canonical URL per book — aliases redirect (API-1 precedent). The 301
+	// self-carries the session commit headers (F3): a thrown redirect
+	// short-circuits the root loader's Set-Cookie (root.tsx invariant), so a
+	// mid-read token rotation would otherwise be dropped. Signed-out requests
+	// short-circuit inside getSessionUser (hasAuthCookie) — no cost.
 	if (rawBook !== bookId) {
-		throw new Response(null, { status: 301, headers: { Location: `/scripture/${bookId}` } });
+		const { headers } = await getSessionUser(request, context.cloudflare.env);
+		headers.set("Location", `/scripture/${bookId}`);
+		throw new Response(null, { status: 301, headers });
 	}
 
 	const [chapters, book] = await Promise.all([
