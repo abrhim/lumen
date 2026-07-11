@@ -26,8 +26,16 @@ function log(event, fields = {}) {
 
 /** argv → {email, role, dryRun} or {error} — pure, unit-tested (H6). */
 export function parseArgs(argv) {
+  // B7: reject unknown --flags. Silently dropping `--dryrun`/`--dry_run` typos
+  // left dryRun=false → a REAL committed grant when a rehearsal was intended —
+  // the one fail-OPEN in an otherwise refuse-loudly script (D5/H6b).
+  const flags = argv.filter((a) => a.startsWith('--'));
+  const unknown = flags.filter((f) => f !== '--dry-run');
+  if (unknown.length > 0) {
+    return { error: `unknown flag(s): ${unknown.join(' ')} — the only supported flag is --dry-run` };
+  }
   const positional = argv.filter((a) => !a.startsWith('--'));
-  const dryRun = argv.includes('--dry-run');
+  const dryRun = flags.includes('--dry-run');
   const [email, role] = positional;
   if (!email || !role) return { error: 'usage: node --import tsx scripts/grant-role.mjs <email> <role> [--dry-run]' };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: `"${email}" is not an email address` };

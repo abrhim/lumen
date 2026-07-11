@@ -21,9 +21,13 @@ export const SORTS = {
 export type SortKey = keyof typeof SORTS;
 export type SortDir = "asc" | "desc";
 
+// Object.hasOwn, NOT `key in MAP` (B1): `in` walks the prototype chain, so
+// `?sort=toString`/`__proto__`/`constructor` would resolve to an Object.proto
+// member and feed `undefined`/a function into sql.raw → `ORDER BY u.undefined`
+// → a 500 for an entitled admin. hasOwn is own-key-only.
 export function parseSort(sort: string | null, dir: string | null): { sort: SortKey; dir: SortDir } {
 	return {
-		sort: sort !== null && sort in SORTS ? (sort as SortKey) : "created",
+		sort: sort !== null && Object.hasOwn(SORTS, sort) ? (sort as SortKey) : "created",
 		dir: dir === "asc" ? "asc" : "desc",
 	};
 }
@@ -47,6 +51,14 @@ export interface Cursor {
 	id: string;
 }
 
+// value-shape guards (B3): a structurally-valid cursor carrying garbage values
+// (k:"x", id:"y") would otherwise pass decode and 500 at the ::timestamptz /
+// ::uuid cast — violating D6's "bad → page-1-never-throws". id is always a
+// view uuid; k for a timestamptz sort is Postgres timestamptz text (see the
+// ::text projection in loadUsersPage, B2).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TIMESTAMPTZ_RE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}(:?\d{2})?|Z)?$/;
+
 function b64urlEncode(text: string): string {
 	const bytes = new TextEncoder().encode(text);
 	let bin = "";
@@ -64,16 +76,21 @@ export function encodeCursor(c: Cursor): string {
 	return b64urlEncode(JSON.stringify(c));
 }
 
-/** H4b: NEVER throws — malformed, wrong-version, or sort/dir-mismatched
- * cursors all degrade to null (page 1). A stale bookmark is not an error. */
+/** H4b: NEVER throws — malformed, wrong-version, sort/dir-mismatched, OR
+ * value-garbage cursors all degrade to null (page 1). A stale bookmark is not
+ * an error, and a forged cursor must not reach a SQL cast (B3). */
 export function decodeCursor(raw: string | null, sort: SortKey, dir: SortDir): Cursor | null {
 	if (!raw) return null;
 	try {
 		const c = JSON.parse(b64urlDecode(raw));
-		if (c?.v !== 1 || !(c.s in SORTS) || (c.d !== "asc" && c.d !== "desc")) return null;
+		// Object.hasOwn, not `c.s in SORTS` (B1): a prototype-key `s` must not pass
+		if (c?.v !== 1 || !Object.hasOwn(SORTS, c.s) || (c.d !== "asc" && c.d !== "desc")) return null;
 		if (typeof c.k !== "string" || typeof c.id !== "string") return null;
 		// minted under a different sort/dir → boundary is meaningless: restart
 		if (c.s !== sort || c.d !== dir) return null;
+		// value-shape (B3): reject anything that would 500 at the cast
+		if (!UUID_RE.test(c.id)) return null;
+		if (SORTS[c.s as SortKey].cast === "timestamptz" && !TIMESTAMPTZ_RE.test(c.k)) return null;
 		return c as Cursor;
 	} catch {
 		return null;
@@ -126,7 +143,8 @@ export async function loadUsersPage(
 	const roleRaw = searchParams.get("role") ?? "";
 	const role = /^[a-z][a-z0-9-]*$/.test(roleRaw) ? roleRaw : "";
 	const statusRaw = searchParams.get("status") ?? "";
-	const status: StatusKey | "" = statusRaw in STATUSES ? (statusRaw as StatusKey) : "";
+	// Object.hasOwn, not `statusRaw in STATUSES` (B1)
+	const status: StatusKey | "" = Object.hasOwn(STATUSES, statusRaw) ? (statusRaw as StatusKey) : "";
 	const { sort, dir } = parseSort(searchParams.get("sort"), searchParams.get("dir"));
 	const cursor = decodeCursor(searchParams.get("cursor"), sort, dir);
 	const epoch = JSON.stringify([q, role, status, sort, dir]);
@@ -164,11 +182,17 @@ export async function loadUsersPage(
 		`u.${S.col} ${dir === "desc" ? "DESC" : "ASC"}, u.id ${dir === "desc" ? "DESC" : "ASC"}`,
 	);
 
-	// N+1 to know whether a next page exists (platform-data keyset spec)
+	// N+1 to know whether a next page exists (platform-data keyset spec).
+	// sort_key = the sort column as FULL-PRECISION text (B2): postgres.js parses
+	// timestamptz into a millisecond JS Date, so minting the cursor from a Date
+	// dropped the microseconds `now()` writes → desc pages skipped boundary ties,
+	// asc pages duplicated them. The text round-trips losslessly through the
+	// ${k}::timestamptz bound-param compare above.
 	const fetched = (await db.execute(
 		sql`SELECT u.id, u.email, u.display_name, u.full_name, u.created_at,
 		           u.last_sign_in_at, u.is_confirmed, u.is_banned, u.is_anonymous,
-		           u.is_deleted, COALESCE(rr.roles, '{}') AS roles
+		           u.is_deleted, COALESCE(rr.roles, '{}') AS roles,
+		           u.${sql.raw(S.col)}::text AS sort_key
 		    FROM lumen.app_users u
 		    LEFT JOIN (
 		      SELECT user_id, array_agg(role_slug ORDER BY role_slug) AS roles
@@ -177,23 +201,16 @@ export async function loadUsersPage(
 		    ${wherePage}
 		    ORDER BY ${order}
 		    LIMIT ${PAGE_SIZE + 1}`,
-	)) as unknown as AdminUserRow[];
+	)) as unknown as (AdminUserRow & { sort_key: string })[];
 
-	const rows = fetched.slice(0, PAGE_SIZE);
-	const last = rows[rows.length - 1];
+	const visible = fetched.slice(0, PAGE_SIZE);
+	const last = visible[visible.length - 1];
 	const nextCursor =
 		fetched.length > PAGE_SIZE && last
-			? encodeCursor({
-					v: 1,
-					s: sort,
-					d: dir,
-					k:
-						S.cast === "timestamptz"
-							? new Date(last[S.col === "created_at" ? "created_at" : "last_sign_in_at"]).toISOString()
-							: last.email,
-					id: last.id,
-				})
+			? encodeCursor({ v: 1, s: sort, d: dir, k: last.sort_key, id: last.id })
 			: null;
+	// strip the internal sort_key from the wire (client never reads it)
+	const rows: AdminUserRow[] = visible.map(({ sort_key: _sort_key, ...r }) => r);
 
 	// page 1 only (H3b): the count + the filter catalog
 	let count: number | null = null;

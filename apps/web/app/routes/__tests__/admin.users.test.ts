@@ -28,18 +28,21 @@ const dialect = new PgDialect();
 const compile = (q: SQL) => dialect.sqlToQuery(q);
 
 function makeUserRow(i: number) {
+	const created = new Date(Date.UTC(2026, 0, 1 + i));
 	return {
 		id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
 		email: `user${i}@example.com`,
 		display_name: `User ${i}`,
 		full_name: null,
-		created_at: new Date(Date.UTC(2026, 0, 1 + i)),
+		created_at: created,
 		last_sign_in_at: new Date(0), // COALESCE'd epoch sentinel = never
 		is_confirmed: true,
 		is_banned: false,
 		is_anonymous: false,
 		is_deleted: false,
 		roles: [] as string[],
+		// the u.<sortcol>::text projection the loader mints the cursor from (B2)
+		sort_key: created.toISOString(),
 	};
 }
 
@@ -222,10 +225,54 @@ describe("H4b — malformed cursors degrade to page 1, never throw", () => {
 	});
 
 	it("sort or dir mismatch → cursor discarded (minted under a different ordering)", () => {
-		const c = { v: 1 as const, s: "created" as const, d: "desc" as const, k: "x", id: "y" };
+		// valid values so we're testing the sort/dir gate, not the B3 value gate
+		const c = {
+			v: 1 as const,
+			s: "created" as const,
+			d: "desc" as const,
+			k: "2026-01-26T00:00:00.000Z",
+			id: "00000000-0000-4000-8000-000000000009",
+		};
 		expect(decodeCursor(encodeCursor(c), "created", "desc")).toEqual(c);
 		expect(decodeCursor(encodeCursor(c), "email", "desc")).toBeNull();
 		expect(decodeCursor(encodeCursor(c), "created", "asc")).toBeNull();
+	});
+
+	it("B3: valid-shape cursor with garbage VALUES → null (would 500 at the ::uuid/::timestamptz cast)", () => {
+		const uuid = "00000000-0000-4000-8000-000000000001";
+		// id not a uuid → the ::uuid cast would throw; must be rejected pre-query
+		expect(
+			decodeCursor(
+				encodeCursor({ v: 1, s: "created", d: "desc", k: "2026-01-01 12:00:00+00", id: "not-a-uuid" }),
+				"created",
+				"desc",
+			),
+		).toBeNull();
+		// k not timestamp-shaped for a timestamptz sort → the ::timestamptz cast would throw
+		expect(
+			decodeCursor(encodeCursor({ v: 1, s: "created", d: "desc", k: "banana", id: uuid }), "created", "desc"),
+		).toBeNull();
+		// a fully valid microsecond cursor still decodes (round-trip)
+		const good = {
+			v: 1 as const,
+			s: "created" as const,
+			d: "desc" as const,
+			k: "2026-01-01 12:00:00.123456+00",
+			id: uuid,
+		};
+		expect(decodeCursor(encodeCursor(good), "created", "desc")).toEqual(good);
+		// email sort: k is free text, but id must still be a uuid
+		const emailC = { v: 1 as const, s: "email" as const, d: "asc" as const, k: "user@example.com", id: uuid };
+		expect(decodeCursor(encodeCursor(emailC), "email", "asc")).toEqual(emailC);
+		expect(decodeCursor(encodeCursor({ ...emailC, id: "y" }), "email", "asc")).toBeNull();
+	});
+
+	it("B3: a valid-shape/garbage-value cursor makes the loader behave as page 1, no throw", async () => {
+		const db = makeDb({ pageRows: [] });
+		const forged = encodeCursor({ v: 1, s: "created", d: "desc", k: "x", id: "y" });
+		await expect(loader(makeArgs(`?cursor=${forged}`, db))).resolves.toBeTruthy();
+		expect(db.execute).toHaveBeenCalledTimes(4); // full page-1 sequence, not a keyset page
+		expect(compile(db.execute.mock.calls[1][0]).sql).not.toMatch(/\(u\.created_at, u\.id\)/);
 	});
 
 	it("loader with a corrupt cursor behaves as page 1: count runs, no keyset predicate, resolves fine", async () => {
@@ -276,5 +323,74 @@ describe("parseSort — the allow-list is total", () => {
 		expect(parseSort(null, null)).toEqual({ sort: "created", dir: "desc" });
 		expect(parseSort("email", "asc")).toEqual({ sort: "email", dir: "asc" });
 		expect(parseSort("evil", "sideways")).toEqual({ sort: "created", dir: "desc" });
+	});
+
+	it("B1: prototype-chain keys do NOT pass the allow-list (Object.hasOwn, not `in`)", () => {
+		// `key in SORTS` walked the prototype chain; these all resolved truthy and
+		// fed an Object.prototype member into sql.raw → ORDER BY u.undefined → 500
+		for (const k of ["toString", "valueOf", "constructor", "__proto__", "hasOwnProperty", "isPrototypeOf"]) {
+			expect(parseSort(k, "asc").sort).toBe("created");
+		}
+	});
+});
+
+describe("B1 — prototype-key params never reach sql.raw", () => {
+	it("?sort=toString → default ORDER BY, never `u.undefined`", async () => {
+		const db = makeDb({ pageRows: [] });
+		await loader(makeArgs("?sort=toString", db));
+		const pageSql = compile(db.execute.mock.calls[1][0]).sql;
+		expect(pageSql).toMatch(/ORDER BY u\.created_at DESC/);
+		expect(pageSql).not.toContain("undefined");
+	});
+
+	it("?status=constructor → no status predicate, never the Object function in WHERE", async () => {
+		const db = makeDb({ pageRows: [] });
+		await loader(makeArgs("?status=constructor", db));
+		const pageSql = compile(db.execute.mock.calls[1][0]).sql;
+		expect(pageSql).not.toContain("Object");
+		expect(pageSql).not.toMatch(/is_confirmed = true|is_banned = true|is_anonymous = true/);
+	});
+
+	it("?sort=__proto__&cursor=... → cursor's proto-key sort is rejected too (page 1)", async () => {
+		const db = makeDb({ pageRows: [] });
+		// even a cursor claiming s:"__proto__" must not decode
+		expect(
+			decodeCursor(
+				encodeCursor({
+					v: 1,
+					s: "__proto__" as never,
+					d: "desc",
+					k: "2026-01-01T00:00:00.000Z",
+					id: "00000000-0000-4000-8000-000000000001",
+				}),
+				"created",
+				"desc",
+			),
+		).toBeNull();
+	});
+});
+
+describe("B2 — keyset cursor preserves full microsecond precision", () => {
+	it("mints k from the ::text sort_key, not a millisecond-truncated Date", async () => {
+		// a full page whose boundary row carries a microsecond timestamp shared
+		// by its ties (the bulk-insert case desc pages used to skip)
+		const micros = "2026-01-01 12:00:00.123456+00";
+		const rows = Array.from({ length: PAGE_SIZE + 1 }, (_, i) => ({
+			...makeUserRow(i + 1),
+			sort_key: micros,
+		}));
+		const db = makeDb({ pageRows: rows });
+		const res = (await loader(makeArgs("", db))) as { data: { nextCursor: string | null } };
+		const c = decodeCursor(res.data.nextCursor, "created", "desc");
+		expect(c).not.toBeNull();
+		// the microseconds survive — NOT the lossy 2026-01-01T12:00:00.123Z Date form
+		expect(c!.k).toBe(micros);
+		expect(c!.k).not.toMatch(/\.\d{3}Z$/);
+	});
+
+	it("the returned rows do NOT leak the internal sort_key onto the wire", async () => {
+		const db = makeDb({ pageRows: [makeUserRow(1)] });
+		const res = (await loader(makeArgs("", db))) as { data: { rows: unknown[] } };
+		expect(res.data.rows[0]).not.toHaveProperty("sort_key");
 	});
 });

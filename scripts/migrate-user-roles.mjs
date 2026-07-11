@@ -76,9 +76,14 @@ DROP INDEX IF EXISTS lumen.idx_user_roles_user;
 
 -- entitlement keys must stay in lockstep with the F13 source of truth:
 -- apps/web/app/lib/entitlements-keys.ts (grant-role.mjs validates against it)
+-- B8: DO NOTHING on the entitlements column. DO UPDATE SET entitlements=EXCLUDED
+-- meant a re-run of this "idempotent" migration would REVERT a future-expanded
+-- admin entitlement set back to today's ['admin.users'] — silently 404'ing
+-- admins off the newer surface (the exact silent-closed failure D5 prevents).
+-- Label may still drift harmlessly, so update only that.
 INSERT INTO lumen.roles (slug, label, entitlements)
 VALUES ('admin', 'Administrator', ARRAY['admin.users'])
-ON CONFLICT (slug) DO UPDATE SET label = EXCLUDED.label, entitlements = EXCLUDED.entitlements;
+ON CONFLICT (slug) DO UPDATE SET label = EXCLUDED.label;
 
 CREATE OR REPLACE VIEW lumen.app_users
 WITH (security_invoker = false) AS
@@ -139,9 +144,10 @@ async function main() {
     await sql.begin(async (tx) => {
       await tx.unsafe(USER_ROLES_DDL);
 
-      // the admin role seed exists with the right entitlement
+      // the admin role CONTAINS the users entitlement (⊇, not =, so a future
+      // migration that expands admin's entitlements still passes this — B8)
       const [role] = await tx`SELECT entitlements FROM lumen.roles WHERE slug = 'admin'`;
-      check('admin_role_seeded', ['admin.users'], role.entitlements);
+      check('admin_role_has_users_entitlement', true, role.entitlements.includes('admin.users'));
 
       // CR-2: assert the view's ACTUAL post-DDL state — owner must be
       // bypassrls (or auth.users' RLS-on/0-policies filter silently empties

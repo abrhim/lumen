@@ -88,6 +88,17 @@ export function hasAuthCookie(request: Request): boolean {
 	return /(?:^|;\s*)sb-[^=;]*-auth-token(?:\.\d+)?=/.test(request.headers.get("Cookie") ?? "");
 }
 
+/** Per-request session memo (B9). Both the root loader and a content-alias
+ * loader (book/scripture 301s, F3) read the session on the SAME request; without
+ * this they each call getClaims and, on an expired access token, refresh the
+ * SAME refresh token in parallel — benign under gotrue's default 10s
+ * reuse-detection interval, but a tightened/zeroed interval could revoke the
+ * session (the very silent sign-out F3 fixes). Keyed on the Request identity RR
+ * shares across a navigation's loaders; degrades to today's behavior (two reads)
+ * if the runtime ever passes distinct Request objects. Only the real path is
+ * memoized — test fakes pass a custom impl and want a fresh evaluation. */
+const sessionMemo = new WeakMap<Request, Promise<{ user: SessionUser | null; headers: Headers }>>();
+
 /**
  * Root-loader session read (plan D5). Local ES256 verification via cached
  * JWKS on the happy path; when the access token is expired, getClaims
@@ -95,10 +106,24 @@ export function hasAuthCookie(request: Request): boolean {
  * caller MUST attach even when `user` is null. Never throws; NO timeout
  * (abandoning a mid-flight refresh after rotation revokes the session).
  */
-export async function getSessionUser(
+export function getSessionUser(
 	request: Request,
 	env: AuthEnv,
 	getAuthImpl: (request: Request, env: AuthEnv) => RequestAuth = getAuth,
+): Promise<{ user: SessionUser | null; headers: Headers }> {
+	if (getAuthImpl === getAuth) {
+		const cached = sessionMemo.get(request);
+		if (cached) return cached;
+	}
+	const result = readSessionUser(request, env, getAuthImpl);
+	if (getAuthImpl === getAuth) sessionMemo.set(request, result);
+	return result;
+}
+
+async function readSessionUser(
+	request: Request,
+	env: AuthEnv,
+	getAuthImpl: (request: Request, env: AuthEnv) => RequestAuth,
 ): Promise<{ user: SessionUser | null; headers: Headers }> {
 	const started = Date.now();
 	// captured before the throw-prone getClaims so a mid-refresh rotation's

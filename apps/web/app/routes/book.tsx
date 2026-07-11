@@ -29,6 +29,9 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	if (rawBook !== bookId) {
 		const { headers } = await getSessionUser(request, context.cloudflare.env);
 		headers.set("Location", `/scripture/${bookId}`);
+		// the rotated auth Set-Cookie this 301 may carry must never be cached and
+		// replayed to another visitor of this alias (SECURITY-3)
+		headers.set("Cache-Control", "private, no-store");
 		throw new Response(null, { status: 301, headers });
 	}
 

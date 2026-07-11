@@ -33,6 +33,17 @@ test('parseArgs: missing/invalid args → error (exit-1 path, H6)', () => {
   assert.ok(parseArgs(['a@b.co', '-admin']).error); // must start alpha
 });
 
+test('parseArgs: unknown --flag fails LOUDLY, never silently drops to a real grant (B7)', () => {
+  // a --dry-run typo must NOT fall through to dryRun:false and commit for real
+  for (const typo of ['--dryrun', '--dry_run', '--dry-run=true', '--DRY-RUN', '--force']) {
+    const r = parseArgs(['a@b.co', 'admin', typo]);
+    assert.ok(r.error, `expected ${typo} to error`);
+    assert.match(r.error, /unknown flag/);
+  }
+  // the exact flag still works
+  assert.equal(parseArgs(['a@b.co', 'admin', '--dry-run']).dryRun, true);
+});
+
 test('decideRole: unknown role slug → refuse (H6)', () => {
   assert.deepEqual(decideRole(undefined, ENTITLEMENTS), { ok: false, code: 'unknown_role' });
 });
