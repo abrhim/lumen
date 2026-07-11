@@ -35,13 +35,20 @@ test('parseArgs: missing/invalid args → error (exit-1 path, H6)', () => {
 
 test('parseArgs: unknown --flag fails LOUDLY, never silently drops to a real grant (B7)', () => {
   // a --dry-run typo must NOT fall through to dryRun:false and commit for real
-  for (const typo of ['--dryrun', '--dry_run', '--dry-run=true', '--DRY-RUN', '--force']) {
+  for (const typo of ['--dryrun', '--dry_run', '--dry-run=true', '--DRY-RUN', '--force', '-dry-run', '-d']) {
     const r = parseArgs(['a@b.co', 'admin', typo]);
     assert.ok(r.error, `expected ${typo} to error`);
     assert.match(r.error, /unknown flag/);
   }
-  // the exact flag still works
+  // dropped-dash forms become extra positionals → also rejected (B7 residual)
+  for (const typo of ['dry-run', 'dryrun']) {
+    const r = parseArgs(['a@b.co', 'admin', typo]);
+    assert.ok(r.error, `expected bare "${typo}" to error`);
+    assert.match(r.error, /extra argument/);
+  }
+  // the exact flag still works, and 2 positionals are fine
   assert.equal(parseArgs(['a@b.co', 'admin', '--dry-run']).dryRun, true);
+  assert.deepEqual(parseArgs(['a@b.co', 'admin']), { email: 'a@b.co', role: 'admin', dryRun: false });
 });
 
 test('decideRole: unknown role slug → refuse (H6)', () => {

@@ -1,5 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { logEvent } from "./log.server";
 
 /**
  * Admin user-list data access (plan D6/D7/D8). Server-driven search + filters
@@ -130,10 +131,31 @@ export interface UsersPage {
 	dir: SortDir;
 }
 
+interface PageParams {
+	q: string;
+	role: string;
+	status: StatusKey | "";
+	sort: SortKey;
+	dir: SortDir;
+	cursor: Cursor | null;
+}
+
+// Postgres SQLSTATEs for a failed cast of a forged cursor value (B3):
+// 22007 invalid_datetime_format, 22008 datetime_field_overflow, 22P02
+// invalid_text_representation (bad uuid). A shape-valid but value-invalid `k`
+// (e.g. month 13) slips past decodeCursor's regex and only Postgres can reject
+// it — so the cast error, and ONLY the cast error, degrades to page 1.
+const CURSOR_CAST_CODES = new Set(["22007", "22008", "22P02"]);
+
 /**
  * One page of the admin list. Page 1 (no cursor) additionally returns the
  * count + role catalog; cursor pages are a single keyset SELECT (H3b).
  * MUST be called only after requireEntitlement has passed (H3).
+ *
+ * D6 never-throw (B3): a value-invalid cursor that only Postgres can reject
+ * degrades to page 1 rather than surfacing a 500. The fallback is scoped to
+ * cast SQLSTATEs so a real DB fault still surfaces (and a fetcher — which only
+ * ever sends OUR minted cursors — never silently duplicates page 1).
  */
 export async function loadUsersPage(
 	db: PostgresJsDatabase,
@@ -147,6 +169,22 @@ export async function loadUsersPage(
 	const status: StatusKey | "" = Object.hasOwn(STATUSES, statusRaw) ? (statusRaw as StatusKey) : "";
 	const { sort, dir } = parseSort(searchParams.get("sort"), searchParams.get("dir"));
 	const cursor = decodeCursor(searchParams.get("cursor"), sort, dir);
+
+	try {
+		return await runPage(db, { q, role, status, sort, dir, cursor });
+	} catch (err) {
+		const code =
+			err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
+		if (cursor && CURSOR_CAST_CODES.has(code)) {
+			logEvent("admin_cursor_rejected", { code, sort });
+			return runPage(db, { q, role, status, sort, dir, cursor: null });
+		}
+		throw err;
+	}
+}
+
+async function runPage(db: PostgresJsDatabase, p: PageParams): Promise<UsersPage> {
+	const { q, role, status, sort, dir, cursor } = p;
 	const epoch = JSON.stringify([q, role, status, sort, dir]);
 
 	const filters: SQL[] = [];

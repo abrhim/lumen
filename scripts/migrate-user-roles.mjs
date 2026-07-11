@@ -109,7 +109,15 @@ GRANT SELECT ON lumen.roles, lumen.user_roles, lumen.app_users TO lumen_read;
 `;
 
 async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+  // B7-class guard: a `--dryrun` typo must not silently perform a REAL migration
+  // instead of a rollback rehearsal. Only --dry-run is a valid flag.
+  const args = process.argv.slice(2);
+  const unknownFlags = args.filter((a) => a.startsWith('-') && a !== '--dry-run');
+  if (unknownFlags.length > 0) {
+    log('migration_fatal', { message: `unknown flag(s): ${unknownFlags.join(' ')} — only --dry-run is supported` });
+    process.exit(1);
+  }
+  const dryRun = args.includes('--dry-run');
   log('migration_start', { startedAt: new Date().toISOString(), dryRun, feature: 'user-roles' });
 
   let sql;

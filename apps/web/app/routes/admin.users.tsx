@@ -36,10 +36,11 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 /**
- * Admin all-users list (plan D6-D12). Deliberately NO ErrorBoundary here:
- * the gate's thrown 404 bubbles to the root boundary and renders IDENTICALLY
- * to a nonexistent route — the D10 concealment (body/status; the timing
- * side-channel is documented and accepted).
+ * Admin all-users list (plan D6-D12). The route ErrorBoundary below RE-THROWS
+ * any 404 so it bubbles to root and replaces <App> exactly as a nonexistent
+ * route does (D10 concealment — structure, not just body); it only handles
+ * non-404 failures locally so a background page-fetch blip can't nuke the view
+ * (B6). The gate's 404 therefore still renders root's boundary, unchanged.
  */
 export async function loader({ request, context }: Route.LoaderArgs) {
 	// Gate FIRST (D4/H3): no user query runs unless this resolves. The return
@@ -651,21 +652,12 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
  */
 export function ErrorBoundary() {
 	const error = useRouteError();
-	if (isRouteErrorResponse(error) && error.status === 404) {
-		const details =
-			typeof error.data === "string" && error.data ? error.data : "The requested page could not be found.";
-		return (
-			<main className="pt-16 p-4 container mx-auto">
-				<h1 className="font-display text-3xl">404</h1>
-				<p className="mt-2 text-muted-foreground">{details}</p>
-				<p className="mt-4">
-					<a href="/" className="text-primary underline">
-						Back to the library
-					</a>
-				</p>
-			</main>
-		);
-	}
+	// RE-THROW a 404 so it bubbles to root's ErrorBoundary and REPLACES <App>
+	// (fixed chrome and all) — byte- AND structure-identical to a nonexistent
+	// route (D10). Rendering it here would leave root's chrome wrapping the 404,
+	// revealing that /admin/users is a real gated route. React Router propagates
+	// an error thrown from an ErrorBoundary to the parent route's boundary.
+	if (isRouteErrorResponse(error) && error.status === 404) throw error;
 	// any other failure (a background page-fetch blip): a real reload affordance
 	// instead of root's dead-end "Oops!" — the loaded rows are lost, but reload
 	// re-runs page 1

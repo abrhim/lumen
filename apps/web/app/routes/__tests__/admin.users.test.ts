@@ -47,13 +47,20 @@ function makeUserRow(i: number) {
 }
 
 /** db.execute mock answering, in order: entitlements → page → count → roles
- * catalog (the loader's full page-1 sequence). */
-function makeDb(opts: { entitlements?: string[]; pageRows?: unknown[] } = {}) {
-	const { entitlements = ["admin.users"], pageRows = [] } = opts;
+ * catalog (the loader's full page-1 sequence). `castErrorCode` makes the FIRST
+ * keyset page query throw a Postgres-coded error (simulating a forged cursor
+ * value failing ::timestamptz/::uuid — the mock can't cast on its own). */
+function makeDb(opts: { entitlements?: string[]; pageRows?: unknown[]; castErrorCode?: string } = {}) {
+	const { entitlements = ["admin.users"], pageRows = [], castErrorCode } = opts;
+	let keysetThrown = false;
 	const execute = vi.fn(async (q: SQL) => {
 		const sql = compile(q).sql;
 		if (sql.includes("lumen.user_roles ur") && sql.includes("unnest")) {
 			return entitlements.map((ent) => ({ ent }));
+		}
+		if (castErrorCode && /\(u\.\w+, u\.id\) [<>]/.test(sql) && !keysetThrown) {
+			keysetThrown = true; // only the first (cursor) page throws; the page-1 retry succeeds
+			throw Object.assign(new Error("invalid input"), { code: castErrorCode });
 		}
 		if (sql.includes("count(*)")) return [{ n: pageRows.length }];
 		if (sql.includes("FROM lumen.roles")) return [{ slug: "admin", label: "Administrator" }];
@@ -273,6 +280,39 @@ describe("H4b — malformed cursors degrade to page 1, never throw", () => {
 		await expect(loader(makeArgs(`?cursor=${forged}`, db))).resolves.toBeTruthy();
 		expect(db.execute).toHaveBeenCalledTimes(4); // full page-1 sequence, not a keyset page
 		expect(compile(db.execute.mock.calls[1][0]).sql).not.toMatch(/\(u\.created_at, u\.id\)/);
+	});
+
+	it("B3: a shape-VALID but value-invalid cursor (month 13) that only Postgres can reject → page 1, no throw", async () => {
+		// "2026-13-45 00:00:00" passes TIMESTAMPTZ_RE (digit shape) but fails the
+		// ::timestamptz cast → 22007. The loader must degrade to page 1, not 500.
+		const db = makeDb({ pageRows: [], castErrorCode: "22007" });
+		const forged = encodeCursor({
+			v: 1,
+			s: "created",
+			d: "desc",
+			k: "2026-13-45 00:00:00",
+			id: "00000000-0000-4000-8000-000000000001",
+		});
+		const res = (await loader(makeArgs(`?cursor=${forged}`, db))) as { data: { count: number | null } };
+		// gate + keyset-page(throws 22007) + [retry] page1 + count + catalog = 5
+		expect(db.execute).toHaveBeenCalledTimes(5);
+		expect(res.data.count).toBe(0); // page-1 shaped (count ran on the retry)
+		// the retry (call 3) has NO keyset predicate
+		expect(compile(db.execute.mock.calls[2][0]).sql).not.toMatch(/\(u\.created_at, u\.id\)/);
+	});
+
+	it("B3: a NON-cast DB error on a cursor page is NOT swallowed (must surface, not fake page 1)", async () => {
+		// a real fault (e.g. 08006 connection failure) must throw — degrading here
+		// would silently duplicate page 1 onto a fetcher's appended list
+		const db = makeDb({ pageRows: [], castErrorCode: "08006" });
+		const forged = encodeCursor({
+			v: 1,
+			s: "created",
+			d: "desc",
+			k: "2026-01-01 00:00:00+00",
+			id: "00000000-0000-4000-8000-000000000001",
+		});
+		await expect(loader(makeArgs(`?cursor=${forged}`, db))).rejects.toMatchObject({ code: "08006" });
 	});
 
 	it("loader with a corrupt cursor behaves as page 1: count runs, no keyset predicate, resolves fine", async () => {

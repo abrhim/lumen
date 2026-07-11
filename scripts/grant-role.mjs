@@ -26,15 +26,20 @@ function log(event, fields = {}) {
 
 /** argv → {email, role, dryRun} or {error} — pure, unit-tested (H6). */
 export function parseArgs(argv) {
-  // B7: reject unknown --flags. Silently dropping `--dryrun`/`--dry_run` typos
-  // left dryRun=false → a REAL committed grant when a rehearsal was intended —
-  // the one fail-OPEN in an otherwise refuse-loudly script (D5/H6b).
-  const flags = argv.filter((a) => a.startsWith('--'));
+  // B7: any leading-dash token that isn't exactly --dry-run is rejected, and no
+  // extra positionals are tolerated. A dropped-dash typo (`-dry-run`, `dry-run`)
+  // otherwise slipped through as an ignored trailing positional → dryRun=false →
+  // a REAL committed grant when a rehearsal was intended (the one fail-OPEN in an
+  // otherwise refuse-loudly script, D5/H6b). Emails/role-slugs never start with '-'.
+  const flags = argv.filter((a) => a.startsWith('-'));
   const unknown = flags.filter((f) => f !== '--dry-run');
   if (unknown.length > 0) {
     return { error: `unknown flag(s): ${unknown.join(' ')} — the only supported flag is --dry-run` };
   }
-  const positional = argv.filter((a) => !a.startsWith('--'));
+  const positional = argv.filter((a) => !a.startsWith('-'));
+  if (positional.length > 2) {
+    return { error: `unexpected extra argument(s): ${positional.slice(2).join(' ')} — usage: <email> <role> [--dry-run]` };
+  }
   const dryRun = flags.includes('--dry-run');
   const [email, role] = positional;
   if (!email || !role) return { error: 'usage: node --import tsx scripts/grant-role.mjs <email> <role> [--dry-run]' };

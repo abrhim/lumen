@@ -191,6 +191,30 @@ the F3 dropped-rotation bug — so B9 takes CORRECTNESS-7's disposition instead.
   known postgres.js emitter for the bare-`user:pass@host` shape and the DSN is
   `postgresql://…`; capture. (Cheap regex broadening taken anyway, harmless.)
 
+## Fix-verification round (6 adversarial verifiers, one per cluster)
+B1, B2, B4 → **fix-holds** (each independently reproduced the original bug, then
+confirmed the fix closes it with no regression). Three fixes had a residual the
+verifier caught — all now closed:
+- **B3 fix-incomplete → fixed.** TIMESTAMPTZ_RE checks digit *shape*, not value
+  ranges, so `2026-13-45 00:00:00` (month 13) passed the regex but 500s at the
+  `::timestamptz` cast. JS can't validate it (Date.parse both accepts Feb 30 AND
+  rejects legit Postgres `+00`/µs forms). Closed with a query-level fallback in
+  loadUsersPage scoped to the cast SQLSTATEs (22007/22008/22P02): a cast failure
+  on a cursor page degrades to page 1; a real DB fault (e.g. 08006) still
+  surfaces (so a fetcher never silently duplicates page 1). +2 tests.
+- **B6 fix-broke-something → fixed.** Rendering the 404 markup *inline* left
+  root's fixed chrome (`fixed right-4 top-4 z-40` AccountChip/ThemeSelect)
+  wrapping the admin 404, while a genuine no-match 404 replaces `<App>` entirely
+  — so the two 404 documents were structurally distinguishable (D10 defeated,
+  server-observable via curl). Closed: the ErrorBoundary now RE-THROWS a 404 so
+  it bubbles to root and replaces `<App>` identically; only non-404s render the
+  local reload UI.
+- **B7 fix-incomplete → fixed.** The unknown-flag guard only caught `--`-prefixed
+  tokens, so `-dry-run` (single dash) and `dry-run`/`dryrun` (no dash) slipped
+  through as ignored positionals → real grant. Closed: reject any leading-dash
+  token ≠ `--dry-run` AND any extra positional; same guard added to the migration
+  script's arg parse. +test cases; verified live.
+
 ## Provenance histogram
 | Origin | Count | Which |
 |---|---|---|
