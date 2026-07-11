@@ -96,4 +96,4 @@ Panel-1 findings previously left unlabeled (added per worklist P4, 2026-07-10):
 
 ## Drift baseline
 - plan.md: 3aa94e27b5619693 (derivation: `sha256 of plan.md with this '## Drift baseline' section excluded, first 16 hex`; the pre-amendment hash `b63787e239a76678` was recorded without a documented derivation and is not reproducible — noted per the 2026-07-10 plan-amendment, which supersedes it)
-- harness: entitlements.test.ts + admin.users.test.ts + grant-role.test.mjs (H1–H6, H3b/H4b/H6b) — hashed at implement-exit
+- harness (hashed at implement-exit, sha256[:16], H1–H6 + H3b/H4b/H6b): entitlements.test.ts=1a1347a850d0501a + admin.users.test.ts=656ed9fcaba5c02c + grant-role.test.mjs=b45b6432830e9d09
