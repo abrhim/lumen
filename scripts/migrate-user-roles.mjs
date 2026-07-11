@@ -30,7 +30,7 @@ function log(event, fields = {}) {
   console.log(JSON.stringify({ event, ...fields }));
 }
 
-function loadAdminUrl() {
+export function loadAdminUrl() {
   const envPath = join(ROOT, '.env');
   if (!existsSync(envPath)) throw new Error('repo-root .env with admin DATABASE_URL required');
   const url = readFileSync(envPath, 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();

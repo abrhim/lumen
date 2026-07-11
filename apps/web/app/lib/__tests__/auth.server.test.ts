@@ -32,7 +32,9 @@ function fakeAuth(opts: {
 						for (const c of opts.setCookies ?? []) headers.append("Set-Cookie", c);
 						if (opts.throws) throw new Error("network sadness");
 						if (opts.error) return { data: null, error: { message: "bad" } };
-						return { data: { claims: opts.claims ?? null }, error: null };
+						// real contract (auth-js getClaims): no session ⇒ data is
+						// null ITSELF — `{ claims: null }` never occurs (F10)
+						return { data: opts.claims ? { claims: opts.claims } : null, error: null };
 					}),
 				},
 			} as unknown as RequestAuth["supabase"],
@@ -106,6 +108,18 @@ describe("H5 getSessionUser — both directions (tske B2)", () => {
 		expect(user).toBeNull();
 	});
 
+	it("F10: real no-session shape ({data:null, error:null}) → null user, never throws", async () => {
+		// a stale session cookie without a live session: data is null itself —
+		// the `!data?.claims?.sub` guard must handle it, not just {claims:null}
+		const { user, headers } = await getSessionUser(
+			req("https://x/", "sb-proj-auth-token=stale"),
+			ENV,
+			fakeAuth({}),
+		);
+		expect(user).toBeNull();
+		expect(headers).toBeInstanceOf(Headers);
+	});
+
 	it("B6: a factory that throws synchronously (empty env) still degrades, never 500s", async () => {
 		const { user, headers } = await getSessionUser(
 			req("https://x/", "sb-proj-auth-token=jwt"),
@@ -126,6 +140,20 @@ describe("H6 rotation commit (D5 — the silent-sign-out killer)", () => {
 			req("https://x/", "sb-proj-auth-token=expired"),
 			ENV,
 			fakeAuth({ throws: true, setCookies: rotated }),
+		);
+		expect(user).toBeNull();
+		expect(headers.getSetCookie()).toEqual(rotated);
+	});
+
+	it("F10: getClaims returned-error channel ({data:null, error}) → null user, rotated cookies still ride", async () => {
+		// the non-throwing failure mode: gotrue answered with an error object.
+		// A refresh may already have rotated the cookies — dropping them here
+		// revokes the session server-side (the D5 silent-sign-out killer).
+		const rotated = ["sb-proj-auth-token=rotated; Path=/; HttpOnly"];
+		const { user, headers } = await getSessionUser(
+			req("https://x/", "sb-proj-auth-token=expired"),
+			ENV,
+			fakeAuth({ error: true, setCookies: rotated }),
 		);
 		expect(user).toBeNull();
 		expect(headers.getSetCookie()).toEqual(rotated);
