@@ -150,25 +150,40 @@ the F3 dropped-rotation bug — so B9 takes CORRECTNESS-7's disposition instead.
   browser caches are per-profile). Cheap defensive fix taken with B9's pass:
   `Cache-Control: private, no-store` on the auth-carrying alias 301s.
 
-## Preference / low (fixed opportunistically, not repro-gated)
-- CORRECTNESS-8: `displayName` returns "" for anonymous (email is COALESCE'd '')
-  → blank name cell; `?? (u.email || "—")`.
-- CORRECTNESS-4 / ADVB-6: `setQInput(q)` clobbers in-flight typing → guard while
-  focused.
-- UX-A11Y-7 / ADVB-7: `replace:true` everywhere breaks Back → `replace:!immediate`.
-- UX-A11Y-9: empty-state heading keys on `q` only → key on `q||activeFilters`.
-- UX-A11Y-3: sub-44px touch targets on the touch-only controls → `after:` overlays.
-- UX-A11Y-5 / ADVB-5: `disabled={loading}` steals focus → `aria-disabled`; move
-  focus to end-of-results on exhaustion.
-- UX-A11Y-4 / ADVB-9: mobile sort direction unreachable → encode dir in the
-  select values.
-- UX-A11Y-10: skeleton pulses under reduced-motion → `motion-reduce:animate-none`
-  on the Skeleton primitive.
-- ADVB-4: rapid filter flips lose updates (params built from committed location)
-  → base edits on the pending navigation location.
-- UX-A11Y-6: sticky thead sits under the fixed chrome at ≤1280px → right-inset
-  the table / reserve the chrome zone.
-- ADVB-8: debounce timer survives a POP nav → clear on `location.key` change.
+## Preference / low — FIXED in the client pass (not repro-gated; node suite can't render)
+- CORRECTNESS-8: `displayName` returned "" for anonymous (email is COALESCE'd '')
+  → `||` chain. ✅
+- CORRECTNESS-4 / ADVB-6: `setQInput(q)` clobbered in-flight typing → sync only
+  while the field is unfocused. ✅
+- ADVA-2: a filter/sort click within the debounce window dropped the typed query
+  → immediate submits carry the live `qInput`. ✅
+- UX-A11Y-7 / ADVB-7: `replace:true` everywhere broke Back → `replace:!immediate`. ✅
+- UX-A11Y-9: empty-state heading keyed on `q` only → keys on `q`/filters/none. ✅
+- UX-A11Y-3: sub-44px touch targets → `after:` overlays on the h-7 selects (−inset-2),
+  chip-remove (−inset-3.5), clear-search (−inset-2), header buttons (−inset-y-3). ✅
+- UX-A11Y-5 / ADVB-5: `disabled={loading}` stole focus → `aria-disabled` (loadMore
+  already guards re-entrancy). ✅  (auto-focus-to-end-on-exhaustion NOT done —
+  risked stealing focus on filter-driven cursor changes; left as-is.)
+- UX-A11Y-4 / ADVB-9: mobile sort direction unreachable → select value encodes
+  `${sort}-${dir}`, six entries. ✅
+- UX-A11Y-10: skeleton pulsed under reduced-motion → `motion-reduce:animate-none`
+  on the Skeleton primitive (fixes every consumer). ✅
+- ADVB-4: rapid filter flips lost updates → `submitParams` bases off the pending
+  navigation location. ✅
+- ADVB-8: debounce timer survived a POP nav → cleanup keyed on `location.key`. ✅
+- CORRECTNESS-5: IO could pair an old cursor with a new filter set mid-commit →
+  `loadMore` no-ops while a navigation is pending. ✅
+
+## Deferred (needs visual iteration; can't be done/verified blind)
+- UX-A11Y-6 (med): sticky `<thead>` sits under the fixed top-right chrome (z-40)
+  at ≤~1280px, click-blocking the "Last seen" sort button when scrolled. Every
+  candidate fix (top-offset the thead, right-inset the table) trades one visual
+  artifact for another and needs to be seen at real widths. Tracked as a
+  follow-up; the header is still keyboard-operable (Tab reaches it), so this is
+  a pointer-occlusion issue at specific widths, not a total loss of function.
+- SECURITY-6 (low): `scrub()` redaction is a narrow URL-shape allowlist. No known
+  postgres.js emitter for the bare `user:pass@host` shape and the DSN is
+  `postgresql://…`; the CR-7 greedy-`@` fix already covers the real path. Left.
 
 ## Out-of-scope / rejected
 - SECURITY-4's lead fix (redirect-before-getClaims): REJECTED — reintroduces F3.

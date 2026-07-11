@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, data, useFetcher, useSearchParams, useSubmit } from "react-router";
+import {
+	Link,
+	data,
+	isRouteErrorResponse,
+	useFetcher,
+	useLocation,
+	useNavigation,
+	useRouteError,
+	useSearchParams,
+	useSubmit,
+} from "react-router";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, SearchIcon, XIcon } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Input } from "~/components/ui/input";
@@ -74,7 +84,9 @@ function relativeSeen(d: Date | string): string {
 }
 
 function displayName(u: AdminUserRow): string {
-	return u.display_name ?? u.full_name ?? u.email ?? "—";
+	// email is the view's COALESCE(email,'') — "" not null — so `??` would return
+	// "" for an anonymous no-name user, blanking the cell; `||` catches it (CORRECTNESS-8)
+	return u.display_name || u.full_name || u.email || "—";
 }
 
 function initial(u: AdminUserRow): string {
@@ -138,9 +150,17 @@ const SKELETON_KEYS = ["a", "b", "c"];
 export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 	const [searchParams] = useSearchParams();
 	const submit = useSubmit();
+	const navigation = useNavigation();
+	const location = useLocation();
 	const fetcher = useFetcher<typeof loader>();
 
 	const { epoch, q, role, status, sort, dir, rolesCatalog } = loaderData;
+
+	// TWO distinct pending signals (B5): a search/filter/sort is a GET NAVIGATION
+	// to this route (useSubmit method:get); load-more is the FETCHER. Watching
+	// only the fetcher left the entire search/filter path with no busy state.
+	const searching = navigation.state === "loading" && navigation.location?.pathname === "/admin/users";
+	const loadingMore = fetcher.state !== "idle";
 
 	// Appended pages live OUTSIDE the URL (cursor is fetcher-local, D8).
 	const [extra, setExtra] = useState<{
@@ -149,18 +169,28 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 		cursor: string | null;
 	}>({ epoch, rows: [], cursor: loaderData.nextCursor });
 
+	// once-only consumption marker (B4): holds the cursor of the page we actually
+	// requested this generation. The epoch guard alone cannot tell "a fresh page
+	// for epoch E" from "the RETAINED page for a PREVIOUS epoch E" after a filter
+	// round-trip (A→B→A gives a byte-identical epoch) — so retained fetcher.data
+	// would be re-appended, punching a silent hole in the list.
+	const requestedRef = useRef<string | null>(null);
+
 	// Filter set changed (or same-epoch revalidation) → loaderData IS the new
-	// page 1: drop the tail (D6 epoch reset).
+	// page 1: drop the tail and abandon any in-flight generation (D6/B4 reset).
 	useEffect(() => {
+		requestedRef.current = null;
 		setExtra({ epoch, rows: [], cursor: loaderData.nextCursor });
 	}, [epoch, loaderData]);
 
-	// Append fetcher pages ONLY when they belong to the current epoch — a
-	// stale in-flight page for an abandoned filter set is dropped (D6 race guard).
+	// Append a fetcher page ONCE, and only if it was requested this generation
+	// AND belongs to the current epoch (B4 + D6 race guard).
 	useEffect(() => {
 		if (fetcher.state !== "idle" || !fetcher.data) return;
+		if (requestedRef.current === null) return; // retained / cross-generation data — never re-consume
 		const fetched = fetcher.data;
-		if (fetched.epoch !== epoch) return;
+		requestedRef.current = null; // consumed exactly once
+		if (fetched.epoch !== epoch) return; // stale filter set — drop
 		setExtra((prev) =>
 			prev.epoch !== epoch
 				? prev
@@ -170,10 +200,12 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 
 	const rows = [...loaderData.rows, ...extra.rows];
 	const count = loaderData.count ?? rows.length;
-	const loading = fetcher.state !== "idle";
 
 	const loadMore = () => {
-		if (fetcher.state !== "idle" || !extra.cursor) return;
+		// no-op while a filter/sort navigation is committing (CORRECTNESS-5): the
+		// old cursor must never be paired with the incoming filter set
+		if (fetcher.state !== "idle" || searching || !extra.cursor) return;
+		requestedRef.current = extra.cursor; // mark this generation requested (B4)
 		const p = new URLSearchParams(searchParams);
 		p.set("cursor", extra.cursor);
 		fetcher.load(`/admin/users?${p.toString()}`);
@@ -199,28 +231,42 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 		return () => io.disconnect();
 	}, [extra.cursor]);
 
-	// Search: URL-owned, debounced 250ms, replace (no history spam per
-	// keystroke), drops the cursor by nature (cursor never enters the URL).
+	// Search: URL-owned, debounced 250ms. Keystrokes REPLACE (no per-keystroke
+	// history spam); discrete actions PUSH so Back unwinds them (ADVB-7).
 	const [qInput, setQInput] = useState(q);
-	useEffect(() => setQInput(q), [q]);
+	const inputRef = useRef<HTMLInputElement>(null);
+	// sync the field from the URL only when it is NOT focused — a landing
+	// navigation for an EARLIER query would otherwise clobber in-flight typing
+	// (ADVB-6). Back/forward and chip clears leave the field unfocused, so those
+	// URL-driven syncs still apply.
+	useEffect(() => {
+		if (document.activeElement !== inputRef.current) setQInput(q);
+	}, [q]);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const submitParams = (mutate: (p: URLSearchParams) => void, immediate = false) => {
-		const p = new URLSearchParams(searchParams);
-		mutate(p);
-		p.delete("cursor"); // belt & braces — the cursor is never URL state
-		const go = () => submit(p, { method: "get", replace: true, preventScrollReset: true });
+		// base off the PENDING navigation's params when one is in flight so a
+		// second change made mid-navigation doesn't drop the first (ADVB-4)
+		const base = new URLSearchParams(navigation.location?.search ?? location.search);
+		// carry the live search box so a filter/sort/chip click within the debounce
+		// window doesn't silently drop a typed query (ADVA-2)
+		if (immediate) {
+			if (qInput) base.set("q", qInput);
+			else base.delete("q");
+		}
+		mutate(base);
+		base.delete("cursor"); // the cursor is never URL state
+		const go = () => submit(base, { method: "get", replace: !immediate, preventScrollReset: true });
 		if (debounceRef.current) clearTimeout(debounceRef.current);
 		if (immediate) go();
 		else debounceRef.current = setTimeout(go, 250);
 	};
-	// unmount-only ([]): a per-render cleanup would clear the timer set by the
-	// keystroke that caused the render — the debounced submit would never fire
-	useEffect(
-		() => () => {
+	// clear a pending debounce on unmount AND when the history entry changes, so a
+	// stale timer can't fire post-Back and hijack the restored entry (ADVB-8)
+	useEffect(() => {
+		return () => {
 			if (debounceRef.current) clearTimeout(debounceRef.current);
-		},
-		[],
-	);
+		};
+	}, [location.key]);
 
 	const onSearchChange = (value: string) => {
 		setQInput(value);
@@ -238,6 +284,23 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 		}, true);
 	};
 
+	// mobile sort select (ADVB-9): value carries BOTH column and direction so a
+	// phone user can reach oldest-first / Z→A, and the trigger never misrepresents
+	// a ?dir=desc URL set on desktop
+	const setSort = (value: string) => {
+		const [s, d] = value.split("-");
+		submitParams((p) => {
+			p.set("sort", s);
+			p.set("dir", d);
+		}, true);
+	};
+	const MOBILE_SORTS: { value: string; label: string }[] = (["created", "seen", "email"] as SortKey[]).flatMap(
+		(k) => [
+			{ value: `${k}-desc`, label: `${SORT_LABELS[k]} · ${k === "email" ? "Z–A" : "newest"}` },
+			{ value: `${k}-asc`, label: `${SORT_LABELS[k]} · ${k === "email" ? "A–Z" : "oldest"}` },
+		],
+	);
+
 	const activeFilters = [
 		role ? { key: "role", label: "Role", value: role } : null,
 		status ? { key: "status", label: "Status", value: STATUS_LABELS[status] } : null,
@@ -250,7 +313,8 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 		<button
 			type="button"
 			onClick={() => toggleSort(key)}
-			className="group relative inline-flex touch-manipulation items-center gap-1 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50 after:absolute after:-inset-y-2.5 after:inset-x-0 after:content-['']"
+			// after:-inset-y-3 → 44px hit target (20px label + 24px) — house touch law (UX-A11Y-3)
+			className="group relative inline-flex touch-manipulation items-center gap-1 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50 after:absolute after:-inset-y-3 after:inset-x-0 after:content-['']"
 		>
 			{label}
 			<SortGlyph active={sort === key} dir={dir} />
@@ -279,6 +343,7 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 						className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint"
 					/>
 					<Input
+						ref={inputRef}
 						type="search"
 						name="q"
 						value={qInput}
@@ -300,7 +365,8 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 								submitParams((p) => p.delete("q"), true);
 							}}
 							aria-label="Clear search"
-							className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-faint transition-colors after:absolute after:-inset-1.5 after:content-[''] hover:text-ink"
+							// after:-inset-2 → 44px hit target (28px + 16px) — house touch law (UX-A11Y-3)
+							className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-faint transition-colors after:absolute after:-inset-2 after:content-[''] hover:text-ink"
 						>
 							<XIcon aria-hidden="true" className="size-4" />
 						</button>
@@ -308,14 +374,15 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 				</form>
 
 				{/* fixed-height count bar = the ONE aria-live region (D9). Text swaps
-				    ("Searching…" ↔ counts) never nudge the table below. */}
+				    ("Searching…" ↔ counts) never nudge the table below. Driven by the
+				    NAVIGATION pending state so a slow search actually announces (B5). */}
 				<div
 					id="user-search-count"
 					role="status"
 					aria-live="polite"
 					className="flex h-6 items-center font-ui text-xs tabular-nums text-faint"
 				>
-					{loading && rows.length === 0
+					{searching
 						? "Searching…"
 						: q
 							? `${count} ${count === 1 ? "result" : "results"} for “${q}”${rows.length < count ? ` · ${rows.length} shown` : ""}`
@@ -323,8 +390,14 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 				</div>
 
 				<div className="flex flex-wrap items-center gap-2">
+					{/* after:-inset-2 → 44px hit target on the h-7 triggers (UX-A11Y-3),
+					    same overlay trick as root.tsx's ThemeSelect */}
 					<Select value={role || "all"} onValueChange={(v) => setParam("role", v === "all" ? "" : v)}>
-						<SelectTrigger size="sm" aria-label="Filter by role" className="bg-surface font-ui text-xs">
+						<SelectTrigger
+							size="sm"
+							aria-label="Filter by role"
+							className="relative bg-surface font-ui text-xs after:absolute after:-inset-2 after:content-['']"
+						>
 							<SelectValue placeholder="Role" />
 						</SelectTrigger>
 						<SelectContent className="font-ui text-xs">
@@ -340,7 +413,11 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 						value={status || "all"}
 						onValueChange={(v) => setParam("status", v === "all" ? "" : v)}
 					>
-						<SelectTrigger size="sm" aria-label="Filter by status" className="bg-surface font-ui text-xs">
+						<SelectTrigger
+							size="sm"
+							aria-label="Filter by status"
+							className="relative bg-surface font-ui text-xs after:absolute after:-inset-2 after:content-['']"
+						>
 							<SelectValue placeholder="Status" />
 						</SelectTrigger>
 						<SelectContent className="font-ui text-xs">
@@ -352,16 +429,21 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 							))}
 						</SelectContent>
 					</Select>
-					{/* mobile: column headers don't exist in card mode — same URL params */}
+					{/* mobile: column headers don't exist in card mode — value carries
+					    column+dir so direction is reachable (ADVB-9); same URL params */}
 					<div className="md:hidden">
-						<Select value={sort} onValueChange={(v) => toggleSortTo(v as SortKey, submitParams, dir)}>
-							<SelectTrigger size="sm" aria-label="Sort" className="bg-surface font-ui text-xs">
+						<Select value={`${sort}-${dir}`} onValueChange={setSort}>
+							<SelectTrigger
+								size="sm"
+								aria-label="Sort"
+								className="relative bg-surface font-ui text-xs after:absolute after:-inset-2 after:content-['']"
+							>
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent className="font-ui text-xs">
-								{Object.entries(SORT_LABELS).map(([k, label]) => (
-									<SelectItem key={k} value={k}>
-										Sort: {label}
+								{MOBILE_SORTS.map((o) => (
+									<SelectItem key={o.value} value={o.value}>
+										Sort: {o.label}
 									</SelectItem>
 								))}
 							</SelectContent>
@@ -378,7 +460,8 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 											type="button"
 											onClick={() => setParam(f.key, "")}
 											aria-label={`Remove ${f.label} filter`}
-											className="relative ml-0.5 flex size-4 items-center justify-center rounded-full after:absolute after:-inset-2 after:content-[''] hover:bg-muted"
+											// after:-inset-3.5 → 44px hit target (16px + 28px) — house touch law (UX-A11Y-3)
+											className="relative ml-0.5 flex size-4 items-center justify-center rounded-full after:absolute after:-inset-3.5 after:content-[''] hover:bg-muted"
 										>
 											<XIcon className="size-3" aria-hidden="true" />
 										</button>
@@ -391,12 +474,21 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 			</div>
 
 			{/* results region: keep stale rows visible while a new query settles —
-			    no collapse-and-jump (stale-while-revalidate, motion-safe only) */}
-			<div aria-busy={loading || undefined} className={loading ? "motion-safe:opacity-60 motion-safe:transition-opacity" : ""}>
-				{rows.length === 0 && !loading ? (
+			    no collapse-and-jump (stale-while-revalidate). The dim is a STATE
+			    signal, so the opacity is NOT gated behind motion-safe (reduced-motion
+			    users still need the busy feedback); only the transition is (B5). */}
+			<div
+				aria-busy={searching || undefined}
+				className={searching ? "opacity-60 motion-safe:transition-opacity" : ""}
+			>
+				{rows.length === 0 && !searching ? (
 					<div className="mt-4 flex min-h-40 flex-col items-center justify-center gap-1 text-center">
 						<p className="font-display text-lg text-ink">
-							{q ? `No users match “${q}”.` : "No users yet."}
+							{q
+								? `No users match “${q}”.`
+								: activeFilters.length > 0
+									? "No users match these filters."
+									: "No users yet."}
 						</p>
 						<p className="font-ui text-sm text-muted-foreground">
 							{q || activeFilters.length > 0
@@ -486,12 +578,12 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 										</td>
 									</tr>
 								))}
-								{loading &&
+								{loadingMore &&
 									SKELETON_KEYS.map((k) => (
 										<tr key={k} className="h-14 border-b border-rule">
 											<td className="px-3">
 												<div className="flex items-center gap-3">
-													<Skeleton className="size-8 rounded-full motion-safe:animate-pulse" />
+													<Skeleton className="size-8 rounded-full" />
 													<div className="space-y-1.5">
 														<Skeleton className="h-3 w-32" />
 														<Skeleton className="h-2.5 w-40" />
@@ -522,10 +614,13 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 								ref={sentinelRef}
 								type="button"
 								onClick={loadMore}
-								disabled={loading}
-								className="mt-1 flex h-12 w-full touch-manipulation items-center justify-center rounded-md font-ui text-xs font-semibold text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 hover:text-ink disabled:opacity-60"
+								// aria-disabled, NOT disabled (UX-A11Y-5): disabling the focused
+								// button on activation dumps keyboard/SR focus to <body>. loadMore
+								// already early-returns while busy, so this is display-only.
+								aria-disabled={loadingMore || undefined}
+								className="mt-1 flex h-12 w-full touch-manipulation items-center justify-center rounded-md font-ui text-xs font-semibold text-muted-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 hover:text-ink aria-disabled:opacity-60"
 							>
-								{loading ? "Loading…" : "Load more"}
+								{loadingMore ? "Loading…" : "Load more"}
 							</button>
 						) : (
 							rows.length > 0 && (
@@ -541,15 +636,52 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 	);
 }
 
-/** Mobile sort select: switching column applies that column's natural default
- * direction (dates newest-first, email A→Z), matching the header buttons. */
-function toggleSortTo(
-	key: SortKey,
-	submitParams: (mutate: (p: URLSearchParams) => void, immediate?: boolean) => void,
-	_dir: SortDir,
-) {
-	submitParams((p) => {
-		p.set("sort", key);
-		p.set("dir", key === "email" ? "asc" : "desc");
-	}, true);
+/**
+ * Route ErrorBoundary (B6). Without one, a transient failure on the
+ * IntersectionObserver's BACKGROUND fetcher.load — a network blip, a 500, or a
+ * mid-session revocation 404 while merely scrolling — bubbles to the ROOT
+ * boundary and replaces the whole admin view with no retry. This keeps the
+ * failure local.
+ *
+ * The 404 branch renders root.tsx's 404 markup BYTE-IDENTICALLY so a non-admin
+ * hitting /admin/users still sees exactly what a nonexistent route shows (D10
+ * concealment). KEEP IT IN SYNC WITH root.tsx ErrorBoundary's 404 branch — the
+ * concealment depends on the two outputs being indistinguishable. (The title/
+ * timing side-channel remains the accepted D10 residual.)
+ */
+export function ErrorBoundary() {
+	const error = useRouteError();
+	if (isRouteErrorResponse(error) && error.status === 404) {
+		const details =
+			typeof error.data === "string" && error.data ? error.data : "The requested page could not be found.";
+		return (
+			<main className="pt-16 p-4 container mx-auto">
+				<h1 className="font-display text-3xl">404</h1>
+				<p className="mt-2 text-muted-foreground">{details}</p>
+				<p className="mt-4">
+					<a href="/" className="text-primary underline">
+						Back to the library
+					</a>
+				</p>
+			</main>
+		);
+	}
+	// any other failure (a background page-fetch blip): a real reload affordance
+	// instead of root's dead-end "Oops!" — the loaded rows are lost, but reload
+	// re-runs page 1
+	return (
+		<main className="mx-auto max-w-5xl px-6 pt-16">
+			<h1 className="font-display text-3xl font-medium tracking-tight">Couldn't load users</h1>
+			<p className="mt-2 font-reading text-[17px] text-muted-foreground">
+				Something went wrong. Reload the page to try again.
+			</p>
+			<button
+				type="button"
+				onClick={() => window.location.reload()}
+				className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground outline-none transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
+			>
+				Reload
+			</button>
+		</main>
+	);
 }
