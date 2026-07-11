@@ -15,7 +15,7 @@
 
 ### Data model (new, in `lumen` schema)
 1. `lumen.roles` — `slug text PK` (e.g. 'admin'), `label text`, `entitlements text[]` (feature keys this role opens), `created_at`. Seed row: `('admin','Administrator', ARRAY['admin.users'])`.
-2. `lumen.user_roles` — `user_id uuid`, `role_slug text REFERENCES lumen.roles(slug) ON DELETE CASCADE`, `granted_at`, `granted_by uuid`, PK `(user_id, role_slug)`. `user_id` references auth.users.id by VALUE (no cross-schema FK to a Supabase-managed table — avoids coupling to auth schema migrations; orphan rows are harmless and cleaned by a nightly job later / out of scope now). Index on `user_id`.
+2. `lumen.user_roles` — `user_id uuid`, `role_slug text REFERENCES lumen.roles(slug) ON DELETE CASCADE`, `granted_at`, `granted_by uuid`, PK `(user_id, role_slug)`. `user_id` references auth.users.id by VALUE (no cross-schema FK to a Supabase-managed table — avoids coupling to auth schema migrations; orphan rows are harmless and cleaned by a nightly job later / out of scope now). ~~Index on `user_id`.~~ *(→ dropped per F2: the composite PK `(user_id, role_slug)` leads on `user_id` and covers every lookup; the migration drops the redundant index if an earlier run created it.)*
    - GRANT SELECT to `lumen_read`. NO insert/update/delete for the app role — grants are admin-script-only in v1 (see "granting admin").
 3. **Bridging auth.users → the app**: since lumen_read can't read auth, create **`lumen.app_users` — a SECURITY DEFINER view (or matview)** owned by a privileged role that projects a SAFE subset of auth.users into the lumen schema *(→ mechanism settled by D1: plain view owned by `postgres`, `security_invoker=false` pinned)*:
    *(projection corrected 2026-07-10 to match the applied DDL — every sortable column COALESCEd non-null per D2, plus `is_confirmed`/`is_anonymous`:)*
@@ -86,6 +86,8 @@ Precedence: human > panel-2 > panel-1. Abram asked verbatim for "really good sea
 - **D12 [ESCALATE accepted: not live-verifiable e2e today]** 0 users + auth dashboard prereqs unset → no real sign-in → can't self-grant → the gated screen can't be exercised against a real session. Live proof = unit tests (H1-H6) + a post-deploy smoke that (a) probes `lumen.app_users` returns (coupling tripwire) and (b) confirms `/admin/users` 404s for an anonymous request. Full e2e deferred until Abram completes the Supabase dashboard config and self-grants.
 - **D13 [deferred-out-of-scope]** in-app role grant/revoke UI (the fast-follow that bites soonest), per-user detail page, admin-view audit log + PII retention policy (real the day a 2nd human is admin — roadmap, not v1), matview+GIN search upgrade, 2nd non-admin role.
 
+- **F2 [incorporated 2026-07-10]** redundant `idx_user_roles_user` removed from the DDL — the composite PK covers it; migration also `DROP INDEX IF EXISTS`es the one prod already has (re-run converges it).
+
 Panel-1 findings previously left unlabeled (added per worklist P4, 2026-07-10):
 - **admin-ux filter-chips (HIGH) [incorporated]** → D8 AND-composition + step-8 UI: active constraints render as removable chips (house badge/button idiom, chips wrap below the count bar, removal patches the URL). No new tokens.
 - **admin-ux layout-shift/SWR spec (HIGH) [incorporated]** → D9's single fixed-height aria-live count/status bar under the search field; searching keeps stale results rendered (`aria-busy` + opacity on the results region only) so chrome height never changes.
@@ -93,5 +95,5 @@ Panel-1 findings previously left unlabeled (added per worklist P4, 2026-07-10):
 - **admin-ux tone (MEDIUM) [incorporated]** → D9 register: same house tokens, denser functional register (`font-ui`, `text-sm`, `tabular-nums`, paper surfaces); no second design system.
 
 ## Drift baseline
-- plan.md: 26bef02c12313e1e (derivation: `sha256 of plan.md with this '## Drift baseline' section excluded, first 16 hex`; the pre-amendment hash `b63787e239a76678` was recorded without a documented derivation and is not reproducible — noted per the 2026-07-10 plan-amendment, which supersedes it)
+- plan.md: 3aa94e27b5619693 (derivation: `sha256 of plan.md with this '## Drift baseline' section excluded, first 16 hex`; the pre-amendment hash `b63787e239a76678` was recorded without a documented derivation and is not reproducible — noted per the 2026-07-10 plan-amendment, which supersedes it)
 - harness: entitlements.test.ts + admin.users.test.ts + grant-role.test.mjs (H1–H6, H3b/H4b/H6b) — hashed at implement-exit
