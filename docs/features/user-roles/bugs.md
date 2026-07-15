@@ -174,6 +174,20 @@ the F3 dropped-rotation bug — so B9 takes CORRECTNESS-7's disposition instead.
 - CORRECTNESS-5: IO could pair an old cursor with a new filter set mid-commit →
   `loadMore` no-ops while a navigation is pending. ✅
 
+## D10 concealment — reality after live smoke test (D10 over-claimed)
+Post-deploy `curl` diff of anon `/admin/users` (404) vs a nonexistent route (404):
+the bodies are NOT byte-identical. A matched-but-gated route inherently leaks its
+existence in an SSR app via (a) the preloaded `admin.users-*.js` chunk, (b) the
+embedded RR route-manifest entry (`routes/admin.users`, hasLoader/hasErrorBoundary),
+and (c) the 404 message text (gate: "…could not be found"; RR no-match: "No route
+matches URL …"). This is PRE-EXISTING (RR pulls the matched route's module into the
+document before the loader throws) — the B6 re-throw still reduced the diff (no root
+chrome wrapping the 404) but byte-identical was never reachable here. **Security
+boundary is intact: 404, no data, no PII query.** D10's "renders IDENTICALLY to a
+nonexistent route" is downgraded to: status + no-data-leak hold; route existence is
+observable and accepted as low-severity (the gate, not obscurity, is the boundary).
+Retro signal: concealment claims must be smoke-tested against a real deploy.
+
 ## Deferred (needs visual iteration; can't be done/verified blind)
 - UX-A11Y-6 (med): sticky `<thead>` sits under the fixed top-right chrome (z-40)
   at ≤~1280px, click-blocking the "Last seen" sort button when scrolled. Every
@@ -207,8 +221,14 @@ verifier caught — all now closed:
   wrapping the admin 404, while a genuine no-match 404 replaces `<App>` entirely
   — so the two 404 documents were structurally distinguishable (D10 defeated,
   server-observable via curl). Closed: the ErrorBoundary now RE-THROWS a 404 so
-  it bubbles to root and replaces `<App>` identically; only non-404s render the
-  local reload UI.
+  it bubbles to root and replaces `<App>`; only non-404s render the local reload
+  UI. **Live post-deploy smoke:** anon `/admin/users` now renders the bare root
+  404 with the chrome/AccountChip GONE (leak count 0). The two 404 bodies are
+  still not byte-identical (RR echoes the URL in the no-match message and
+  preloads this route's module because the path matched) — but neither reveals
+  admin state, and the route table already ships in the public client manifest,
+  so existence was never concealable; consistent with D10's accepted "the gate
+  is the real control." The PII/chrome leak (the real bug) is closed.
 - **B7 fix-incomplete → fixed.** The unknown-flag guard only caught `--`-prefixed
   tokens, so `-dry-run` (single dash) and `dry-run`/`dryrun` (no dash) slipped
   through as ignored positionals → real grant. Closed: reject any leading-dash

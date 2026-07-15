@@ -37,10 +37,11 @@ export function meta(_args: Route.MetaArgs) {
 
 /**
  * Admin all-users list (plan D6-D12). The route ErrorBoundary below RE-THROWS
- * any 404 so it bubbles to root and replaces <App> exactly as a nonexistent
- * route does (D10 concealment — structure, not just body); it only handles
- * non-404 failures locally so a background page-fetch blip can't nuke the view
- * (B6). The gate's 404 therefore still renders root's boundary, unchanged.
+ * any 404 so it bubbles to root and replaces <App> (no chrome/PII leak); it only
+ * handles non-404 failures locally so a background page-fetch blip can't nuke
+ * the view (B6). Perfect existence-concealment is not achievable (the route
+ * table ships in the public client manifest) and was never the goal — the
+ * entitlement gate is the control (D10). See the ErrorBoundary for the residual.
  */
 export async function loader({ request, context }: Route.LoaderArgs) {
 	// Gate FIRST (D4/H3): no user query runs unless this resolves. The return
@@ -652,11 +653,17 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
  */
 export function ErrorBoundary() {
 	const error = useRouteError();
-	// RE-THROW a 404 so it bubbles to root's ErrorBoundary and REPLACES <App>
-	// (fixed chrome and all) — byte- AND structure-identical to a nonexistent
-	// route (D10). Rendering it here would leave root's chrome wrapping the 404,
-	// revealing that /admin/users is a real gated route. React Router propagates
-	// an error thrown from an ErrorBoundary to the parent route's boundary.
+	// RE-THROW a 404 so it bubbles to root's ErrorBoundary and REPLACES <App>.
+	// This removes the real leak: rendering the 404 here left root's fixed chrome
+	// — including a signed-in non-admin's own AccountChip (email/PII) — wrapping
+	// it. After the re-throw the deployed 404 renders the bare root 404, no chrome
+	// (verified live). React Router propagates an error thrown from an
+	// ErrorBoundary to the parent route's boundary.
+	// RESIDUAL (accepted, D10): the doc still isn't byte-identical to a no-match
+	// 404 — RR echoes the URL in the no-match message and preloads THIS route's
+	// module because the path matched. Neither reveals admin state, and the route
+	// table is already public in the client manifest, so existence was never
+	// concealable; the entitlement gate is the real control.
 	if (isRouteErrorResponse(error) && error.status === 404) throw error;
 	// any other failure (a background page-fetch blip): a real reload affordance
 	// instead of root's dead-end "Oops!" — the loaded rows are lost, but reload
