@@ -109,3 +109,9 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - supabase-auth: the highest-value plan-stage find was a would-ship-broken protocol mechanic (signInWithOtp writes the PKCE verifier cookie → login action MUST commit Set-Cookie) — invisible to the harness, only a docs-reading security specialist caught it. Auth features: read the SDK's cookie side-effects, don't infer them.
 - supabase-auth: framework header-on-redirect semantics are unit-test-invisible — RR7 drops root-loader Set-Cookie on any thrown redirect short-circuit; our routes survive only by self-carrying headers. Verify header-merge behavior at plan time and encode it as a code invariant comment, not a test.
 - supabase-auth: reframing the risk model beats enumerating risks — product-adversarial moved "hollow auth" (a non-problem) to "silent sign-out via dropped token rotation" (the real one), which directly authored harness H6; H6 then caught a fix-induced regression the same hour.
+
+## 2026-07-11 · feature: user-roles · tier: large
+- user-roles: 5 of 9 confirmed bugs were harness-origin — "totality"/"never-throw" tests that tried one benign value; H4 even pinned the µs-truncation bug as expected. Fixtures must carry the adversarial input.
+- user-roles: a dedicated fix-verification pass (6 agents re-triggering each fixed bug) caught 3 residuals with green tests + clean typecheck (cast-range gap, a concealment regression, a dropped-dash typo). Verify fixes, don't trust the suite.
+- user-roles: keyed workflow results by a prose `role` string the agents didn't echo → adversarial-B silently got [] to tag. Key by loop index or a constrained enum, never a trusted echo.
+- user-roles: prod existence-concealment is unachievable when the route table ships in the client manifest — the ErrorBoundary re-throw removed the real leak (signed-in AccountChip/PII in the 404), which is what D10 actually needed.

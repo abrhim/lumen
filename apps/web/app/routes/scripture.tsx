@@ -49,6 +49,7 @@ import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
 import { cachedJson } from "../lib/cache.server";
+import { getSessionUser } from "../lib/auth.server";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
 
@@ -351,11 +352,20 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const chapter = parseInt(rawChapter, 10);
 
 	// API-1: one canonical URL per chapter — aliases (1ne, "1 nephi") redirect.
+	// The 301 must SELF-CARRY the session commit headers (F3): a thrown
+	// redirect short-circuits the root loader's Set-Cookie (root.tsx
+	// invariant), so a mid-read token rotation would otherwise be dropped —
+	// an intermittent silent sign-out on the first post-expiry hit to a
+	// non-canonical URL. Signed-out requests skip all auth work inside
+	// getSessionUser (hasAuthCookie short-circuit), so this costs nothing
+	// for most traffic.
 	if (rawBook !== bookId) {
-		throw new Response(null, {
-			status: 301,
-			headers: { Location: `/scripture/${bookId}/${chapter}${url.search}` },
-		});
+		const { headers } = await getSessionUser(request, context.cloudflare.env);
+		headers.set("Location", `/scripture/${bookId}/${chapter}${url.search}`);
+		// the rotated auth Set-Cookie this 301 may carry must never be cached and
+		// replayed to another visitor of this alias (SECURITY-3)
+		headers.set("Cache-Control", "private, no-store");
+		throw new Response(null, { status: 301, headers });
 	}
 
 	// Kick off the graph fetch before the Postgres round trip — they're
@@ -1080,7 +1090,9 @@ function InlineWordCard({
 	// lead with the content word, not a tag-along function word — "taxing" is
 	// [G3588 ὁ, G582 ἀπογραφή] and the article's gloss reads as no definition
 	const primary = tag ? primaryEntry(tag.entries) : undefined;
-	if (!primary) {
+	// `!tag ||` is redundant at runtime (tag null ⇒ primary undefined) but
+	// narrows `tag` for the entries-count line below (pre-existing TS18047)
+	if (!tag || !primary) {
 		return (
 			<div
 				ref={cardRef}
