@@ -1,5 +1,6 @@
 export * from './schema';
 export * from './types';
+export * from './vocab';
 export * from './queries';
 export * from './slug-map';
 export * from './tokenize';
