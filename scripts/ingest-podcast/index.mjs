@@ -62,8 +62,17 @@ function fatal(err, context, scrub = scrubSecrets) {
 		error: scrub(err?.message ?? String(err)),
 	});
 	console.error(line);
-	logSink?.write(`${line}\n`);
-	process.exit(1);
+	// R3: flush the sink before exiting — a synchronous exit loses the whole
+	// log file (reproduced 30/30 in fix-verification). Bounded fallback timer
+	// so a stuck stream can never hang the exit.
+	if (logSink) {
+		logSink.write(`${line}\n`);
+		const t = setTimeout(() => process.exit(1), 500);
+		t.unref?.();
+		logSink.end(() => process.exit(1));
+	} else {
+		process.exit(1);
+	}
 }
 
 // ── stage: discover ─────────────────────────────────────────────────────────
@@ -71,12 +80,19 @@ function fatal(err, context, scrub = scrubSecrets) {
 async function discover(show, dir, { dryRun, refresh }) {
 	const artifact = join(dir, 'episodes.json');
 	if (!refresh && existsSync(artifact)) {
-		const cached = JSON.parse(readFileSync(artifact, 'utf8'));
-		if (isValidEpisodesArtifact(cached, show)) {
+		// R1: a truncated manifest must fall through to refetch, not wedge
+		// every future run behind an uncaught parse throw
+		let cached = null;
+		try {
+			cached = JSON.parse(readFileSync(artifact, 'utf8'));
+		} catch {
+			log('discover_stale', { reason: 'artifact_corrupt' });
+		}
+		if (cached && isValidEpisodesArtifact(cached, show)) {
 			log('discover_skip', { reason: 'valid_artifact', episodes: cached.episodes.length });
 			return cached.episodes;
 		}
-		log('discover_stale', { reason: 'artifact_invalid' });
+		if (cached) log('discover_stale', { reason: 'artifact_invalid' });
 	}
 	const { stdout } = await pExecFile(
 		'yt-dlp',
@@ -95,7 +111,11 @@ async function discover(show, dir, { dryRun, refresh }) {
 	if (dryRun) {
 		log('discover_dry_run', { would_write: artifact, episodes: episodes.length });
 	} else {
-		writeFileSync(artifact, JSON.stringify({ episodes }, null, 1));
+		// R1: same atomicity as the transcribe artifact
+		writeArtifactAtomic(artifact, JSON.stringify({ episodes }, null, 1), {
+			writeFileSync,
+			renameSync,
+		});
 		log('discover_done', { total: episodes.length, artifact });
 	}
 	return episodes;

@@ -380,6 +380,12 @@ test('B3: search block-label — whole-book renders book name, not "Book 1"', ()
     [], ['1-sam-17'], UNSHAKEN,
   );
   assert.equal(label(single), '1 Samuel 17');
+  // R2: open-end tail keeps its start chapter visible
+  const openTail = buildLoadPlan(
+    { ...episodeFixture, spans: [{ book: '1 Samuel', start: 17, end: null }] },
+    [], ['1-sam-17'], UNSHAKEN,
+  );
+  assert.equal(label(openTail), '1 Samuel 17+');
 });
 
 test('B4: makeScrubber bakes the live key in — no env dependency', () => {

@@ -180,7 +180,7 @@ disproportionate — waived, logged for retro per the conflict protocol.
 - **Artifacts:** `<id>.load.json` line DROPPED (never consumed; dry-run logs
   the summary). `episodes.json` now genuinely committed (B6; layered
   gitignore negation).
-- **Harness delta:** +8 repro tests (B1-B5, B7, B9) + cli.mjs contract; B8
+- **Harness delta:** +8 repro tests (+1 R2 open-end label case post-verification) (B1-B5, B7, B9) + cli.mjs contract; B8
   repro-deferred (structural — verify via next backfill's mtime overlap);
   B10 fix-only (low, single-parse-site by construction).
 
@@ -315,5 +315,5 @@ scripts/__tests__/ingest-podcast.test.mjs`; plan-hash = `sed '/^## Drift
 baseline/,$d' docs/features/unshaken-ingest/plan.md | shasum -a 256` (the
 baseline section excludes itself).
 
-- plan-hash: fd2bc6fe5bfa695cf16510db02451d3209f31276d94d36473da05c09da1aa29f
-- harness-hash: 41c050c78f2861025ebfa77a1e949179e13fc62a4a614ca03b9c86b9804b75ac
+- plan-hash: 666521bfe2b7388f188fd04ef4db4c789fb7bab4b963dfb5f3f5d2c1ea70d910
+- harness-hash: d3567e5a570f0ab783103c1bcd08de01c5fa69395ad754bafe94db4bae4f19f9

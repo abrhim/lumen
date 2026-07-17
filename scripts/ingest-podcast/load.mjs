@@ -10,7 +10,11 @@
 function blockLabel(spans) {
 	return spans
 		.map((s) => {
-			if (s.end === null || s.end === undefined) return s.book;
+			// open-end: whole book when starting at 1; "Book N+" keeps the start
+			// chapter visible for cross-book tails (fix-verification residual R2)
+			if (s.end === null || s.end === undefined) {
+				return s.start > 1 ? `${s.book} ${s.start}+` : s.book;
+			}
 			if (s.end === s.start) return `${s.book} ${s.start}`;
 			return `${s.book} ${s.start}-${s.end}`;
 		})
