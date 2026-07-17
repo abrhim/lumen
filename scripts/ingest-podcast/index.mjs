@@ -114,7 +114,7 @@ async function fetchEpisode(ep, dir, { dryRun }) {
 
 // ── stage: transcribe (one episode) ─────────────────────────────────────────
 
-async function transcribeEpisode(ep, dir, show, keyterms, { dryRun }) {
+async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }) {
 	const artifact = join(dir, `${ep.id}.deepgram.json`);
 	const audioPath = join(dir, `${ep.id}.m4a`);
 	if (existsSync(artifact)) {
@@ -127,10 +127,7 @@ async function transcribeEpisode(ep, dir, show, keyterms, { dryRun }) {
 			log('transcribe_stale', { episode: ep.id, reason: scrubSecrets(err.message) });
 		}
 	}
-	const req = buildDeepgramRequest({
-		apiKey: process.env.DEEPGRAM_API_KEY,
-		keyterms,
-	});
+	const req = buildDeepgramRequest({ apiKey, keyterms });
 	const qs = new URLSearchParams();
 	for (const [k, v] of Object.entries(req.query)) {
 		if (Array.isArray(v)) v.forEach((item) => qs.append(k, item));
@@ -198,8 +195,13 @@ async function main() {
 
 	const require = createRequire(import.meta.url);
 	const postgres = require('postgres');
-	const dsn = readFileSync(join(ROOT, '.env'), 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
+	const envText = readFileSync(join(ROOT, '.env'), 'utf8');
+	const dsn = envText.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
 	if (!dsn) fatal(new Error('DATABASE_URL not found in root .env'), 'env');
+	// the key lives in root .env (never the shell env — see plan §secrets);
+	// verified here so even a dry-run fails fast when it's missing
+	const apiKey = envText.match(/^DEEPGRAM_API_KEY=(.+)$/m)?.[1]?.trim();
+	if (!apiKey) fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
 	const sql = postgres(dsn, { prepare: false, max: 2 });
 
 	try {
@@ -233,7 +235,7 @@ async function main() {
 			await fetchEpisode(ep, dir, opts);
 			if (opts.stage === 'fetch') return;
 			if (skipTranscribe) return;
-			const dg = await transcribeEpisode(ep, dir, show, keyterms, opts);
+			const dg = await transcribeEpisode(ep, dir, show, keyterms, apiKey, opts);
 			if (opts.stage === 'transcribe' || dg === null) return;
 			await loadEpisode(sql, ep, dg, show, lookup, opts);
 		};
@@ -276,7 +278,7 @@ async function main() {
 		if (opts.stage !== 'fetch') {
 			const chainResults = await runPool(
 				transcribeQueue.map((ep) => async () => {
-					const dg = await transcribeEpisode(ep, dir, show, keyterms, opts);
+					const dg = await transcribeEpisode(ep, dir, show, keyterms, apiKey, opts);
 					if (opts.stage !== 'transcribe' && dg !== null) {
 						await loadEpisode(sql, ep, dg, show, lookup, opts);
 					}
