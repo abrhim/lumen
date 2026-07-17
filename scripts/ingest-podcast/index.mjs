@@ -175,6 +175,11 @@ async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 		return plan.summary;
 	}
 	await sql.begin(async (tx) => {
+		// run-1 lesson: a wedged tx sat "idle in transaction" for 12min unseen.
+		// These guards make any repeat die loudly in 60s; failure isolation
+		// then moves on to the next episode.
+		await tx.unsafe("SET LOCAL statement_timeout = '60s'");
+		await tx.unsafe("SET LOCAL idle_in_transaction_session_timeout = '60s'");
 		for (const s of plan.statements) {
 			const values = s.values.map((v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v));
 			await tx.unsafe(s.text, values);

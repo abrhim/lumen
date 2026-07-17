@@ -69,27 +69,44 @@ VALUES ($1, 'content_item', $2, $3, $4::jsonb, $5, $6,
 		],
 	});
 
-	// ── transcript rows ──
-	for (const r of transcriptRows) {
+	// ── transcript rows: BATCHED multi-row inserts (run-1 lesson: 6,030
+	// per-row statements in one tx stalled 12min through the pooler; 500-row
+	// chunks = ~13 statements, 3,000 params each, far under pg's 65,535) ──
+	const CHUNK = 500;
+	for (let i = 0; i < transcriptRows.length; i += CHUNK) {
+		const chunk = transcriptRows.slice(i, i + CHUNK);
+		const values = [];
+		const tuples = chunk.map((r, j) => {
+			const b = j * 6;
+			values.push(episodeId, r.seq, r.t_start_s, r.t_end_s, r.speaker, r.text);
+			return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+		});
 		statements.push({
 			text: `INSERT INTO lumen.transcripts (episode_id, seq, t_start_s, t_end_s, speaker, text)
-VALUES ($1, $2, $3, $4, $5, $6)`,
-			values: [episodeId, r.seq, r.t_start_s, r.t_end_s, r.speaker, r.text],
+VALUES ${tuples.join(', ')}`,
+			values,
 		});
 	}
 
-	// ── DISCUSSES edges: one per chapter; mentions EMPTY until A2 ──
-	for (const chapterId of chapterIds) {
-		statements.push({
-			text: `INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, metadata, source)
-VALUES ($1, $2, 'DISCUSSES', $3, $4::jsonb, $5)`,
-			values: [
+	// ── DISCUSSES edges: one batched insert; mentions EMPTY until A2 ──
+	for (let i = 0; i < chapterIds.length; i += CHUNK) {
+		const chunk = chapterIds.slice(i, i + CHUNK);
+		const values = [];
+		const tuples = chunk.map((chapterId, j) => {
+			const b = j * 5;
+			values.push(
 				episodeId,
 				chapterId,
 				show.id,
 				{ source: 'title', confidence: 1, mentions: [] },
 				'unshaken-youtube',
-			],
+			);
+			return `($${b + 1}, $${b + 2}, 'DISCUSSES', $${b + 3}, $${b + 4}::jsonb, $${b + 5})`;
+		});
+		statements.push({
+			text: `INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, metadata, source)
+VALUES ${tuples.join(', ')}`,
+			values,
 		});
 	}
 
