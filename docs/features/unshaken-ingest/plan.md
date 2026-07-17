@@ -122,6 +122,32 @@ projections — via a reusable, staged, resumable podcast-ingestion workflow.
 - **entitlements-keys.ts + DB grant land in the same commit** — a partial
   land bricks grant-role.mjs via the unknown-key refusal [SEC-7].
 
+## Plan amendment 1 (2026-07-17, post-gate — Abram: "as async as it can be")
+
+Concurrency is runner-shell orchestration over the unchanged tested cores
+(portability invariant 1); per-episode independence (invariant 3) makes it
+safe. Model:
+
+- **Pipelined per-episode chains** (fetch → transcribe → load) with
+  PER-RESOURCE pools, not one global knob: fetch pool **2** (YouTube-throttle
+  politeness; each download also passes yt-dlp `-N 4` fragment concurrency),
+  transcribe pool **3** (held prerecorded requests = overlapped server-side
+  processing; free-tier concurrency cap VERIFIED at dry-run, configurable),
+  load **serial** (seconds each; clean logs; trivially safe upsert).
+- **Serialization points kept**: discover once, first; REL-3's probe — the
+  largest file (Numbers) COMPLETES transcription before other transcribes
+  start (fetches may proceed underneath).
+- **Failure isolation**: an episode's failure logs and continues; run exit 2
+  on partial completion (house exit-code convention).
+- **Streaming uploads**: transcribe streams the m4a from disk; never buffers
+  whole files in memory.
+- **Harness delta**: `util.mjs` gains pure `runPool(taskFns, limit)` —
+  order-preserving results `{ok, value|error}`, concurrency ≤ limit, sibling
+  isolation on failure — pinned by a new test.
+- Rationale: wall-clock ≈ max(resource-class totals) instead of their sum;
+  the future workflow system's fan-out replaces the pools without touching
+  any tested contract.
+
 ## Files touched
 
 - `packages/scripture/src/schema.ts` (edit — transcripts + search_index defs)
@@ -253,5 +279,5 @@ scripts/__tests__/ingest-podcast.test.mjs`; plan-hash = `sed '/^## Drift
 baseline/,$d' docs/features/unshaken-ingest/plan.md | shasum -a 256` (the
 baseline section excludes itself).
 
-- plan-hash: a8438004d0d0b27b25cead939f87265155dcf946aa931160e5daffa6038e962d
-- harness-hash: 916f3d216663b62dedded407c2c478530eb04204cbb15c1eb0532f9d6feb57c5
+- plan-hash: a0bd88fe73712e4b1b240b8a37713d3df71488c7269a6f778ebe7a6861b918a8
+- harness-hash: 2f50e42ae4a1d6c13d01fbcb8ce4e6a98d9a1b25937c69e7ecd75fef9ab48e71

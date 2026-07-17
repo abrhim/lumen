@@ -16,7 +16,7 @@ import {
 } from '../ingest-podcast/transcribe.mjs';
 import { buildLoadPlan } from '../ingest-podcast/load.mjs';
 import { UNSHAKEN } from '../ingest-podcast/shows/unshaken.mjs';
-import { scrubSecrets, childEnv, assertVideoId } from '../ingest-podcast/util.mjs';
+import { scrubSecrets, childEnv, assertVideoId, runPool } from '../ingest-podcast/util.mjs';
 import { isValidEpisodesArtifact } from '../ingest-podcast/discover.mjs';
 import { isValidAudioArtifact } from '../ingest-podcast/fetch.mjs';
 import { MEDIA_DDL, ROLE_GRANT_SQL } from '../migrate-media-collections.mjs';
@@ -158,6 +158,26 @@ test('SEC-3: child env is subtractive — secrets stripped, tool needs kept', ()
   assert.equal(env.PATH, '/usr/bin');
   assert.equal(env.HOME, '/Users/abram');
   assert.equal(env.TMPDIR, '/tmp');
+});
+
+test('AMEND-1: runPool caps concurrency, preserves order, isolates failures', async () => {
+  let live = 0;
+  let peak = 0;
+  const mk = (label, fail = false) => async () => {
+    live += 1;
+    peak = Math.max(peak, live);
+    await new Promise((r) => setTimeout(r, 10));
+    live -= 1;
+    if (fail) throw new Error(`${label} boom`);
+    return label;
+  };
+  const results = await runPool([mk('a'), mk('b', true), mk('c'), mk('d'), mk('e')], 2);
+  assert.equal(peak, 2, 'concurrency never exceeds the limit');
+  assert.equal(results.length, 5, 'order-preserving, one result per task');
+  assert.deepEqual(results.map((r) => r.ok), [true, false, true, true, true]);
+  assert.equal(results[0].value, 'a');
+  assert.match(results[1].error.message, /b boom/);
+  assert.equal(results[4].value, 'e', 'siblings complete despite a failure');
 });
 
 test('SEC-1/SEC-2: scrubSecrets redacts bearer tokens, DSNs, and the live key', () => {
