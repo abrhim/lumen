@@ -92,10 +92,13 @@ try {
 		coerced,
 	});
 
-	// media descriptor completeness (Phase B render contract)
+	// media descriptor completeness (Phase B render contract). COR-5 class:
+	// the driver can return jsonb as a STRING — parse-if-string before use.
 	const [ent] = await sql`
     SELECT metadata FROM lumen.entities WHERE id = ${probeEpisode}`;
-	const media = ent?.metadata?.media;
+	const meta =
+		typeof ent?.metadata === 'string' ? JSON.parse(ent.metadata) : ent?.metadata;
+	const media = meta?.media;
 	check(
 		'media_descriptor_complete',
 		media?.kind === 'youtube' && media?.video_id === '4pSrikfJ5Yw' && Number(media?.duration_s) > 0,
