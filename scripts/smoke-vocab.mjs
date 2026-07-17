@@ -8,6 +8,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
+// a malformed DSN must never print raw (CSEC-1, house rule)
+import { scrub } from './migrate-canon-spine.mjs';
 import {
   ENTITY_TYPES,
   PG_REL_TYPES,
@@ -27,7 +29,7 @@ try {
   const postgres = require('postgres');
   sql = postgres(url, { prepare: false, max: 1 });
 } catch (err) {
-  console.error(`FATAL: ${err.message}`);
+  console.error('FATAL:', scrub(err.message));
   process.exit(1);
 }
 
@@ -56,7 +58,7 @@ try {
   check('collections.tier', tiers, COLLECTION_TIERS);
   check('collections.category', cats, COLLECTION_CATEGORIES);
 } catch (err) {
-  console.error(`FATAL: query failed: ${err.message}`);
+  console.error('FATAL: query failed:', scrub(err.message));
   await sql.end();
   process.exit(1);
 }

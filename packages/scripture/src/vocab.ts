@@ -34,12 +34,10 @@ export const ENTITY_TYPES = [
 	"strongs_word",
 	"symbol",
 	"volume",
-	// planned — media collections (writer: unshaken-ingest A1/A2)
-	"content_source",
+	// planned — media collections (writer: unshaken-ingest A1; content_segment
+	// is the documented promotion door for segments, per the design doc)
 	"content_item",
 	"content_segment",
-	// planned — CFM mapping (no writer yet; declared for grant-role-era tooling)
-	"cfm_week",
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
