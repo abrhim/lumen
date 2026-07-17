@@ -10,6 +10,8 @@ import {
 	uniqueIndex,
 	customType,
 	uuid,
+	numeric,
+	primaryKey,
 } from "drizzle-orm/pg-core";
 
 const tsvector = customType<{ data: string }>({
@@ -123,5 +125,49 @@ export const edges = lumen.table(
 		index("idx_edges_rel_type").on(t.relType),
 		index("idx_edges_from_rel").on(t.fromId, t.relType),
 		index("idx_edges_collection").on(t.collectionId),
+	],
+);
+
+// ─── Transcripts (media substrate — media-collections §rules-2) ──
+// DDL applied by scripts/migrate-media-collections.mjs; search_vector is a
+// GENERATED column there (drizzle def is read-shape only). NOTE (COR-5):
+// postgres.js returns numeric as STRING — Number()-coerce t_start_s/t_end_s
+// at every read site.
+
+export const transcripts = lumen.table(
+	"transcripts",
+	{
+		episodeId: text("episode_id")
+			.notNull()
+			.references(() => entities.id, { onDelete: "cascade" }),
+		seq: integer("seq").notNull(),
+		tStartS: numeric("t_start_s", { precision: 9, scale: 3 }).notNull(),
+		tEndS: numeric("t_end_s", { precision: 9, scale: 3 }),
+		speaker: text("speaker"),
+		text: text("text").notNull(),
+		searchVector: tsvector("search_vector"),
+	},
+	(t) => [
+		primaryKey({ columns: [t.episodeId, t.seq] }),
+		index("idx_transcripts_search").using("gin", t.searchVector),
+	],
+);
+
+// ─── Search index (per-collection weighted projections — §rules-6) ──
+
+export const searchIndex = lumen.table(
+	"search_index",
+	{
+		kind: text("kind").notNull(),
+		refId: text("ref_id").notNull(),
+		collectionId: text("collection_id").references(() => collections.id),
+		title: text("title").notNull(),
+		tsv: tsvector("tsv").notNull(),
+		payload: jsonb("payload").default({}).notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.kind, t.refId] }),
+		index("idx_search_tsv").using("gin", t.tsv),
+		index("idx_search_coll").on(t.collectionId),
 	],
 );

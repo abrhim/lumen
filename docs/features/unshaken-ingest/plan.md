@@ -148,6 +148,16 @@ safe. Model:
   the future workflow system's fan-out replaces the pools without touching
   any tested contract.
 
+## Plan amendment 2 (2026-07-17, step 8 — harness-revision, no weakening)
+
+First implementation run: 41/44 green; the 2 failures were a HARNESS
+CONFLICT, not code bugs — the H8 and edges tests located their statements by
+first-match-any (`/lumen\.(edges|search_index)/`), which now matches the
+DELETE pass that COR-1's incorporated fix itself mandates. Revision: both
+finders target `INSERT INTO …` explicitly. Assertions unchanged; finders
+strictly more precise. Panel re-trigger over a two-regex finder fix judged
+disproportionate — waived, logged for retro per the conflict protocol.
+
 ## Files touched
 
 - `packages/scripture/src/schema.ts` (edit — transcripts + search_index defs)
@@ -279,5 +289,5 @@ scripts/__tests__/ingest-podcast.test.mjs`; plan-hash = `sed '/^## Drift
 baseline/,$d' docs/features/unshaken-ingest/plan.md | shasum -a 256` (the
 baseline section excludes itself).
 
-- plan-hash: a0bd88fe73712e4b1b240b8a37713d3df71488c7269a6f778ebe7a6861b918a8
-- harness-hash: 2f50e42ae4a1d6c13d01fbcb8ce4e6a98d9a1b25937c69e7ecd75fef9ab48e71
+- plan-hash: 1446d4656eabd3347ed8077d4cd9c764df65a18ccc85a6c7cf037df9cc775dbe
+- harness-hash: ba6466eca33288d33aa87645aa39175631e8742d1db78803e029e7ca0b4e8731

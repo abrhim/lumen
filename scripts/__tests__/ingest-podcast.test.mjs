@@ -324,7 +324,9 @@ test('REL-8: collection row upserts public=false until Phase B flips it delibera
 
 test('H8: search projection weights — title=A, subtitle=B, block=C', () => {
   const plan = buildLoadPlan(episodeFixture, [], ['2-kgs-14'], UNSHAKEN);
-  const search = plan.statements.find((s) => /lumen\.search_index/i.test(s.text));
+  // harness-revision 2026-07-17: target the INSERT — first-match-any collided
+  // with the COR-1-mandated DELETE pass (see plan amendment 2)
+  const search = plan.statements.find((s) => /INSERT INTO lumen\.search_index/i.test(s.text));
   assert.ok(search, 'search projection row required');
   assert.ok(/setweight\(.*'A'\)/.test(search.text));
   assert.ok(/setweight\(.*'B'\)/.test(search.text));
@@ -335,7 +337,8 @@ test('H8: search projection weights — title=A, subtitle=B, block=C', () => {
 
 test('edges: DISCUSSES carries title provenance and confidence 1 with EMPTY mentions', () => {
   const plan = buildLoadPlan(episodeFixture, [], ['2-kgs-14', '2-kgs-15'], UNSHAKEN);
-  const edge = plan.statements.find((s) => /lumen\.edges/i.test(s.text));
+  // harness-revision 2026-07-17: target the INSERT (same collision as H8)
+  const edge = plan.statements.find((s) => /INSERT INTO lumen\.edges/i.test(s.text));
   assert.ok(edge);
   const meta = JSON.stringify(edge.values);
   assert.ok(meta.includes('"source":"title"'));
