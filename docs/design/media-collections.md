@@ -202,7 +202,31 @@ re-costs). Stage 4's eval is designed against A1's REAL transcripts
 - **Later, in no order:** universal search UI · graph membership (episodes +
   art; absorbs parked art-neo4j) · transcript quality upgrade (Whisper) ·
   more shows (config reuse) · collections user-half (toggles/cookie — spine
-  fast-follow, now with the AppMenu as its natural home).
+  fast-follow, now with the AppMenu as its natural home) · **workflow-system
+  hosting** (below).
+
+## Portability invariants (decided 2026-07-17: local now, AI workflow system later)
+
+The pipeline runs locally today and moves to an orchestrated/AI workflow
+system later (e.g. weekly scheduled ingestion of the new episode; A2's
+extract stage is an LLM step by nature). Implementation MUST preserve what
+makes that move a re-shelling, not a rewrite:
+
+1. Stage logic stays in pure, DI'd functions; process/fs/network calls only
+   at the edges (the harness already enforces this shape).
+2. Artifacts are the ONLY inter-stage coupling, addressed by
+   (show, videoId, stage); filesystem access goes through per-stage helpers
+   so disk can become R2/S3 without touching logic.
+3. Per-episode independence: own tx, own artifacts, idempotent delete-first
+   load, skip-if-valid resume — an orchestrator gets retries and per-episode
+   fan-out for free. The only shared write (collection upsert) stays
+   conflict-safe.
+4. Secrets via env only; JSON-line logs; exit codes 0/1/2; zero interactive
+   prompts; no cwd assumptions (ROOT-relative paths).
+5. Known frictions, accepted: yt-dlp is blocked from datacenter IPs — the
+   staged design permits SPLIT execution (fetch local, transcribe→load
+   hosted); hosted fetch would need a yt-dlp+ffmpeg container. Neither is
+   built until the workflow-hosting feature runs.
 - **Abram:** `DEEPGRAM_API_KEY` into repo-root `.env` before A1 stage 3.
 
 Prototype (`proto/podcast-ui`, commits 8e46c4f + 9c354b2) holds the UI
