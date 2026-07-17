@@ -16,7 +16,17 @@ import {
 } from '../ingest-podcast/transcribe.mjs';
 import { buildLoadPlan } from '../ingest-podcast/load.mjs';
 import { UNSHAKEN } from '../ingest-podcast/shows/unshaken.mjs';
-import { scrubSecrets, childEnv, assertVideoId, runPool } from '../ingest-podcast/util.mjs';
+import {
+  scrubSecrets,
+  childEnv,
+  assertVideoId,
+  runPool,
+  makeScrubber,
+  writeArtifactAtomic,
+  makeRunLogPath,
+  summarizeResults,
+} from '../ingest-podcast/util.mjs';
+import { parseArgs, checkEpisodeArg, STAGES } from '../ingest-podcast/cli.mjs';
 import { isValidEpisodesArtifact } from '../ingest-podcast/discover.mjs';
 import { isValidAudioArtifact } from '../ingest-podcast/fetch.mjs';
 import { MEDIA_DDL, ROLE_GRANT_SQL } from '../migrate-media-collections.mjs';
@@ -343,6 +353,80 @@ test('edges: DISCUSSES carries title provenance and confidence 1 with EMPTY ment
   const meta = JSON.stringify(edge.values);
   assert.ok(meta.includes('"source":"title"'));
   assert.ok(meta.includes('"mentions":[]'), 'mentions array reserved for A2, present and empty');
+});
+
+// ── step-12 repro tests (bugs.md B1-B7) ─────────────────────────────────────
+
+test('B2: ON CONFLICT update must NOT touch public — Phase B flip survives re-runs', () => {
+  const plan = buildLoadPlan(episodeFixture, [], [], UNSHAKEN);
+  const coll = plan.statements.find((s) => /lumen\.collections/i.test(s.text));
+  const setClause = coll.text.match(/DO UPDATE SET([\s\S]*)/i)[1];
+  assert.ok(!/public/i.test(setClause), 're-run must not revert public');
+  assert.ok(coll.values.includes(false), 'first ingest still seeds false');
+});
+
+test('B3: search block-label — whole-book renders book name, not "Book 1"', () => {
+  const whole = buildLoadPlan(
+    { ...episodeFixture, spans: [{ book: 'Joshua', start: 1, end: null }] },
+    [], ['josh-1'], UNSHAKEN,
+  );
+  const label = (p) =>
+    p.statements.find((s) => /INSERT INTO lumen\.search_index/i.test(s.text)).values[4];
+  assert.equal(label(whole), 'Joshua');
+  const range = buildLoadPlan(episodeFixture, [], ['2-kgs-14'], UNSHAKEN);
+  assert.equal(label(range), '2 Kings 14-25');
+  const single = buildLoadPlan(
+    { ...episodeFixture, spans: [{ book: '1 Samuel', start: 17, end: 17 }] },
+    [], ['1-sam-17'], UNSHAKEN,
+  );
+  assert.equal(label(single), '1 Samuel 17');
+});
+
+test('B4: makeScrubber bakes the live key in — no env dependency', () => {
+  const scrub = makeScrubber('sekr3t');
+  assert.ok(!scrub('boom sekr3t in body').includes('sekr3t'));
+  assert.ok(!scrub('Token sekr3t').includes('sekr3t'));
+});
+
+test('B5: artifact writes are tmp-then-rename atomic', () => {
+  const calls = [];
+  writeArtifactAtomic('/x/ep.deepgram.json', '{"a":1}', {
+    writeFileSync: (p, d) => calls.push(['write', p, d.length]),
+    renameSync: (a, b) => calls.push(['rename', a, b]),
+  });
+  assert.deepEqual(calls, [
+    ['write', '/x/ep.deepgram.json.tmp', 7],
+    ['rename', '/x/ep.deepgram.json.tmp', '/x/ep.deepgram.json'],
+  ]);
+});
+
+test('B1: run log path is per-invocation unique and runner-owned', () => {
+  const a = makeRunLogPath('/d', { now: 1721234567890, pid: 111 });
+  const b = makeRunLogPath('/d', { now: 1721234567890, pid: 222 });
+  assert.notEqual(a, b);
+  assert.ok(a.startsWith('/d/run-') && a.endsWith('.log'));
+});
+
+test('B7: unknown --stage rejected; valid stages whitelisted', () => {
+  assert.throws(() => parseArgs(['--stage=laod']), /stage/i);
+  assert.deepEqual([...STAGES], ['discover', 'fetch', 'transcribe', 'load']);
+  assert.equal(parseArgs(['--stage=load']).stage, 'load');
+});
+
+test('B7: --episode outside the manifest fails with the id in the message', () => {
+  assert.throws(
+    () => checkEpisodeArg('AAAAAAAAAAA', [{ id: 'bbbbbbbbbbb' }]),
+    /AAAAAAAAAAA/,
+  );
+});
+
+test('B9: stage summaries aggregate ok/failed from pool results', () => {
+  const s = summarizeResults([
+    { ok: true, value: 'a' },
+    { ok: false, error: new Error('x') },
+    { ok: true, value: 'c' },
+  ]);
+  assert.deepEqual(s, { ok: 2, failed: 1 });
 });
 
 // ── H6: migration safety ────────────────────────────────────────────────────

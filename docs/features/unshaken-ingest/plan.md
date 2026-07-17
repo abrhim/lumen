@@ -158,6 +158,32 @@ finders target `INSERT INTO …` explicitly. Assertions unchanged; finders
 strictly more precise. Panel re-trigger over a two-regex finder fix judged
 disproportionate — waived, logged for retro per the conflict protocol.
 
+## Plan amendment 3 (2026-07-17, step 13 — drift honesty + fix-round deltas)
+
+- **Concurrency, as actually shipped (supersedes Amendment 1's prose):**
+  rest FETCHES run concurrently with the probe chain (B8); the REL-3 gate
+  serializes only TRANSCRIPTION behind the probe; fetch→transcribe remains a
+  phase boundary (the CPIPE-2 streaming rewrite is REJECTED — zero
+  steady-state payoff at 1 episode/week; true pipelining arrives free with
+  workflow-hosting fan-out); loads run inside the chain pool, ≤pool
+  concurrent, NOT serial (safe: row-locked upsert, 60s guards, idempotent).
+- **Archive semantics (N1 adjudication):** the collection GROWS — the
+  10-episode window scopes THIS ingest, never a retention policy. No pruning.
+  Retitle/delete reconciliation belongs to workflow-hosting.
+- **Transcribe cache is deliberately parameter-blind (CCOR-5):** a valid
+  cached transcript is reused across keyterm/model changes — re-costing the
+  batch to chase parameter drift is the worse trade. Force with artifact
+  deletion.
+- **Runner invocation contract (B1):** the runner OWNS a per-invocation log
+  (`run-<ts>-<pid>.log`); invoke bare — never through tee (exit-code masking
+  was run-1's silent-failure vector).
+- **Artifacts:** `<id>.load.json` line DROPPED (never consumed; dry-run logs
+  the summary). `episodes.json` now genuinely committed (B6; layered
+  gitignore negation).
+- **Harness delta:** +8 repro tests (B1-B5, B7, B9) + cli.mjs contract; B8
+  repro-deferred (structural — verify via next backfill's mtime overlap);
+  B10 fix-only (low, single-parse-site by construction).
+
 ## Files touched
 
 - `packages/scripture/src/schema.ts` (edit — transcripts + search_index defs)
@@ -289,5 +315,5 @@ scripts/__tests__/ingest-podcast.test.mjs`; plan-hash = `sed '/^## Drift
 baseline/,$d' docs/features/unshaken-ingest/plan.md | shasum -a 256` (the
 baseline section excludes itself).
 
-- plan-hash: 1446d4656eabd3347ed8077d4cd9c764df65a18ccc85a6c7cf037df9cc775dbe
-- harness-hash: ba6466eca33288d33aa87645aa39175631e8742d1db78803e029e7ca0b4e8731
+- plan-hash: fd2bc6fe5bfa695cf16510db02451d3209f31276d94d36473da05c09da1aa29f
+- harness-hash: 41c050c78f2861025ebfa77a1e949179e13fc62a4a614ca03b9c86b9804b75ac

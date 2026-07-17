@@ -2,18 +2,41 @@
 //   node --import tsx scripts/ingest-podcast/index.mjs --show=unshaken
 //     [--stage=discover|fetch|transcribe|load] [--episode=<videoId>]
 //     [--dry-run] [--refresh]
-// Default: all stages, pipelined per-episode chains with per-resource pools
-// (Amendment 1). Skip-if-VALID resumability (H10). Exit 0 ok, 1 fatal,
-// 2 partial (some episodes failed — house convention).
+// Concurrency (Amendment 1 + B8): rest FETCHES run concurrently with the
+// probe chain; the probe must COMPLETE transcription before other
+// transcriptions start (REL-3 gate); loads run inside the chain pool (≤pool
+// concurrent — documented in plan amendment 3). Stage-scoped runs never
+// cascade into earlier paid stages (B7): missing prerequisites fail with an
+// actionable error. Skip-if-VALID resumability (H10). The runner OWNS a
+// per-invocation log file (B1) — invoke it bare, no tee. Exit 0 ok, 1 fatal,
+// 2 partial.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+	createReadStream,
+	createWriteStream,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
 import { UNSHAKEN } from './shows/unshaken.mjs';
-import { scrubSecrets, childEnv, assertVideoId, runPool } from './util.mjs';
+import {
+	scrubSecrets,
+	childEnv,
+	runPool,
+	makeScrubber,
+	writeArtifactAtomic,
+	makeRunLogPath,
+	summarizeResults,
+} from './util.mjs';
+import { parseArgs, checkEpisodeArg } from './cli.mjs';
 import { filterEpisodes, isValidEpisodesArtifact, enrichEpisode } from './discover.mjs';
 import { bestAudioArgs, assertDownloadedId, isValidAudioArtifact } from './fetch.mjs';
 import { buildDeepgramRequest, validateUtterances, utterancesToRows } from './transcribe.mjs';
@@ -24,25 +47,23 @@ const pExecFile = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SHOWS = { unshaken: UNSHAKEN };
 
+// B1/B9: runner-owned sink + timestamps on every event.
+let logSink = null;
 function log(event, data = {}) {
-	console.log(JSON.stringify({ event, ...data }));
+	const line = JSON.stringify({ event, at: Date.now(), ...data });
+	console.log(line);
+	logSink?.write(`${line}\n`);
 }
-function fatal(err, context) {
-	console.error(JSON.stringify({ event: 'fatal', context, error: scrubSecrets(err?.message ?? String(err)) }));
+function fatal(err, context, scrub = scrubSecrets) {
+	const line = JSON.stringify({
+		event: 'fatal',
+		at: Date.now(),
+		context,
+		error: scrub(err?.message ?? String(err)),
+	});
+	console.error(line);
+	logSink?.write(`${line}\n`);
 	process.exit(1);
-}
-
-function args() {
-	const out = { stage: null, episode: null, dryRun: false, refresh: false, show: 'unshaken' };
-	for (const a of process.argv.slice(2)) {
-		if (a === '--dry-run') out.dryRun = true;
-		else if (a === '--refresh') out.refresh = true;
-		else if (a.startsWith('--stage=')) out.stage = a.slice(8);
-		else if (a.startsWith('--episode=')) out.episode = assertVideoId(a.slice(10));
-		else if (a.startsWith('--show=')) out.show = a.slice(7);
-		else fatal(new Error(`unknown flag ${a}`), 'args');
-	}
-	return out;
 }
 
 // ── stage: discover ─────────────────────────────────────────────────────────
@@ -91,8 +112,15 @@ const stat = (p) => {
 	}
 };
 
+function audioPathFor(ep, dir) {
+	return join(dir, `${ep.id}.m4a`);
+}
+function transcriptPathFor(ep, dir) {
+	return join(dir, `${ep.id}.deepgram.json`);
+}
+
 async function fetchEpisode(ep, dir, { dryRun }) {
-	const out = join(dir, `${ep.id}.m4a`);
+	const out = audioPathFor(ep, dir);
 	if (isValidAudioArtifact(out, stat)) {
 		log('fetch_skip', { episode: ep.id, reason: 'valid_artifact' });
 		return out;
@@ -114,9 +142,9 @@ async function fetchEpisode(ep, dir, { dryRun }) {
 
 // ── stage: transcribe (one episode) ─────────────────────────────────────────
 
-async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }) {
-	const artifact = join(dir, `${ep.id}.deepgram.json`);
-	const audioPath = join(dir, `${ep.id}.m4a`);
+async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }, scrub) {
+	const artifact = transcriptPathFor(ep, dir);
+	const audioPath = audioPathFor(ep, dir);
 	if (existsSync(artifact)) {
 		try {
 			const cached = JSON.parse(readFileSync(artifact, 'utf8'));
@@ -124,7 +152,7 @@ async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }) {
 			log('transcribe_skip', { episode: ep.id, reason: 'valid_artifact' });
 			return cached;
 		} catch (err) {
-			log('transcribe_stale', { episode: ep.id, reason: scrubSecrets(err.message) });
+			log('transcribe_stale', { episode: ep.id, reason: scrub(err.message) });
 		}
 	}
 	const req = buildDeepgramRequest({ apiKey, keyterms });
@@ -150,11 +178,12 @@ async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }) {
 	});
 	if (!res.ok) {
 		const body = await res.text();
-		throw new Error(`Deepgram ${res.status}: ${scrubSecrets(body.slice(0, 300))}`);
+		throw new Error(`Deepgram ${res.status}: ${scrub(body.slice(0, 300))}`);
 	}
 	const dg = await res.json();
 	validateUtterances(dg, { durationS: ep.durationS, tailToleranceS: show.tailToleranceS });
-	writeFileSync(artifact, JSON.stringify(dg));
+	// B5: atomic — a concurrent reader/runner never sees a truncated artifact
+	writeArtifactAtomic(artifact, JSON.stringify(dg), { writeFileSync, renameSync });
 	const billed = dg?.metadata?.duration ?? null;
 	log('transcribe_done', { episode: ep.id, utterances: dg.results.utterances.length, billed_seconds: billed });
 	return dg;
@@ -163,11 +192,13 @@ async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }) {
 // ── stage: load (one episode) ───────────────────────────────────────────────
 
 async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
+	// B10: ONE parse at load time feeds anchors AND stored metadata/search —
+	// discover-time fields are never trusted here.
 	const parsed = parseTitle(ep.title);
 	const chapterIds = anchorsForBlock(parsed.spans, lookup);
 	const rows = utterancesToRows(dg, `${show.id}-${ep.id}`);
 	const plan = buildLoadPlan(
-		{ videoId: ep.id, title: ep.title, subtitle: ep.subtitle, spans: ep.spans, uploadDate: ep.uploadDate, durationS: ep.durationS },
+		{ videoId: ep.id, title: ep.title, subtitle: parsed.subtitle, spans: parsed.spans, uploadDate: ep.uploadDate, durationS: ep.durationS },
 		rows, chapterIds, show,
 	);
 	if (dryRun) {
@@ -175,9 +206,6 @@ async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 		return plan.summary;
 	}
 	await sql.begin(async (tx) => {
-		// run-1 lesson: a wedged tx sat "idle in transaction" for 12min unseen.
-		// These guards make any repeat die loudly in 60s; failure isolation
-		// then moves on to the next episode.
 		await tx.unsafe("SET LOCAL statement_timeout = '60s'");
 		await tx.unsafe("SET LOCAL idle_in_transaction_session_timeout = '60s'");
 		for (const s of plan.statements) {
@@ -189,40 +217,67 @@ async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 	return plan.summary;
 }
 
+// ── B7: stage prerequisites — scoped runs never cascade into paid stages ────
+
+function assertStagePrereqs(stage, episodes, dir) {
+	if (stage === 'transcribe') {
+		const missing = episodes.filter((ep) => !isValidAudioArtifact(audioPathFor(ep, dir), stat));
+		if (missing.length) {
+			throw new Error(`--stage=transcribe: ${missing.length} episode(s) missing audio (run --stage=fetch first): ${missing.map((e) => e.id).join(', ')}`);
+		}
+	}
+	if (stage === 'load') {
+		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir)));
+		if (missing.length) {
+			throw new Error(`--stage=load: ${missing.length} episode(s) missing transcripts (run --stage=transcribe first): ${missing.map((e) => e.id).join(', ')}`);
+		}
+	}
+}
+
 // ── main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-	const opts = args();
+	let opts;
+	try {
+		opts = parseArgs(process.argv.slice(2));
+	} catch (err) {
+		fatal(err, 'args');
+	}
 	const show = SHOWS[opts.show];
 	if (!show) fatal(new Error(`unknown show ${opts.show}`), 'args');
 	const dir = join(ROOT, 'data', 'podcasts', show.id);
 	mkdirSync(dir, { recursive: true });
+	// B1: runner-owned per-invocation log — no tee, no shared file
+	const logPath = makeRunLogPath(dir, { now: Date.now(), pid: process.pid });
+	logSink = createWriteStream(logPath, { flags: 'a' });
+	log('run_start', { log: logPath, argv: process.argv.slice(2) });
 
 	const require = createRequire(import.meta.url);
 	const postgres = require('postgres');
 	const envText = readFileSync(join(ROOT, '.env'), 'utf8');
 	const dsn = envText.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
 	if (!dsn) fatal(new Error('DATABASE_URL not found in root .env'), 'env');
-	// the key lives in root .env (never the shell env — see plan §secrets);
-	// verified here so even a dry-run fails fast when it's missing
 	const apiKey = envText.match(/^DEEPGRAM_API_KEY=(.+)$/m)?.[1]?.trim();
 	if (!apiKey) fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
+	// B4: every in-run scrub carries the live key explicitly
+	const scrub = makeScrubber(apiKey);
 	const sql = postgres(dsn, { prepare: false, max: 2 });
 
 	try {
-		// discover (serial, once)
 		let episodes = await discover(show, dir, opts);
-		if (opts.episode) episodes = episodes.filter((e) => e.id === opts.episode);
+		if (opts.episode) {
+			checkEpisodeArg(opts.episode, episodes);
+			episodes = episodes.filter((e) => e.id === opts.episode);
+		}
 		if (opts.stage === 'discover') return finish(0);
+		assertStagePrereqs(opts.stage, episodes, dir);
 
-		// live lookups (COR-7): books + chapter counts from the spine
 		const bookRows = await sql`SELECT id, name FROM lumen.books`;
 		const chapterRows = await sql`SELECT book_id, count(*)::int AS n FROM lumen.chapters GROUP BY book_id`;
 		const lookup = {
 			bookIdByName: Object.fromEntries(bookRows.map((b) => [b.name, b.id])),
 			chapterCount: Object.fromEntries(chapterRows.map((c) => [c.book_id, Number(c.n)])),
 		};
-		// keyterm pool (Q5): top window persons/places by edge count
 		const keytermRows = await sql`
       SELECT e.name FROM lumen.entities e
       JOIN lumen.edges ed ON ed.from_id = e.id OR ed.to_id = e.id
@@ -231,84 +286,90 @@ async function main() {
 		const keyterms = keytermRows.map((r) => r.name);
 		log('keyterms_ready', { count: keyterms.length });
 
-		// REL-3: largest episode transcribes FIRST as the upload probe
 		const byDuration = [...episodes].sort((a, b) => (b.durationS ?? 0) - (a.durationS ?? 0));
 		const probe = byDuration[0];
-
+		const rest = episodes.filter((e) => e.id !== probe.id);
 		const results = { ok: [], failed: [] };
-		const runChain = async (ep, { skipTranscribe = false } = {}) => {
-			await fetchEpisode(ep, dir, opts);
-			if (opts.stage === 'fetch') return;
-			if (skipTranscribe) return;
-			const dg = await transcribeEpisode(ep, dir, show, keyterms, apiKey, opts);
+		let billedSum = 0;
+
+		const transcribeAndLoad = async (ep) => {
+			const dg = await transcribeEpisode(ep, dir, show, keyterms, apiKey, opts, scrub);
+			if (dg?.metadata?.duration) billedSum += Number(dg.metadata.duration);
 			if (opts.stage === 'transcribe' || dg === null) return;
 			await loadEpisode(sql, ep, dg, show, lookup, opts);
 		};
 
-		// probe chain completes its transcription before the rest transcribe;
-		// remaining fetches may proceed underneath (fetch pool below).
+		// B8: rest FETCHES start immediately, concurrent with the probe chain;
+		// the REL-3 gate only serializes TRANSCRIPTION behind the probe.
 		log('probe_start', { episode: probe.id, duration_s: probe.durationS });
-		try {
-			await runChain(probe);
-			results.ok.push(probe.id);
-		} catch (err) {
-			results.failed.push(probe.id);
-			log('episode_failed', { episode: probe.id, error: scrubSecrets(err.message) });
-			if (!opts.dryRun) {
-				log('probe_failed_abort', { note: 'REL-3: upload mechanics unproven; aborting batch' });
-				return finish(2);
-			}
-		}
-
-		const rest = episodes.filter((e) => e.id !== probe.id);
-		// pipelined: fetch pool feeds a transcribe pool; loads run serially
-		// inside each chain (fast, and pool caps make ordering deterministic-ish)
-		const fetchPool = show.pools.fetch;
-		const transcribePool = show.pools.transcribe;
-		const transcribeQueue = [];
-		const fetchResults = await runPool(
+		const restFetches = runPool(
 			rest.map((ep) => async () => {
 				await fetchEpisode(ep, dir, opts);
-				if (opts.stage !== 'fetch') transcribeQueue.push(ep);
-				return ep.id;
+				return ep;
 			}),
-			fetchPool,
+			show.pools.fetch,
 		);
+
+		let probeFailed = false;
+		try {
+			await fetchEpisode(probe, dir, opts);
+			if (opts.stage !== 'fetch') await transcribeAndLoad(probe);
+			results.ok.push(probe.id);
+		} catch (err) {
+			probeFailed = true;
+			results.failed.push(probe.id);
+			log('episode_failed', { episode: probe.id, error: scrub(err.message) });
+		}
+
+		const fetchResults = await restFetches;
+		const fetched = [];
 		for (const [i, r] of fetchResults.entries()) {
-			if (!r.ok) {
+			if (r.ok) fetched.push(r.value);
+			else {
 				results.failed.push(rest[i].id);
-				log('episode_failed', { episode: rest[i].id, stage: 'fetch', error: scrubSecrets(r.error.message) });
+				log('episode_failed', { episode: rest[i].id, stage: 'fetch', error: scrub(r.error.message) });
 			}
 		}
+		log('fetch_stage_done', { ...summarizeResults(fetchResults), probe_included: !probeFailed });
+
+		if (probeFailed && !opts.dryRun && opts.stage !== 'fetch') {
+			log('probe_failed_abort', { note: 'REL-3: upload mechanics unproven; aborting before batch transcription' });
+			return finish(2);
+		}
+
 		if (opts.stage !== 'fetch') {
 			const chainResults = await runPool(
-				transcribeQueue.map((ep) => async () => {
-					const dg = await transcribeEpisode(ep, dir, show, keyterms, apiKey, opts);
-					if (opts.stage !== 'transcribe' && dg !== null) {
-						await loadEpisode(sql, ep, dg, show, lookup, opts);
-					}
+				fetched.map((ep) => async () => {
+					await transcribeAndLoad(ep);
 					return ep.id;
 				}),
-				transcribePool,
+				show.pools.transcribe,
 			);
 			for (const [i, r] of chainResults.entries()) {
 				if (r.ok) results.ok.push(r.value);
 				else {
-					results.failed.push(transcribeQueue[i].id);
-					log('episode_failed', { episode: transcribeQueue[i].id, error: scrubSecrets(r.error.message) });
+					results.failed.push(fetched[i].id);
+					log('episode_failed', { episode: fetched[i].id, error: scrub(r.error.message) });
 				}
 			}
+			log('transcribe_load_stage_done', {
+				...summarizeResults(chainResults),
+				billed_seconds_sum: Math.round(billedSum * 1000) / 1000,
+			});
 		}
 
 		log('run_done', { ok: results.ok.length, failed: results.failed.length, dry_run: opts.dryRun });
 		return finish(results.failed.length > 0 ? 2 : 0);
 	} catch (err) {
-		console.error(JSON.stringify({ event: 'fatal', error: scrubSecrets(err?.message ?? String(err)) }));
+		const line = JSON.stringify({ event: 'fatal', at: Date.now(), error: scrub(err?.message ?? String(err)) });
+		console.error(line);
+		logSink?.write(`${line}\n`);
 		return finish(1);
 	}
 
 	async function finish(code) {
 		await sql.end();
+		await new Promise((r) => logSink.end(r));
 		process.exit(code);
 	}
 }

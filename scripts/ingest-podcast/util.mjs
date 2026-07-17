@@ -34,6 +34,33 @@ export function assertVideoId(id) {
 	return id;
 }
 
+/** B4: scrubber with the live key baked in — no env-var dependency (the
+ * process.env fallback in scrubSecrets is belt-and-suspenders only). */
+export function makeScrubber(apiKey) {
+	return (message) => scrubSecrets(message, { extraSecrets: apiKey ? [apiKey] : [] });
+}
+
+/** B5: crash/concurrency-safe artifact write — tmp then atomic rename. */
+export function writeArtifactAtomic(path, data, { writeFileSync, renameSync }) {
+	const tmp = `${path}.tmp`;
+	writeFileSync(tmp, data);
+	renameSync(tmp, path);
+}
+
+/** B1: runner-owned, per-invocation-unique log path (kills the shared-log
+ * collision and the tee exit-code masking in one move). */
+export function makeRunLogPath(dir, { now, pid }) {
+	return `${dir}/run-${now}-${pid}.log`;
+}
+
+/** B9: stage roll-up from pool results. */
+export function summarizeResults(results) {
+	let ok = 0;
+	let failed = 0;
+	for (const r of results) (r.ok ? (ok += 1) : (failed += 1));
+	return { ok, failed };
+}
+
 /** Amendment 1: bounded concurrency with order-preserving results and
  * sibling isolation — results[i] is {ok:true,value} or {ok:false,error}. */
 export async function runPool(taskFns, limit) {

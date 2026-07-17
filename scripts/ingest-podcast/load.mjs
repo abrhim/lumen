@@ -5,6 +5,18 @@
 // Order contract (H4): every DELETE precedes the first INSERT; the explicit
 // edges delete exists because lumen.edges has no PK/cascade (COR-1).
 
+/** B3: search block-label — whole-book spans render the BOOK NAME (never
+ * "Joshua 1"); singles "Book N"; ranges "Book A-B". */
+function blockLabel(spans) {
+	return spans
+		.map((s) => {
+			if (s.end === null || s.end === undefined) return s.book;
+			if (s.end === s.start) return `${s.book} ${s.start}`;
+			return `${s.book} ${s.start}-${s.end}`;
+		})
+		.join(' · ');
+}
+
 /** episode: {videoId,title,subtitle,spans,uploadDate,durationS}
  *  transcriptRows: utterancesToRows output · chapterIds: anchorsForBlock
  *  show: shows/*.mjs config. */
@@ -26,13 +38,15 @@ export function buildLoadPlan(episode, transcriptRows, chapterIds, show) {
 		values: [episodeId],
 	});
 
-	// ── collection upsert (public=false until Phase B flips it — REL-8) ──
+	// ── collection upsert. B2: INSERT seeds public=false on FIRST ingest;
+	// ON CONFLICT deliberately never touches public — Phase B's flip to true
+	// must survive every weekly re-run. ──
 	statements.push({
 		text: `INSERT INTO lumen.collections (id, name, description, tier, category, provenance, license, storage, public)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
   tier = EXCLUDED.tier, category = EXCLUDED.category, provenance = EXCLUDED.provenance,
-  license = EXCLUDED.license, storage = EXCLUDED.storage, public = EXCLUDED.public`,
+  license = EXCLUDED.license, storage = EXCLUDED.storage`,
 		values: [
 			show.id,
 			show.collection.name,
@@ -123,7 +137,7 @@ VALUES ('episode', $1, $2, $3,
 			show.id,
 			episode.title,
 			episode.subtitle,
-			episode.spans.map((s) => `${s.book} ${s.start}${s.end && s.end !== s.start ? `-${s.end}` : ''}`).join(' · '),
+			blockLabel(episode.spans),
 			{ episode: episodeId },
 		],
 	});
