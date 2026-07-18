@@ -56,7 +56,9 @@ async function main() {
 				let inner = r.raw;
 				let layers = 0;
 				let parseFailed = false;
-				while (typeof inner === 'string' && layers < 6) {
+				// R-load-paths-1: cap must equal the commit loop's max passes (5),
+				// or DRY_RUN green-lights a row the commit cannot unwrap
+				while (typeof inner === 'string' && layers < 5) {
 					try {
 						inner = JSON.parse(inner);
 					} catch {

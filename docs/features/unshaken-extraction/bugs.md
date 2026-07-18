@@ -93,6 +93,21 @@ Low (cheap + material):
   Naamans, Samuels) — recall improvement, design-doc improvement list.
 - Enrichment review UI consumes the prune/verdict data (design doc §B).
 
+## Resolution (fix-verification, 2026-07-18)
+
+All 30 FIX-bucket items closed. Fix-verification (workflow, 5 clusters;
+streak now 3-for-3 on catching residuals over green suites): 25/25 fixes
+verified — 21 in the first pass, F9/F10/F28/F29 in the deferred load-paths
+re-run (first attempt died on session limit) — plus **18 residuals found
+and closed** (R-runner-gates-1..2, R-extract-lib-1..4, R-extract-merge-1..5,
+R-eval-machinery-1..6, R-load-paths-1). Standouts: the fatal-without-return
+class survived at the env gates; foreign suppression was single-utterance
+scoped; "Sinai"-in-"Mount Sinai" token containment; dry-run/commit unwrap
+off-by-one. Final state: eval round 4 passed (0.967/0.883/0.900, 13/14
+per-kind traps, 4/4 golds), reloaded, 13 round-4 adjudicated-wrong mentions
+pruned (prune-round4.json = Phase-B review-table seed), all smokes clean,
+harnesses 72/72 + 53/53.
+
 ## Provenance histogram
 
 find-phase dimensions: data-integrity 12 · extraction-correctness 22 ·
