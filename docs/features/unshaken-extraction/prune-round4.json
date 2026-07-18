@@ -1,0 +1,111 @@
+{
+ "round": 4,
+ "prunedAt": "2026-07-18",
+ "reviewSeed": "phase-b enrichment_reviews rejected rows",
+ "items": [
+  {
+   "episodeId": "unshaken-6lXWLIOUKC8",
+   "kind": "verse",
+   "target": "2-kgs-8-19",
+   "seq": 3395,
+   "relType": "DISCUSSES",
+   "quote": "Well, Jehoram dies exactly as prophesied, disgusting end. And then verse nineteen and twenty, his people made no burning for him,"
+  },
+  {
+   "episodeId": "unshaken-ivzxaLpbZws",
+   "kind": "chapter",
+   "target": "1-sam-8",
+   "seq": 11,
+   "relType": "DISCUSSES",
+   "quote": "We had the strange chapters about golden emirods and raiders of the lost ark. If you didn't finish last week's material, it gets pretty wild"
+  },
+  {
+   "episodeId": "unshaken-ivzxaLpbZws",
+   "kind": "place",
+   "target": "israel",
+   "seq": 1417,
+   "relType": "MENTIONS",
+   "quote": "They're the ones that are still on Israel's side but haven't joined the army."
+  },
+  {
+   "episodeId": "unshaken-ivzxaLpbZws",
+   "kind": "place",
+   "target": "israel",
+   "seq": 938,
+   "relType": "MENTIONS",
+   "quote": "We're not going I have no enemies here in Israel."
+  },
+  {
+   "episodeId": "unshaken-RLirbnj-kGk",
+   "kind": "person",
+   "target": "obadiah-1",
+   "seq": 1743,
+   "relType": "MENTIONS",
+   "quote": "which makes Obadiah's act all the more"
+  },
+  {
+   "episodeId": "unshaken-ki0bTvQsaCo",
+   "kind": "person",
+   "target": "judah-1",
+   "seq": 428,
+   "relType": "MENTIONS",
+   "quote": "Who is the most important member of the tribe of Judah we'll ever see?"
+  },
+  {
+   "episodeId": "unshaken-ki0bTvQsaCo",
+   "kind": "place",
+   "target": "aram",
+   "seq": 723,
+   "relType": "MENTIONS",
+   "quote": "of Aram,"
+  },
+  {
+   "episodeId": "unshaken-RLirbnj-kGk",
+   "kind": "person",
+   "target": "obadiah-1",
+   "seq": 1890,
+   "relType": "MENTIONS",
+   "quote": "Now either Obadiah didn't tell him about the other 100 or he's trying to keep it under wraps so that Ahab and Jezebel don't know"
+  },
+  {
+   "episodeId": "unshaken-4pSrikfJ5Yw",
+   "kind": "place",
+   "target": "ammon",
+   "seq": 2348,
+   "relType": "MENTIONS",
+   "quote": "That's the sad aftermath of Manasseh's story. And then Ammon, speaking of sad aftermaths,"
+  },
+  {
+   "episodeId": "unshaken-6lXWLIOUKC8",
+   "kind": "principle",
+   "target": "divine-protection",
+   "seq": 1008,
+   "relType": "TEACHES",
+   "quote": "God does vindicate the prophets."
+  },
+  {
+   "episodeId": "unshaken-4pSrikfJ5Yw",
+   "kind": "principle",
+   "target": "original-sin-accountability",
+   "seq": 2337,
+   "relType": "TEACHES",
+   "quote": "he certainly was punished by them."
+  },
+  {
+   "episodeId": "unshaken-4pSrikfJ5Yw",
+   "kind": "principle",
+   "target": "principle:passover",
+   "seq": 2692,
+   "relType": "TEACHES",
+   "quote": "keep the Passover unto the Lord your God"
+  },
+  {
+   "episodeId": "unshaken-yAQlljeet-0",
+   "kind": "principle",
+   "target": "justice",
+   "seq": 3675,
+   "relType": "TEACHES",
+   "quote": "The moment we no longer enforce law, then law has no authority,"
+  }
+ ]
+}

@@ -1,0 +1,87 @@
+{
+ "round": 3,
+ "prunedAt": "2026-07-18",
+ "reviewSeed": "phase-b enrichment_reviews rejected rows",
+ "items": [
+  {
+   "episodeId": "unshaken-yAQlljeet-0",
+   "kind": "verse",
+   "target": "lev-26-8",
+   "seq": 3938,
+   "relType": "DISCUSSES",
+   "quote": "Well, verse six through eight, and I will give peace in the land, and you shall lie down and none shall make you afraid."
+  },
+  {
+   "episodeId": "unshaken-6lXWLIOUKC8",
+   "kind": "person",
+   "target": "athaliah-1",
+   "seq": 3622,
+   "relType": "MENTIONS",
+   "quote": "So this is queen Athaliah's grandson. He's only one year old at this point. She took him and stole him from among the king's sons,"
+  },
+  {
+   "episodeId": "unshaken-ki0bTvQsaCo",
+   "kind": "person",
+   "target": "israel-patriarch-1",
+   "seq": 1940,
+   "relType": "MENTIONS",
+   "quote": "scattered Israel wherever they can find them and gather them home to Zion."
+  },
+  {
+   "episodeId": "unshaken-4pSrikfJ5Yw",
+   "kind": "person",
+   "target": "ahaz-1",
+   "seq": 526,
+   "relType": "MENTIONS",
+   "quote": "who's doing that offering? Ahas is. What tribe is Ahas from? Judah. What tribe is supposed to offer offerings? Levi."
+  },
+  {
+   "episodeId": "unshaken-ki0bTvQsaCo",
+   "kind": "person",
+   "target": "gamaliel-1",
+   "seq": 4230,
+   "relType": "MENTIONS",
+   "quote": "Gamaliel"
+  },
+  {
+   "episodeId": "unshaken-ki0bTvQsaCo",
+   "kind": "person",
+   "target": "levi-1",
+   "seq": 586,
+   "relType": "MENTIONS",
+   "quote": "throughout the tribes of Israel, and then number the males in the tribe of Levi."
+  },
+  {
+   "episodeId": "unshaken-jMYk190JBys",
+   "kind": "place",
+   "target": "israel",
+   "seq": 1866,
+   "relType": "MENTIONS",
+   "quote": "which too did build the house of Israel,"
+  },
+  {
+   "episodeId": "unshaken-6lXWLIOUKC8",
+   "kind": "principle",
+   "target": "mercy-vs-justice",
+   "seq": 68,
+   "relType": "TEACHES",
+   "quote": "God is merciful, but he's also just, and it's the justice that Ahasuerus is afraid of."
+  },
+  {
+   "episodeId": "unshaken-ki0bTvQsaCo",
+   "kind": "principle",
+   "target": "watchman-responsibility",
+   "seq": 1721,
+   "relType": "TEACHES",
+   "quote": "I am grateful for prophets and apostles who are clear,"
+  },
+  {
+   "episodeId": "unshaken-6lXWLIOUKC8",
+   "kind": "principle",
+   "target": "watchman-responsibility",
+   "seq": 742,
+   "relType": "TEACHES",
+   "quote": "you have to catch up to the watchtower before you see what the watchman on the tower saw before you"
+  }
+ ]
+}

@@ -115,3 +115,32 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - user-roles: a dedicated fix-verification pass (6 agents re-triggering each fixed bug) caught 3 residuals with green tests + clean typecheck (cast-range gap, a concealment regression, a dropped-dash typo). Verify fixes, don't trust the suite.
 - user-roles: keyed workflow results by a prose `role` string the agents didn't echo → adversarial-B silently got [] to tag. Key by loop index or a constrained enum, never a trusted echo.
 - user-roles: prod existence-concealment is unachievable when the route table ships in the client manifest — the ErrorBoundary re-throw removed the real leak (signed-in AccountChip/PII in the 404), which is what D10 actually needed.
+
+## 2026-07-17 · feature: unshaken-ingest · tier: large
+- unshaken-ingest: invocation wrappers are system-under-test — tee masked exit 2 on a failed:1 run; runners must own their log/exit surface.
+- unshaken-ingest: fix-verification now 2-for-2 (3 more residuals on green suites, incl. a 30/30-repro'd silent log loss) — standing step for large tier.
+- unshaken-ingest: adversarial live-data checks killed 3 harmful panel fixes — prune=archive data-loss; blanket index aborts on 1,578 real dups; PATH-only env breaks yt-dlp.
+- unshaken-ingest: "incorporated" findings must pin INTEGRATION points — helper-tested/wiring-untested produced 3 of 10 bugs (scrub call-site, upsert clause, log convention).
+- unshaken-ingest: first panel-2-origin bug (B3): a risky-tag rejection shipped the bug, but the synthesis's "flag for code-panel" pointer caught it — keep writing those pointers.
+
+## unshaken-extraction (2026-07-18)
+
+- **Measured-precision gates catch what review can't; review catches what
+  gates can't.** Eval r1 failed entity 0.667 on error classes invisible in
+  code (pool persons named "So"/"On", same-name collisions); code review
+  found gate races and key divergence invisible to measurement. Run both.
+- **fatal()-without-return is a CLASS, not a bug.** Fixed at one gate,
+  found again at two more by fix-verification (streak now 3-for-3). Any
+  fix to a recurring-shape bug sweeps ALL call sites in the same commit.
+- **Fix the finding's MODE, not its example.** F12 fixed the cited
+  utterance but not the next one; F14 fixed equality but not containment
+  ("Sinai" in "Mount Sinai"). Verifiers caught both — write fixes against
+  the failure mode statement.
+- **A harness can PIN a bug** (H8 asserted the trap-marker leak as tested
+  behavior). Adversarial review of the harness itself is part of eval
+  design, not paranoia.
+- **Workflows made re-runs free, which changed the process shape**: 4 eval
+  rounds, full re-extraction after every fix tranche, 460 agents, $0
+  external. When re-verification is free, verify after every change.
+- **Coverage-first finders + adversarial verifiers**: 78 found, 9% killed.
+  The layering works; don't ask finders to self-filter.

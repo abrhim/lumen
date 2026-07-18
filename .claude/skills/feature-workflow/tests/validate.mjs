@@ -292,7 +292,8 @@ async function doneChecks() {
   const harnessLog = join(featureDir, 'harness-initial.log');
   if (await exists(harnessLog)) {
     const log = await readText(harnessLog);
-    check('harness-initial.log records a non-zero initial exit', /EXIT=\s*[1-9]/i.test(log) || /pass:\s*0\b/i.test(log) || /fail:\s*[1-9]/.test(log));
+    // node's spec reporter prints "ℹ fail 1" (no colon) — accept both formats
+    check('harness-initial.log records a non-zero initial exit', /EXIT=\s*[1-9]/i.test(log) || /pass:?\s*0\b/i.test(log) || /fail:?\s*[1-9]/.test(log) || /✖ failing tests/.test(log));
   }
 }
 

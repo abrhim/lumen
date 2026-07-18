@@ -1,0 +1,11 @@
+| ID | Tag | Rationale (≤25 words, with verifying evidence file:line) |
+|---|---|---|
+| COR-1 | material | Verified: edges no PK/unique (schema.ts:107-127); harness:214-219 skips edge-delete → DISCUSSES re-run dups. Delete-first fix house pattern (openbible:218). But unique-index sub-fix aborts on 1,578 live phase-b dups. |
+| COR-2 | material | Confirmed: edge test (harness:232-239) uses 2 chapterIds, .find()s one stmt, checks metadata only — never asserts N edges = chapterIds.length; failure-mode #7 (Joshua=24) untested at load. |
+| COR-3 | noise | True: H6 (harness:246) boolean .test() lets 1 of 3 design indexes (doc:86,97,98) be idempotent; but re-run error is loud, immediate, zero data-risk. Trivial. |
+| COR-4 | noise | All 9 live titles covered (harness:23-47); colon-in-ranged-subtitle absent from window, parser unwritten. Real coverage asymmetry vs '&'/' - ' fixtures but speculative, single-creator titles. |
+| COR-5 | material | Verified: postgres.js 3.4.9 returns numeric/decimal as string (README:935); t_start_s numeric(9,3) (doc:79) → string. Plan's ±2s smoke (plan:142) needs Number() coercion. Non-obvious, no repo precedent. |
+| COR-6 | noise | True: overlap [10,20],[15,25] passes start-monotonic (harness:159-162). But A1 stores by seq (PK episode_id,seq), no time-nav surface; ±2s slop accepted (design:167). Inert for A1. |
+| COR-7 | noise | Real plan-gap but harness uses DI (LOOKUP harness:61-67), fixture chapter-counts correct; orphan/smoke invariants (plan:90) net wrong ids. Live-query (openbible:168-180) sound but low-value. |
+
+Panel-1's correctness set is real but mostly low-stakes harness-completeness nits for a solo-dev, ~0-user, manual-run app; only three earn action. COR-1 is genuine (edge re-run duplication) — but adopt ONLY its delete-first half (house pattern: openbible/art/phase-b all delete-first by collection_id); reject the blanket unique index, which a live count proves would abort the migration on 1,578 existing phase-b duplicate tuples. COR-2 (load-plan edge-count totality on failure-mode #7) and COR-5 (verified postgres.js numeric→string footgun on the ±2s smoke) are the other two worth fixing; COR-3/4/6/7 are self-correcting, speculative, or inert in A1.

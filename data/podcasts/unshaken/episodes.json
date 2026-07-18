@@ -1,0 +1,154 @@
+{
+ "episodes": [
+  {
+   "id": "4pSrikfJ5Yw",
+   "title": "Come Follow Me - 2 Kings 14-25 - The Scattering of Israel",
+   "subtitle": "The Scattering of Israel",
+   "spans": [
+    {
+     "book": "2 Kings",
+     "start": 14,
+     "end": 25
+    }
+   ],
+   "durationS": 12992,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "6lXWLIOUKC8",
+   "title": "Come Follow Me - 2 Kings 1-13 - Passing the Mantle",
+   "subtitle": "Passing the Mantle",
+   "spans": [
+    {
+     "book": "2 Kings",
+     "start": 1,
+     "end": 13
+    }
+   ],
+   "durationS": 16924,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "RLirbnj-kGk",
+   "title": "Come Follow Me - 1 Kings 12-22 - Elijah's Ministry and Miracles",
+   "subtitle": "Elijah's Ministry and Miracles",
+   "spans": [
+    {
+     "book": "1 Kings",
+     "start": 12,
+     "end": 22
+    }
+   ],
+   "durationS": 12433,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "O3SiM9Yi940",
+   "title": "Come Follow Me - 1 Samuel 17 - 2 Samuel 10 - David: From Shepherd to King",
+   "subtitle": "David: From Shepherd to King",
+   "spans": [
+    {
+     "book": "1 Samuel",
+     "start": 17,
+     "end": null
+    },
+    {
+     "book": "2 Samuel",
+     "start": 1,
+     "end": 10
+    }
+   ],
+   "durationS": 17611,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "ivzxaLpbZws",
+   "title": "Come Follow Me - 1 Samuel 8-16 - The Rise and Fall of Saul",
+   "subtitle": "The Rise and Fall of Saul",
+   "spans": [
+    {
+     "book": "1 Samuel",
+     "start": 8,
+     "end": 16
+    }
+   ],
+   "durationS": 9036,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "jMYk190JBys",
+   "title": "Come Follow Me - Ruth & 1 Samuel 1-7 - Women of Faith",
+   "subtitle": "Women of Faith",
+   "spans": [
+    {
+     "book": "Ruth",
+     "start": 1,
+     "end": null
+    },
+    {
+     "book": "1 Samuel",
+     "start": 1,
+     "end": 7
+    }
+   ],
+   "durationS": 14478,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "8SvK7L87o1A",
+   "title": "Come Follow Me - The Book of Joshua: Choose You This Day",
+   "subtitle": "Choose You This Day",
+   "spans": [
+    {
+     "book": "Joshua",
+     "start": 1,
+     "end": null
+    }
+   ],
+   "durationS": 15386,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "ki0bTvQsaCo",
+   "title": "Come Follow Me - The Book of Numbers: Look and Live",
+   "subtitle": "Look and Live",
+   "spans": [
+    {
+     "book": "Numbers",
+     "start": 1,
+     "end": null
+    }
+   ],
+   "durationS": 21993,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "yAQlljeet-0",
+   "title": "Come Follow Me - The Book of Leviticus: Holiness to the Lord",
+   "subtitle": "Holiness to the Lord",
+   "spans": [
+    {
+     "book": "Leviticus",
+     "start": 1,
+     "end": null
+    }
+   ],
+   "durationS": 17405,
+   "uploadDate": "NA"
+  },
+  {
+   "id": "25hrVBU3Vz8",
+   "title": "Come Follow Me - Exodus 19-34 - Moses at Mount Sinai",
+   "subtitle": "Moses at Mount Sinai",
+   "spans": [
+    {
+     "book": "Exodus",
+     "start": 19,
+     "end": 34
+    }
+   ],
+   "durationS": 23990,
+   "uploadDate": "NA"
+  }
+ ]
+}
