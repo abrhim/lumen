@@ -211,12 +211,18 @@ re-costs). Stage 4's eval is designed against A1's REAL transcripts
     mentions across a collection: sortable by confidence (asc = worst-first
     review queue), filterable by kind/episode/status, row actions
     accept / reject with quote + transcript context inline.
-  - Review state is an OVERLAY table (`lumen.enrichment_reviews`: edge
-    triple + mention seq identity → status accepted|rejected, reviewer,
-    reviewed_at) — never rewrites edge jsonb, survives re-extraction
-    (seqs are stable while the transcript artifact is; re-loads re-apply
-    the overlay). Surfaces resolve: rejected → never shown; accepted →
-    shown regardless of threshold; pending → confidence-threshold rules.
+  - Review unit is the MENTION (one timestamped claim), status
+    `pending | accepted | rejected`; "live" is derived (rejected → never
+    shown; accepted → always shown; pending → confidence-threshold rules).
+  - Storage (Abram 2026-07-18, "a column on enrichment data… accepted/live
+    or rejected"): hybrid. Source of truth = OVERLAY table
+    (`lumen.enrichment_reviews`: edge triple + mention seq identity →
+    status, reviewer, reviewed_at) because the governing invariant is
+    "a pipeline re-run must never wipe a human's review decisions" — and
+    extraction re-runs rebuild edges wholesale. The app-facing column is
+    MATERIALIZED: load stamps each mention's `review` status from the
+    overlay into the edge jsonb, so read paths see a plain field with no
+    joins; re-extraction re-applies the overlay automatically.
   - Seeds: the ~13 round-2 adjudicated-wrong eval mentions land as the
     first `rejected` rows (verdicts double as review data). Review
     decisions accumulate into a per-confidence-band calibration signal
