@@ -115,3 +115,10 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - user-roles: a dedicated fix-verification pass (6 agents re-triggering each fixed bug) caught 3 residuals with green tests + clean typecheck (cast-range gap, a concealment regression, a dropped-dash typo). Verify fixes, don't trust the suite.
 - user-roles: keyed workflow results by a prose `role` string the agents didn't echo → adversarial-B silently got [] to tag. Key by loop index or a constrained enum, never a trusted echo.
 - user-roles: prod existence-concealment is unachievable when the route table ships in the client manifest — the ErrorBoundary re-throw removed the real leak (signed-in AccountChip/PII in the 404), which is what D10 actually needed.
+
+## 2026-07-17 · feature: unshaken-ingest · tier: large
+- unshaken-ingest: invocation wrappers are system-under-test — tee masked exit 2 on a failed:1 run; runners must own their log/exit surface.
+- unshaken-ingest: fix-verification now 2-for-2 (3 more residuals on green suites, incl. a 30/30-repro'd silent log loss) — standing step for large tier.
+- unshaken-ingest: adversarial live-data checks killed 3 harmful panel fixes — prune=archive data-loss; blanket index aborts on 1,578 real dups; PATH-only env breaks yt-dlp.
+- unshaken-ingest: "incorporated" findings must pin INTEGRATION points — helper-tested/wiring-untested produced 3 of 10 bugs (scrub call-site, upsert clause, log convention).
+- unshaken-ingest: first panel-2-origin bug (B3): a risky-tag rejection shipped the bug, but the synthesis's "flag for code-panel" pointer caught it — keep writing those pointers.
