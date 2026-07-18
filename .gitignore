@@ -11,5 +11,10 @@ build
 .turbo
 coverage
 .DS_Store
-data/
+data/*
+!data/podcasts/
+data/podcasts/*
+!data/podcasts/*/
+data/podcasts/*/*
+!data/podcasts/*/episodes.json
 *.tfplan
