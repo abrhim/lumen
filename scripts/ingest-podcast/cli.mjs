@@ -2,7 +2,15 @@
 // runner shell owns process.argv/exit.
 import { assertVideoId } from './util.mjs';
 
-export const STAGES = ['discover', 'fetch', 'transcribe', 'load'];
+export const STAGES = [
+	'discover',
+	'fetch',
+	'transcribe',
+	'load',
+	'extract-code',
+	'extract-merge',
+	'load-extraction',
+];
 
 export function parseArgs(argv) {
 	const out = { stage: null, episode: null, dryRun: false, refresh: false, show: 'unshaken' };

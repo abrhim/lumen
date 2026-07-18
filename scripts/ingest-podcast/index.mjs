@@ -27,6 +27,13 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
 import { UNSHAKEN } from './shows/unshaken.mjs';
+import { runExtractCode, runExtractMerge } from './extract.mjs';
+import {
+	EXISTING_EDGES_SQL,
+	buildExtractionLoadPlan,
+	checkLoadGate,
+	executeExtractionLoadPlan,
+} from './load-extraction.mjs';
 import {
 	scrubSecrets,
 	childEnv,
@@ -229,8 +236,11 @@ async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 		await tx.unsafe("SET LOCAL statement_timeout = '60s'");
 		await tx.unsafe("SET LOCAL idle_in_transaction_session_timeout = '60s'");
 		for (const s of plan.statements) {
-			const values = s.values.map((v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v));
-			await tx.unsafe(s.text, values);
+			// F1 class: values pass RAW. Pre-stringifying made postgres.js
+			// JSON-encode the string AGAIN → jsonb string scalars in prod
+			// (repaired by repair-metadata-encoding.mjs; probed 2026-07-18:
+			// raw object → 'object', pre-stringified → 'string').
+			await tx.unsafe(s.text, s.values);
 		}
 	});
 	log('load_done', { episode: ep.id, ...plan.summary });
@@ -252,19 +262,38 @@ function assertStagePrereqs(stage, episodes, dir) {
 			throw new Error(`--stage=load: ${missing.length} episode(s) missing transcripts (run --stage=transcribe first): ${missing.map((e) => e.id).join(', ')}`);
 		}
 	}
+	if (stage === 'extract-code' || stage === 'extract-merge') {
+		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir)));
+		if (missing.length) {
+			throw new Error(`--stage=${stage}: ${missing.length} episode(s) missing deepgram artifacts: ${missing.map((e) => e.id).join(', ')}`);
+		}
+	}
+	if (stage === 'load-extraction') {
+		const missing = episodes.filter((ep) => !existsSync(join(dir, `${ep.id}.extraction.json`)));
+		if (missing.length) {
+			throw new Error(`--stage=load-extraction: ${missing.length} episode(s) missing extraction artifacts (run --stage=extract-merge first): ${missing.map((e) => e.id).join(', ')}`);
+		}
+	}
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
 
 async function main() {
+	// R-runner-gates-1: fatal() schedules exit via the log-flush callback and
+	// RETURNS — every gate needs its own `return` or execution falls through
+	// on the event-loop race (the F1 class, swept across ALL call sites).
 	let opts;
 	try {
 		opts = parseArgs(process.argv.slice(2));
 	} catch (err) {
 		fatal(err, 'args');
+		return;
 	}
 	const show = SHOWS[opts.show];
-	if (!show) fatal(new Error(`unknown show ${opts.show}`), 'args');
+	if (!show) {
+		fatal(new Error(`unknown show ${opts.show}`), 'args');
+		return;
+	}
 	const dir = join(ROOT, 'data', 'podcasts', show.id);
 	mkdirSync(dir, { recursive: true });
 	// B1: runner-owned per-invocation log — no tee, no shared file
@@ -276,9 +305,15 @@ async function main() {
 	const postgres = require('postgres');
 	const envText = readFileSync(join(ROOT, '.env'), 'utf8');
 	const dsn = envText.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
-	if (!dsn) fatal(new Error('DATABASE_URL not found in root .env'), 'env');
+	if (!dsn) {
+		fatal(new Error('DATABASE_URL not found in root .env'), 'env');
+		return;
+	}
 	const apiKey = envText.match(/^DEEPGRAM_API_KEY=(.+)$/m)?.[1]?.trim();
-	if (!apiKey) fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
+	if (!apiKey) {
+		fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
+		return;
+	}
 	// B4: every in-run scrub carries the live key explicitly
 	const scrub = makeScrubber(apiKey);
 	const sql = postgres(dsn, { prepare: false, max: 2 });
@@ -298,6 +333,64 @@ async function main() {
 			bookIdByName: Object.fromEntries(bookRows.map((b) => [b.name, b.id])),
 			chapterCount: Object.fromEntries(chapterRows.map((c) => [c.book_id, Number(c.n)])),
 		};
+		// ── A2 stages: deterministic extraction + gated load; no fetch/probe
+		// machinery, no external calls. Judgment happens in Claude Code
+		// workflows BETWEEN these stages, coupled through artifacts. ──
+		if (['extract-code', 'extract-merge', 'load-extraction'].includes(opts.stage)) {
+			const bookRows = await sql`SELECT id, name FROM lumen.books`;
+			const stageOpts = { ...opts, showId: show.id, bookRows };
+			const rollup = { ok: [], failed: [] };
+			let verdict = null;
+			if (opts.stage === 'load-extraction') {
+				// F1: fatal() defers process.exit to the log-flush callback and
+				// RETURNS — without these returns the gate is an event-loop race
+				// and the load loop can start issuing DB statements.
+				const verdictPath = join(dir, 'eval-verdict.json');
+				if (!existsSync(verdictPath)) {
+					fatal(new Error('eval-verdict.json missing — the checkpoint gates the load (PW-A6)'), 'prereq');
+					return;
+				}
+				verdict = JSON.parse(readFileSync(verdictPath, 'utf8'));
+				if (verdict.passed !== true) {
+					fatal(new Error('eval verdict is not a pass — load refused'), 'prereq');
+					return;
+				}
+			}
+			for (const ep of episodes) {
+				try {
+					if (opts.stage === 'extract-code') {
+						await runExtractCode(sql, ep, dir, lookup, stageOpts, log);
+					} else if (opts.stage === 'extract-merge') {
+						await runExtractMerge(sql, ep, dir, lookup, stageOpts, log);
+					} else {
+						const episodeId = `${show.id}-${ep.id}`;
+						const extraction = JSON.parse(readFileSync(join(dir, `${ep.id}.extraction.json`), 'utf8'));
+						// PW-A6/F8/F27 via the harness-pinned pure gate
+						const gate = checkLoadGate({ verdict, episodeId, extraction });
+						if (!gate.ok) throw new Error(`${gate.reason} — episode not loadable`);
+						const existingEdges = await sql.unsafe(EXISTING_EDGES_SQL, [episodeId, show.id]);
+						const plan = buildExtractionLoadPlan({
+							episodeId,
+							collectionId: show.id,
+							edges: extraction.edges,
+							existingEdges,
+						});
+						if (opts.dryRun) {
+							log('extraction_load_dry_run', plan.summary);
+						} else {
+							await executeExtractionLoadPlan(sql, plan, { log });
+						}
+					}
+					rollup.ok.push(ep.id);
+				} catch (err) {
+					log('episode_failed', { episode: ep.id, stage: opts.stage, error: scrub(err.message) });
+					rollup.failed.push(ep.id);
+				}
+			}
+			log('stage_rollup', { stage: opts.stage, ok: rollup.ok.length, failed: rollup.failed });
+			return finish(rollup.failed.length ? 2 : 0);
+		}
+
 		const keytermRows = await sql`
       SELECT e.name FROM lumen.entities e
       JOIN lumen.edges ed ON ed.from_id = e.id OR ed.to_id = e.id
