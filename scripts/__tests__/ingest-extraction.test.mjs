@@ -26,7 +26,11 @@ import {
 	buildTimelinePrompt,
 	formatSeqLine,
 } from '../ingest-podcast/extract-lib.mjs';
-import { buildExtractionLoadPlan } from '../ingest-podcast/load-extraction.mjs';
+import {
+	buildExtractionLoadPlan,
+	EXISTING_EDGES_SQL,
+} from '../ingest-podcast/load-extraction.mjs';
+import { verifyQuoteAtSeq, validateAliasTable } from '../ingest-podcast/extract-lib.mjs';
 import { makeScrubber } from '../ingest-podcast/util.mjs';
 
 // ---------- fixtures ----------
@@ -98,12 +102,14 @@ test('H1: mid-chunk transition stamps BOTH chapters in order', () => {
 	assert.deepEqual(stamped.chapterContext, ['2-kgs-14', '2-kgs-15']);
 });
 
-test('H1: chunk before first segment falls back to first chapter', () => {
-	// intro material before the first explicit "chapter 14" call-out
+test('H1: pre-first-segment chunks are FLAGGED, never guessed (panel-2 A9)', () => {
+	// intros recap the PREVIOUS episode — stamping the first block chapter
+	// would manufacture wrong-but-existing edges. Flag for review; refs drop.
 	const timeline = [{ t_start_s: 300, chapter: '2-kgs-14' }];
 	const chunks = [{ tStart: 0, tEnd: 200, utterances: [] }];
 	const [stamped] = stampChunks(chunks, timeline);
-	assert.deepEqual(stamped.chapterContext, ['2-kgs-14']);
+	assert.deepEqual(stamped.chapterContext, []);
+	assert.equal(stamped.preSegment, true);
 });
 
 // ---------- chunking ----------
@@ -195,6 +201,29 @@ test('spoken refs: "verses nine and ten" = enumeration, not range to 10', () => 
 	assert.deepEqual(parseSpokenVerseRefs('verses nine and ten teach this'), [
 		{ verse: 9, verseEnd: 10 },
 	]);
+});
+
+test('spoken refs: "verses 23 through 25" — "through" range word (census)', () => {
+	assert.deepEqual(parseSpokenVerseRefs('read verses 23 through 25 with me'), [
+		{ verse: 23, verseEnd: 25 },
+	]);
+});
+
+test('spoken refs: "next verse" emits a relative marker for stateful resolution', () => {
+	assert.deepEqual(parseSpokenVerseRefs('and the next verse says'), [{ relative: 1 }]);
+});
+
+test('spoken refs: bare numerals fail CLOSED — census surfaces them, parser never guesses', () => {
+	assert.deepEqual(parseSpokenVerseRefs('now 24 continues the story'), []);
+});
+
+test('foreign windows: "section" unit — D&C tangents (census: 120×/85×)', () => {
+	const us = [utt(0, 50, 'in Doctrine and Covenants section 76 we learn of glories')];
+	const windows = detectForeignWindows(us, {
+		foreignBooks: { 'Doctrine and Covenants': 'dc', 'Second Chronicles': '2-chr' },
+	});
+	assert.equal(windows.length, 1);
+	assert.equal(windows[0].book, 'dc');
 });
 
 test('foreign windows: cross-book citation opens a tangent (panel F3)', () => {
@@ -395,8 +424,20 @@ test('H5: foreign-episode results are ignored, not absorbed', () => {
 // ---------- H6 + H7: load plan (UPDATE vs INSERT, idempotent delete) ----------
 
 const EXISTING_TITLE_EDGES = [
-	{ from_id: 'unshaken-x', to_id: '2-kgs-14', rel_type: 'DISCUSSES' },
-	{ from_id: 'unshaken-x', to_id: '2-kgs-15', rel_type: 'DISCUSSES' },
+	{
+		from_id: 'unshaken-x',
+		to_id: '2-kgs-14',
+		rel_type: 'DISCUSSES',
+		source: 'unshaken-youtube',
+		metadata: { source: 'title', confidence: 1, mentions: [{ t: 999, seq: 99, confidence: 0.7 }] },
+	},
+	{
+		from_id: 'unshaken-x',
+		to_id: '2-kgs-15',
+		rel_type: 'DISCUSSES',
+		source: 'unshaken-youtube',
+		metadata: { source: 'title', confidence: 1, mentions: [] },
+	},
 ];
 
 function planFixture() {
@@ -409,7 +450,7 @@ function planFixture() {
 		episodeId: 'unshaken-x',
 		collectionId: 'unshaken',
 		edges,
-		existingTitleEdges: EXISTING_TITLE_EDGES,
+		existingEdges: EXISTING_TITLE_EDGES,
 	});
 }
 
@@ -457,6 +498,93 @@ test('H6b: inserted extraction edges carry source column + mentions', () => {
 	}
 });
 
+test('PW-A2: extraction-sourced existing pair classifies INSERT, never UPDATE', () => {
+	// Run-2 self-destruction path: misclassifying run-1's own edges as title
+	// edges makes delete-then-UPDATE hit 0 rows and exit 0. Source column
+	// decides; only unshaken-youtube rows are update candidates.
+	const edges = [
+		{ toId: '2-kgs-14-3', relType: 'DISCUSSES', mentions: [{ t: 12, seq: 2, confidence: 0.9 }] },
+	];
+	const plan = buildExtractionLoadPlan({
+		episodeId: 'unshaken-x',
+		collectionId: 'unshaken',
+		edges,
+		existingEdges: [
+			...EXISTING_TITLE_EDGES,
+			{
+				from_id: 'unshaken-x',
+				to_id: '2-kgs-14-3',
+				rel_type: 'DISCUSSES',
+				source: 'unshaken-extraction',
+				metadata: { mentions: [] },
+			},
+		],
+	});
+	const kinds = plan.statements.filter((s) => s.toId === '2-kgs-14-3').map((s) => s.kind);
+	assert.deepEqual(kinds, ['insert-edge']);
+});
+
+test('PW-A2: classification fetch SQL exported + title-source-filtered', () => {
+	assert.match(EXISTING_EDGES_SQL, /source\s*=\s*'unshaken-youtube'/);
+	assert.doesNotMatch(EXISTING_EDGES_SQL, /metadata\s*->>/); // column, never jsonb path
+});
+
+test('PW-A3: plan opens with a metadata-repaired preflight statement', () => {
+	// A load against unrepaired string-typed rows must abort loud before any
+	// write — live-probed: merge-updating a string scalar makes jsonb ARRAYS.
+	const plan = planFixture();
+	assert.equal(plan.statements[0].kind, 'assert-metadata-repaired');
+});
+
+test('PW-A4: title UPDATE replaces mentions with EXACTLY the fresh set', () => {
+	// Append semantics would double mentions per re-run and make stale
+	// wrong-alias-era mentions immortal. Replace mirrors delete+insert.
+	const plan = planFixture();
+	const up = plan.statements.find((s) => s.kind === 'update-title-edge' && s.toId === '2-kgs-14');
+	assert.deepEqual(up.metadata.mentions, [{ t: 10, seq: 1, confidence: 0.9 }]); // stale t:999 gone
+});
+
+test('PW-A7: judged mentions with fabricated quotes die in code, not in the sample', () => {
+	const utterances = [
+		utt(9, 90, 'and before this'),
+		utt(10, 100, 'Hezekiah trusted the Lord with all his heart'),
+		utt(11, 110, 'and after that'),
+	];
+	const ok = verifyQuoteAtSeq(mention({ quote: 'trusted the Lord' }), { utterances });
+	assert.equal(ok.ok, true);
+	const bad = verifyQuoteAtSeq(mention({ quote: 'a phrase never spoken' }), { utterances });
+	assert.equal(bad.ok, false);
+	assert.match(bad.reason, /quote/i);
+});
+
+test('PW-A7: quote may land on seq±1 (utterance boundaries wobble), normalized', () => {
+	const utterances = [
+		utt(9, 90, 'Hezekiah trusted'),
+		utt(10, 100, 'the Lord always'),
+		utt(11, 110, 'x'),
+	];
+	const r = verifyQuoteAtSeq(mention({ seq: 10, quote: 'hezekiah trusted' }), { utterances });
+	assert.equal(r.ok, true);
+});
+
+test('EV-A10: alias tables census/pool-validated; collisions routed, never first-win', () => {
+	const censusTokens = new Set(['ahas', 'joram', 'hezekiah']);
+	const poolIds = new Set(['person-ahaz', 'person-joram-israel', 'person-jehoram-judah']);
+	const table = [
+		{ id: 'person-ahaz', names: ['Ahas'] },
+		{ id: 'person-made-up', names: ['Hezekiah'] }, // id outside pool → rejected
+		{ id: 'person-ahaz', names: ['Achaz'] }, // alias not in census → rejected
+		{ id: 'person-joram-israel', names: ['Joram'] },
+		{ id: 'person-jehoram-judah', names: ['Joram'] }, // two claimants → collision
+	];
+	const r = validateAliasTable(table, { censusTokens, poolIds });
+	assert.deepEqual(r.valid.map((v) => [v.id, v.names[0]]), [['person-ahaz', 'Ahas']]);
+	assert.equal(r.rejected.length, 2);
+	assert.equal(r.collisions.length, 1);
+	assert.equal(r.collisions[0].token.toLowerCase(), 'joram');
+	assert.equal(r.collisions[0].ids.length, 2);
+});
+
 test('F1-regression: jsonb statement values are OBJECTS, never pre-stringified', () => {
 	// Prod carries 184 double-encoded rows because the A1 executor stringified
 	// before postgres.js serialized. The repaired contract: builders emit raw
@@ -472,14 +600,33 @@ test('F1-regression: jsonb statement values are OBJECTS, never pre-stringified',
 
 // ---------- H8: trap containment ----------
 
-test('H8: seedTraps returns a NEW eval array; input mentions untouched', () => {
-	const clean = [mention(), mention({ t: 200, seq: 20 })];
+test('H8: traps are target-swapped REAL mentions, indistinguishable in-sample (panel-2 A2)', () => {
+	const clean = [
+		mention(),
+		mention({ t: 200, seq: 20, target: 'person-sennacherib', quote: 'Sennacherib mocked from the wall' }),
+	];
 	const before = JSON.stringify(clean);
 	const rng = () => 0.5;
-	const { evalSample, trapIds } = seedTraps(clean, { count: 2, rng });
-	assert.equal(JSON.stringify(clean), before);
-	assert.equal(evalSample.filter((m) => m.__trap).length, 2);
-	assert.equal(trapIds.length, 2);
+	const { evalSample, answerKey } = seedTraps(clean, {
+		count: 1,
+		rng,
+		swapPool: ['person-hezekiah', 'person-sennacherib', 'person-ahaz'],
+	});
+	assert.equal(JSON.stringify(clean), before); // input untouched
+	// indistinguishable: every entry carries the SAME key set, no marker field
+	const keySets = new Set(evalSample.map((m) => Object.keys(m).sort().join(',')));
+	assert.equal(keySets.size, 1);
+	assert.ok(!evalSample.some((m) => '__trap' in m));
+	// trap quote is a REAL quote from the input (grep-proof), target swapped
+	assert.equal(answerKey.traps.length, 1);
+	for (const trap of answerKey.traps) {
+		const entry = evalSample[trap.index];
+		assert.ok(clean.some((m) => m.quote === entry.quote));
+		assert.equal(entry.target, trap.swappedTarget);
+		assert.notEqual(trap.swappedTarget, trap.originalTarget);
+	}
+	// answer key is a SEPARATE return, never embedded in the sample artifact
+	assert.ok(!JSON.stringify(evalSample).includes('swappedTarget'));
 });
 
 test('H8: load-plan builder REFUSES any object carrying __trap', () => {
@@ -489,7 +636,7 @@ test('H8: load-plan builder REFUSES any object carrying __trap', () => {
 				episodeId: 'unshaken-x',
 				collectionId: 'unshaken',
 				edges: [{ toId: 'person-hezekiah', relType: 'MENTIONS', mentions: [], __trap: true }],
-				existingTitleEdges: [],
+				existingEdges: [],
 			}),
 		/trap/i,
 	);
