@@ -6,6 +6,11 @@ Design input: [docs/design/media-collections.md](../../design/media-collections.
 B."** (supabase-auth precedent). Open questions carry PROPOSED DEFAULTS,
 chosen and recorded rather than asked.
 
+**REVISION 1 (2026-07-18), Abram, verbatim: "you are not to use the anthropic
+or any api" + "you are to exclusively use the claude code workflows nad sub
+agents to run ai enrichment."** Batch-API design replaced by §Design below;
+original API probe (item 5) retained for the record, superseded.
+
 ## Tier
 
 **standard** — axes: behavior change (prod edges + mentions), external
@@ -36,49 +41,78 @@ that reuses A1's pipeline shell.
    verse granularity: 154 persons, 85 events, 79 places, 42 principles,
    5 symbols (~365 entries). Name-prefiltering per chunk (code-side) keeps
    prompts lean.
-5. **API mechanics verified via claude-api skill**: Batch API = 50% off all
-   tokens, 100k requests/batch, ~1h typical completion, all Messages features
-   incl. structured outputs; model claude-opus-4-8 ($5/$25 → $2.50/$12.50
-   batched); `output_config.format` json_schema (strict) guarantees parseable
-   output. Adaptive thinking explicit on Opus 4.8; effort tunable per chunk.
+5. ~~API mechanics verified via claude-api skill (Batch API 50%, opus-4-8,
+   strict json_schema)~~ — **SUPERSEDED by Revision 1**; retained for the
+   record. One durable takeaway: json-schema numeric ranges are unenforceable
+   → confidence bounds validated in code (harness H4 already pins this).
+6. **Real corpus measurement** (pipeline-reliability panelist, live artifacts):
+   577k transcript tokens total; naive 50/10 chunking = 988 windows. Agent
+   window sizing must be far coarser than API-chunk sizing.
 
 ## Design
 
-**Two-pass extraction, code-heavy by construction** (LLM does judgment, code
-does bookkeeping — the closed-vocab discipline):
+**Deterministic code extracts; Claude Code workflow judges** (Revision 1 —
+the closed-vocab discipline taken to its conclusion: code does everything
+mechanical; in-session subagents do only what needs judgment; zero external
+API calls).
 
-- **Pass 1 — chapter timeline** (1 request/episode, full-transcript sweep of
-  explicit chapter transitions): emits `[{t_start_s, chapter}]` segments.
-  Cheap, and it mechanically solves the anaphora problem: pass 2 chunks are
-  stamped with their governing chapter context.
-- **Pass 2 — moment extraction** (chunked): utterance windows ~50 utterances
-  w/ 10-utterance overlap, each line `[seq @ mm:ss] text`. Prompt carries:
-  the chunk's chapter-context (from pass 1), the episode block, CODE-PREFILTERED
-  candidates (persons/places/events whose names appear in the chunk text —
-  typically 5–20) + the FULL principle pool (42; thematic linking can't be
-  name-matched), and the strict output schema. Output per mention:
-  `{kind: verse|chapter|person|place|event|principle, target_hint, seq, t,
-  confidence, quote}` — verse targets as `{chapter_ctx, verse_num}` resolved
-  to spine ids IN CODE with existence validation (fail-closed drop + log).
-- **Aggregation (code)**: dedupe overlap-window duplicates (same target within
-  ±5s), merge to one edge per (episode, target, rel_type) with
-  `mentions: [{t, seq, confidence}]` sorted by t. rel_types: DISCUSSES
-  (verses/chapters), MENTIONS (persons/places/events), TEACHES (principles) —
-  all in vocab.
-- **Load (reuses A1 patterns)**: per-episode tx; DELETE extraction-sourced
-  edges (`metadata->>'source' = 'extraction'`) scoped by episode+collection,
-  then INSERT new pairs; existing title-sourced chapter edges get their
-  mentions arrays UPDATED in place (the partial unique index FORBIDS duplicate
-  pairs — the aggregated-edge design is now DB-enforced). Batched statements,
-  SET LOCAL guards, summary counts, house logging.
-- **Batch mechanics**: `@anthropic-ai/sdk` (new root devDep) from the .mjs
-  stage; requests keyed `custom_id = <episodeId>:<pass>:<chunkSeq>` (results
-  arrive in ANY order — key, never position); poll until `ended`; artifacts
-  `<id>.extraction.json` cached on disk (skip-if-valid like every stage);
-  model claude-opus-4-8, `thinking: {type: "adaptive"}`, effort swept on the
-  eval sample (start medium), strict json_schema output.
-- **Cost estimate**: prefiltered prompts ≈ 250–400k input + ~150k output
-  total → **≈ $6–10 batched**. Logged per-batch from usage fields.
+- **Stage extract-code (node, deterministic)**:
+  1. *Timeline candidates*: transition markers incl. the inline-entry form
+     panel F2 verified ("In verse three of second Kings 21" enters ch 21
+     without an announcement) — patterns: "chapter N", "<book> N", "of
+     <book> N"; digits AND number-words. Segments `{t, chapter, evidence}`.
+  2. *Foreign-ref windows* (panel F3): explicit cross-book citations
+     (2 Chr 28, Helaman 8, Isaiah) open tangent segments; bare verse refs
+     inside them are logged + dropped in v1 (episode-block constraint holds;
+     cross-book anchoring = recorded fast-follow).
+  3. *Verse refs*: digits + number-words + ranges ("from verse four to verse
+     24", elided "verse twenty one and two" = 21–22; panel F5), resolved
+     against the governing segment; **t always recomputed from the cited
+     utterance's start — never trusted from a model** (panel F4). Timestamps
+     h:mm:ss beyond 60m (3.6h episodes).
+  4. *Entity mentions*: ALIAS-AWARE matcher (panel F1: Deepgram writes
+     "Ahas" 47×, "Ahaz" 0× — exact match misses the episode's main figure).
+     Alias tables are judgment-produced (below), then matching is code with
+     word boundaries.
+  5. Emits `<id>.extraction-code.json` + `<id>.judgment-brief.json`
+     (timeline + tangent windows + unknown-capitalized-token census +
+     principle brief + flagged ambiguities). Skip-if-valid per artifact.
+- **Enrichment workflow** (`.claude/workflows/unshaken-enrichment.mjs`, run
+  via the Workflow tool per Abram's directive — subagents only, no API):
+  phase *alias-map* (10 small agents: pool names × transcript token census →
+  variant map), phase *timeline-review* (10 agents verify/correct segments
+  against the transcript, esp. inline entries + tangents), phase *principles*
+  (~2 agents/episode over half-episode windows, structured output, each link
+  cites `seq` + verbatim quote). Journaled resume = per-agent retry native;
+  session pays tokens, dollars = $0 external.
+- **Stage extract-merge (node, deterministic)**: judgment artifacts
+  (`<id>.judgment.json`) + code extraction → closed-vocab validation,
+  existence checks, confidence floor 0.5, ±5s dedupe, aggregation to one
+  edge per (episode, target, rel_type) with `mentions: [{t, seq,
+  confidence}]` sorted by t. DISCUSSES (verses/chapters) · MENTIONS
+  (persons/places/events) · TEACHES (principles). Emits
+  `<id>.extraction.json` + eval sample (+ traps, sample-only).
+- **Load (source-column scoping — panel F4 refuted the jsonb-path premise)**:
+  per-episode tx; DELETE `WHERE from_id AND collection_id AND
+  source='unshaken-extraction'` (first-class column, never jsonb paths), then
+  INSERT new pairs with `source='unshaken-extraction'`; existing
+  title-sourced (`source='unshaken-youtube'`) chapter edges get mentions
+  UPDATED in place (partial unique index makes the aggregated-edge rule
+  DB-enforced). Batched statements, SET LOCAL guards, house logging.
+- **A1 repair + co-fixes (panel F1/F3, verified against prod)**:
+  1. *Double-encoding repair*: all 184 edges + 10 entities carry jsonb STRING
+     scalars (`index.mjs:232` pre-stringify before `unsafe()`); fix the
+     executor to serialize exactly once, ship a one-time
+     `(metadata #>> '{}')::jsonb` unwrap migration, and pin
+     `jsonb_typeof='object'` in smoke (A1's parse-if-string was masking this
+     — keep it as defense, add the invariant so masking can't recur).
+  2. *Re-run safety*: A1's load delete becomes source-aware
+     (`source='unshaken-youtube'` only) and its title-edge insert preserves
+     existing mentions on conflict — a weekly A1 re-run must never wipe A2
+     extraction edges or reset mention arrays.
+- **Cost**: $0 external. Corpus ground truth 577k transcript tokens (panel
+  measurement); agent windows sized half-episode so the workflow stays
+  ~40–50 agent calls total.
 
 ## Eval + checkpoint (the load-bearing wall)
 
@@ -89,10 +123,16 @@ does bookkeeping — the closed-vocab discipline):
   plausible-but-absent principle) injected into the SAMPLE ONLY; the
   checkpoint reviewer (fresh-context agent + me) must catch ≥11/12 or the
   eval itself is suspect (strongs seeded-trap lesson).
-- **Precision gate**: ≥0.90 verse/chapter anchors, ≥0.85 entity links on the
-  clean sample → lens green-light recorded for Phase B. Below gate: one
-  prompt-iteration round permitted, then re-eval; still below → ship edges
-  with `confidence` intact but record lens = fast-follow (design's in-scope-if).
+- **Precision gate, per kind** (panel F6 — pooled gates mask weak strata):
+  verse/chapter ≥0.90 · person/place/event ≥0.85 · principle ≥0.80, each
+  reported with its 95% CI honestly stated (small-n limits acknowledged, not
+  laundered). Below gate: one iteration round, re-eval; still below → ship
+  edges with `confidence` intact, lens = fast-follow (design's in-scope-if).
+- **Traps are near-misses** (panel F7): wrong-but-EXISTING verse, ASR-variant
+  name mapped to the wrong person, plausible-but-absent principle — mirrors
+  of the real failure modes, not strawmen.
+- **Recall is unmeasured and the artifact says so** (panel F8), plus a free
+  coverage ratio (alias-hit count vs emitted mentions) as a drift canary.
 - Checkpoint sits BETWEEN extract and load (design §workflow) — no edge
   ships unevaluated.
 
@@ -108,9 +148,16 @@ does bookkeeping — the closed-vocab discipline):
   wired into STAGES whitelist + prereqs)
 - `scripts/__tests__/ingest-extraction.test.mjs` (new harness)
 - `scripts/smoke-extraction.mjs` (new — live invariants: no dup pairs, all
-  verse targets resolve, mentions sorted/valid, title edges retain
-  confidence-1 anchor, per-kind counts)
-- `package.json` (+`@anthropic-ai/sdk`)
+  verse targets resolve (`2-kgs-14-3` shape — panel F2), mentions
+  sorted/valid, title edges retain confidence-1 anchor,
+  `jsonb_typeof(metadata)='object'` everywhere, per-kind counts)
+- `scripts/repair-metadata-encoding.mjs` (new — one-time unwrap migration,
+  DRY_RUN default + invariants, house migration style)
+- `scripts/ingest-podcast/index.mjs` (edit — also FIX the double-encoding
+  executor at :232) · `scripts/ingest-podcast/load.mjs` (edit — source-aware
+  delete + mentions-preserving title upsert)
+- `.claude/workflows/unshaken-enrichment.mjs` (new — the AI-enrichment
+  workflow definition; repo-canonical for per-show reuse)
 
 ## Failure modes (each → harness assertion)
 
@@ -128,20 +175,28 @@ does bookkeeping — the closed-vocab discipline):
 7. Re-run duplicates extraction edges → delete-by-source idempotency. (H7.)
 8. Trap leakage: seeded traps must NEVER reach the load path. (H8: seeding is
    sample-artifact-only by construction; test pins it.)
-9. Secrets: ANTHROPIC_API_KEY via root .env, header-only, scrubbed. (H9.)
+9. Secrets: no new secrets under Revision 1; DSN scrubbing discipline stands.
+   (H9 retained as generic scrubber coverage.)
+10. A1 weekly re-run wipes A2 edges / resets mentions (panel F3) → A1 load
+    co-fix; smoke asserts extraction edges survive a title-load replay.
+11. Double-encoded jsonb recurs via a second stringify path (panel F1) →
+    F1-regression harness pin (builder emits objects) + smoke typeof
+    invariant.
 
 ## Open questions (defaults RECORDED, gate waived)
 
-- Q1 effort level: **medium**, swept against the eval sample before the full
-  batch. Q2 chunk size: **50/10 overlap**. Q3 principle linking: full-pool
-  thematic (accept lower precision, gate at 0.85). Q4 confidence floor for
-  DB write: **0.5** (below = dropped + logged; lens filters at higher). Q5
-  chapter-edge mentions: UPDATE title edges in place (design §rules-3).
+- Q1 ~~effort level~~ (moot under Revision 1) → agent window: **half-episode
+  per principles agent** (~2/episode). Q2 merge-window: **±5s dedupe** (50/10
+  chunking survives only as the merge granularity for code extraction). Q3
+  principle linking: full-pool thematic, own gate **0.80**. Q4 confidence
+  floor for DB write: **0.5** (below = dropped + logged; lens filters
+  higher; edge stores max-confidence rollup for cheap lens filtering —
+  panel F6-adjacent). Q5 chapter-edge mentions: UPDATE title edges in place
+  (design §rules-3).
 
 ## Abram-tasks
 
-- `ANTHROPIC_API_KEY` into root `.env` before the batch run (same pattern as
-  DEEPGRAM_API_KEY; needed at stage-extract time, can land mid-flight).
+- None. (ANTHROPIC_API_KEY task removed by Revision 1 — no external APIs.)
 
 ## Drift baseline (stamped end of step 6)
 

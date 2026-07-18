@@ -10,6 +10,10 @@ import {
 	stampChunks,
 	chunkUtterances,
 	prefilterCandidates,
+	detectChapterTransitions,
+	parseSpokenVerseRefs,
+	detectForeignWindows,
+	aliasMatchCandidates,
 	resolveVerseRef,
 	validateMention,
 	dedupeMentions,
@@ -28,9 +32,9 @@ import { makeScrubber } from '../ingest-podcast/util.mjs';
 // ---------- fixtures ----------
 
 const TIMELINE = [
-	{ t_start_s: 0, chapter: '2kgs-14' },
-	{ t_start_s: 1200, chapter: '2kgs-15' },
-	{ t_start_s: 2400, chapter: '2kgs-16' },
+	{ t_start_s: 0, chapter: '2-kgs-14' },
+	{ t_start_s: 1200, chapter: '2-kgs-15' },
+	{ t_start_s: 2400, chapter: '2-kgs-16' },
 ];
 
 function utt(seq, t, text) {
@@ -52,12 +56,12 @@ const POOL = {
 	symbol: [],
 };
 
-const EPISODE_CHAPTERS = ['2kgs-14', '2kgs-15', '2kgs-16'];
+const EPISODE_CHAPTERS = ['2-kgs-14', '2-kgs-15', '2-kgs-16'];
 const VERSE_EXISTS = (id) => {
-	// 2kgs-14 has 29 verses; -15 has 38; -16 has 20 (fixture truth)
-	const m = id.match(/^(2kgs-\d+)-(\d+)$/);
+	// 2-kgs-14 has 29 verses; -15 has 38; -16 has 20 (fixture truth)
+	const m = id.match(/^(2-kgs-\d+)-(\d+)$/);
 	if (!m) return false;
-	const max = { '2kgs-14': 29, '2kgs-15': 38, '2kgs-16': 20 }[m[1]];
+	const max = { '2-kgs-14': 29, '2-kgs-15': 38, '2-kgs-16': 20 }[m[1]];
 	return Boolean(max) && Number(m[2]) >= 1 && Number(m[2]) <= max;
 };
 
@@ -76,30 +80,30 @@ function mention(over = {}) {
 // ---------- H1: timeline → chunk stamping ----------
 
 test('H1: chapterAt returns governing chapter for t', () => {
-	assert.equal(chapterAt(TIMELINE, 0), '2kgs-14');
-	assert.equal(chapterAt(TIMELINE, 1199.9), '2kgs-14');
-	assert.equal(chapterAt(TIMELINE, 1200), '2kgs-15');
-	assert.equal(chapterAt(TIMELINE, 9999), '2kgs-16');
+	assert.equal(chapterAt(TIMELINE, 0), '2-kgs-14');
+	assert.equal(chapterAt(TIMELINE, 1199.9), '2-kgs-14');
+	assert.equal(chapterAt(TIMELINE, 1200), '2-kgs-15');
+	assert.equal(chapterAt(TIMELINE, 9999), '2-kgs-16');
 });
 
 test('H1: chunk fully inside one segment stamps one chapter', () => {
 	const chunks = [{ tStart: 100, tEnd: 900, utterances: [] }];
 	const [stamped] = stampChunks(chunks, TIMELINE);
-	assert.deepEqual(stamped.chapterContext, ['2kgs-14']);
+	assert.deepEqual(stamped.chapterContext, ['2-kgs-14']);
 });
 
 test('H1: mid-chunk transition stamps BOTH chapters in order', () => {
 	const chunks = [{ tStart: 1100, tEnd: 1300, utterances: [] }];
 	const [stamped] = stampChunks(chunks, TIMELINE);
-	assert.deepEqual(stamped.chapterContext, ['2kgs-14', '2kgs-15']);
+	assert.deepEqual(stamped.chapterContext, ['2-kgs-14', '2-kgs-15']);
 });
 
 test('H1: chunk before first segment falls back to first chapter', () => {
 	// intro material before the first explicit "chapter 14" call-out
-	const timeline = [{ t_start_s: 300, chapter: '2kgs-14' }];
+	const timeline = [{ t_start_s: 300, chapter: '2-kgs-14' }];
 	const chunks = [{ tStart: 0, tEnd: 200, utterances: [] }];
 	const [stamped] = stampChunks(chunks, timeline);
-	assert.deepEqual(stamped.chapterContext, ['2kgs-14']);
+	assert.deepEqual(stamped.chapterContext, ['2-kgs-14']);
 });
 
 // ---------- chunking ----------
@@ -125,6 +129,101 @@ test('chunking: short tail window is emitted, never dropped', () => {
 
 test('formatSeqLine: [seq @ mm:ss] shape', () => {
 	assert.equal(formatSeqLine(utt(7, 754.3, 'let us begin')), '[7 @ 12:34] let us begin');
+});
+
+test('formatSeqLine: hours appear past 60m (3.6h episodes are real)', () => {
+	assert.equal(formatSeqLine(utt(9, 13000.5, 'late remark')), '[9 @ 3:36:40] late remark');
+});
+
+// ---------- deterministic extractors (Revision 1: code IS the extractor) ----------
+
+const BOOK_CTX = {
+	episodeChapters: EPISODE_CHAPTERS,
+	bookAliases: { '2 Kings': '2-kgs', 'Second Kings': '2-kgs' },
+};
+
+test('transitions: announced chapter, digits and number-words', () => {
+	const us = [
+		utt(0, 10, 'welcome to chapter 14 of Second Kings'),
+		utt(1, 1200, 'now chapter fifteen begins with Azariah'),
+	];
+	const segs = detectChapterTransitions(us, BOOK_CTX);
+	assert.deepEqual(
+		segs.map((s) => [s.chapter, s.t_start_s]),
+		[['2-kgs-14', 10], ['2-kgs-15', 1200]],
+	);
+});
+
+test('transitions: INLINE entry "in verse three of Second Kings 21" (panel F2)', () => {
+	const us = [
+		utt(0, 10, 'chapter 20 closes with Hezekiah'),
+		utt(1, 500, 'In verse three of Second Kings 21 we meet Manasseh'),
+	];
+	const segs = detectChapterTransitions(us, {
+		...BOOK_CTX,
+		episodeChapters: ['2-kgs-20', '2-kgs-21'],
+	});
+	assert.equal(segs.at(-1).chapter, '2-kgs-21');
+	assert.equal(segs.at(-1).t_start_s, 500);
+});
+
+test('transitions: chapters outside the episode block are never emitted', () => {
+	const us = [utt(0, 10, 'back in chapter 5 Naaman was healed')]; // ch 5 ∉ block
+	const segs = detectChapterTransitions(us, BOOK_CTX);
+	assert.deepEqual(segs, []);
+});
+
+test('spoken refs: digits, number-words, and anaphoric bare forms', () => {
+	assert.deepEqual(parseSpokenVerseRefs('let us start with verse three'), [{ verse: 3 }]);
+	assert.deepEqual(parseSpokenVerseRefs('now verse 4 says'), [{ verse: 4 }]);
+	assert.deepEqual(parseSpokenVerseRefs('in verse twenty three we read'), [{ verse: 23 }]);
+});
+
+test('spoken refs: ranges — "from verse four to verse 24" (panel F5)', () => {
+	assert.deepEqual(parseSpokenVerseRefs('from verse four to verse 24'), [
+		{ verse: 4, verseEnd: 24 },
+	]);
+});
+
+test('spoken refs: elided pair "verse twenty one and two" = 21–22 (panel F5)', () => {
+	assert.deepEqual(parseSpokenVerseRefs('look at verse twenty one and two'), [
+		{ verse: 21, verseEnd: 22 },
+	]);
+});
+
+test('spoken refs: "verses nine and ten" = enumeration, not range to 10', () => {
+	assert.deepEqual(parseSpokenVerseRefs('verses nine and ten teach this'), [
+		{ verse: 9, verseEnd: 10 },
+	]);
+});
+
+test('foreign windows: cross-book citation opens a tangent (panel F3)', () => {
+	const us = [
+		utt(0, 10, 'verse nine of our chapter'),
+		utt(1, 100, 'turn with me to Second Chronicles 28 for the fuller account'),
+		utt(2, 130, 'verse nine and ten there are devastating'),
+		utt(3, 400, 'coming back to our chapter in verse 12'),
+	];
+	const windows = detectForeignWindows(us, {
+		foreignBooks: { 'Second Chronicles': '2-chr', Helaman: 'hel' },
+	});
+	assert.equal(windows.length, 1);
+	assert.equal(windows[0].book, '2-chr');
+	assert.ok(windows[0].tStart <= 100 && windows[0].tEnd >= 130);
+});
+
+test('alias match: ASR variant "Ahas" resolves to Ahaz (panel F1)', () => {
+	const table = [
+		{ id: 'person-ahaz', names: ['Ahaz', 'Ahas'] },
+		{ id: 'person-hezekiah', names: ['Hezekiah'] },
+	];
+	const hits = aliasMatchCandidates('and ahas his father trembled', table);
+	assert.deepEqual(hits.map((h) => h.id), ['person-ahaz']);
+});
+
+test('alias match: word boundaries hold for aliases too', () => {
+	const table = [{ id: 'person-ahaz', names: ['Ahaz', 'Ahas'] }];
+	assert.deepEqual(aliasMatchCandidates('he purchases the field', table), []);
 });
 
 // ---------- candidate prefilter ----------
@@ -158,15 +257,15 @@ test('prefilter: principles always ride along in full (thematic pool)', () => {
 
 test('H3: valid ref resolves to spine id', () => {
 	const r = resolveVerseRef(
-		{ chapter_ctx: '2kgs-14', verse_num: 3 },
+		{ chapter_ctx: '2-kgs-14', verse_num: 3 },
 		{ episodeChapters: EPISODE_CHAPTERS, verseExists: VERSE_EXISTS },
 	);
-	assert.deepEqual(r, { id: '2kgs-14-3' });
+	assert.deepEqual(r, { id: '2-kgs-14-3' });
 });
 
 test('H3: chapter outside episode block → dropped with reason, no throw', () => {
 	const r = resolveVerseRef(
-		{ chapter_ctx: '2kgs-13', verse_num: 3 },
+		{ chapter_ctx: '2-kgs-13', verse_num: 3 },
 		{ episodeChapters: EPISODE_CHAPTERS, verseExists: VERSE_EXISTS },
 	);
 	assert.equal(r.id, null);
@@ -175,7 +274,7 @@ test('H3: chapter outside episode block → dropped with reason, no throw', () =
 
 test('H3: nonexistent verse → dropped with reason', () => {
 	const r = resolveVerseRef(
-		{ chapter_ctx: '2kgs-16', verse_num: 99 },
+		{ chapter_ctx: '2-kgs-16', verse_num: 99 },
 		{ episodeChapters: EPISODE_CHAPTERS, verseExists: VERSE_EXISTS },
 	);
 	assert.equal(r.id, null);
@@ -185,7 +284,7 @@ test('H3: nonexistent verse → dropped with reason', () => {
 test('H3: malformed ref (verse 0, non-int) → dropped, never fabricated', () => {
 	for (const verse_num of [0, -1, 1.5, 'three']) {
 		const r = resolveVerseRef(
-			{ chapter_ctx: '2kgs-14', verse_num },
+			{ chapter_ctx: '2-kgs-14', verse_num },
 			{ episodeChapters: EPISODE_CHAPTERS, verseExists: VERSE_EXISTS },
 		);
 		assert.equal(r.id, null, `verse_num=${verse_num} must not resolve`);
@@ -258,7 +357,7 @@ test('aggregate: one edge per (target, rel_type), mentions sorted by t', () => {
 });
 
 test('aggregate: verse/chapter kinds map to DISCUSSES', () => {
-	const ms = [mention({ kind: 'verse', target: '2kgs-14-3' })];
+	const ms = [mention({ kind: 'verse', target: '2-kgs-14-3' })];
 	const [e] = aggregateToEdges(ms, { episodeId: 'unshaken-x' });
 	assert.equal(e.relType, 'DISCUSSES');
 });
@@ -296,14 +395,14 @@ test('H5: foreign-episode results are ignored, not absorbed', () => {
 // ---------- H6 + H7: load plan (UPDATE vs INSERT, idempotent delete) ----------
 
 const EXISTING_TITLE_EDGES = [
-	{ from_id: 'unshaken-x', to_id: '2kgs-14', rel_type: 'DISCUSSES' },
-	{ from_id: 'unshaken-x', to_id: '2kgs-15', rel_type: 'DISCUSSES' },
+	{ from_id: 'unshaken-x', to_id: '2-kgs-14', rel_type: 'DISCUSSES' },
+	{ from_id: 'unshaken-x', to_id: '2-kgs-15', rel_type: 'DISCUSSES' },
 ];
 
 function planFixture() {
 	const edges = [
-		{ toId: '2kgs-14', relType: 'DISCUSSES', mentions: [{ t: 10, seq: 1, confidence: 0.9 }] }, // exists → UPDATE
-		{ toId: '2kgs-14-3', relType: 'DISCUSSES', mentions: [{ t: 12, seq: 2, confidence: 0.9 }] }, // new → INSERT
+		{ toId: '2-kgs-14', relType: 'DISCUSSES', mentions: [{ t: 10, seq: 1, confidence: 0.9 }] }, // exists → UPDATE
+		{ toId: '2-kgs-14-3', relType: 'DISCUSSES', mentions: [{ t: 12, seq: 2, confidence: 0.9 }] }, // new → INSERT
 		{ toId: 'person-hezekiah', relType: 'MENTIONS', mentions: [{ t: 14, seq: 3, confidence: 0.8 }] },
 	];
 	return buildExtractionLoadPlan({
@@ -318,43 +417,56 @@ test('H6: existing title pair gets UPDATE, never INSERT (unique index)', () => {
 	const plan = planFixture();
 	const inserts = plan.statements.filter((s) => s.kind === 'insert-edge');
 	const updates = plan.statements.filter((s) => s.kind === 'update-title-edge');
-	assert.ok(updates.some((s) => s.toId === '2kgs-14'));
-	assert.ok(!inserts.some((s) => s.toId === '2kgs-14'));
-	assert.ok(inserts.some((s) => s.toId === '2kgs-14-3'));
+	assert.ok(updates.some((s) => s.toId === '2-kgs-14'));
+	assert.ok(!inserts.some((s) => s.toId === '2-kgs-14'));
+	assert.ok(inserts.some((s) => s.toId === '2-kgs-14-3'));
 	assert.ok(inserts.some((s) => s.toId === 'person-hezekiah'));
 });
 
-test('H6: title-edge UPDATE preserves source:title + confidence 1', () => {
+test('H6: title-edge UPDATE keeps source column + confidence-1 anchor (F4)', () => {
 	const plan = planFixture();
 	const up = plan.statements.find((s) => s.kind === 'update-title-edge');
-	assert.equal(up.metadata.source, 'title');
+	assert.equal(up.source, 'unshaken-youtube'); // A1 ownership untouched
 	assert.equal(up.metadata.confidence, 1);
 	assert.ok(Array.isArray(up.metadata.mentions) && up.metadata.mentions.length > 0);
 });
 
-test('H7: delete is scoped to extraction-sourced edges of THIS episode', () => {
+test('H7: delete scopes on first-class source column, THIS episode only (F4)', () => {
 	const plan = planFixture();
 	const del = plan.statements.find((s) => s.kind === 'delete-extraction-edges');
 	assert.equal(del.episodeId, 'unshaken-x');
 	assert.equal(del.collectionId, 'unshaken');
-	assert.equal(del.sourceFilter, 'extraction');
+	assert.equal(del.sourceFilter, 'unshaken-extraction');
 });
 
-test('H7: title edges are never in any delete statement', () => {
+test('H7: title-sourced (unshaken-youtube) edges never deletable', () => {
 	const plan = planFixture();
 	for (const s of plan.statements) {
 		if (s.kind.startsWith('delete')) {
-			assert.notEqual(s.sourceFilter, 'title');
-			assert.equal(s.sourceFilter, 'extraction');
+			assert.notEqual(s.sourceFilter, 'unshaken-youtube');
+			assert.equal(s.sourceFilter, 'unshaken-extraction');
 		}
 	}
 });
 
-test('H6b: inserted extraction edges carry source:extraction metadata', () => {
+test('H6b: inserted extraction edges carry source column + mentions', () => {
 	const plan = planFixture();
 	for (const s of plan.statements.filter((x) => x.kind === 'insert-edge')) {
-		assert.equal(s.metadata.source, 'extraction');
+		assert.equal(s.source, 'unshaken-extraction');
 		assert.ok(Array.isArray(s.metadata.mentions));
+	}
+});
+
+test('F1-regression: jsonb statement values are OBJECTS, never pre-stringified', () => {
+	// Prod carries 184 double-encoded rows because the A1 executor stringified
+	// before postgres.js serialized. The repaired contract: builders emit raw
+	// objects; the executor serializes EXACTLY once. Pin it at the builder.
+	const plan = planFixture();
+	for (const s of plan.statements) {
+		if (s.metadata !== undefined) {
+			assert.equal(typeof s.metadata, 'object');
+			assert.notEqual(typeof s.metadata, 'string');
+		}
 	}
 });
 
@@ -387,7 +499,7 @@ test('H8: load-plan builder REFUSES any object carrying __trap', () => {
 
 test('sampling: deterministic under injected rng, 12 per episode cap', () => {
 	const ms = Array.from({ length: 40 }, (_, i) =>
-		mention({ t: i * 10, seq: i, kind: i % 2 ? 'verse' : 'person', target: i % 2 ? '2kgs-14-3' : 'person-hezekiah' }),
+		mention({ t: i * 10, seq: i, kind: i % 2 ? 'verse' : 'person', target: i % 2 ? '2-kgs-14-3' : 'person-hezekiah' }),
 	);
 	const rng = () => 0.42;
 	const a = stratifiedSample(ms, { perEpisode: 12, rng });
@@ -418,14 +530,14 @@ test('prompts: chunk prompt carries chapter context, candidates, seq lines', () 
 	const chunk = {
 		tStart: 100,
 		tEnd: 200,
-		chapterContext: ['2kgs-14'],
+		chapterContext: ['2-kgs-14'],
 		utterances: [utt(1, 100, 'Hezekiah prayed')],
 	};
 	const p = buildChunkPrompt(chunk, {
 		candidates: { named: [POOL.person[0]], principles: POOL.principle },
 		episodeTitle: 'Come Follow Me - 2 Kings 14-25',
 	});
-	assert.match(p, /2kgs-14/);
+	assert.match(p, /2-kgs-14/);
 	assert.match(p, /person-hezekiah/);
 	assert.match(p, /\[1 @ 01:40\] Hezekiah prayed/);
 });
@@ -447,7 +559,7 @@ test('H9: scrubber removes ANTHROPIC_API_KEY material from error text', () => {
 });
 
 test('H9: prompts and schema never embed key material', () => {
-	const chunk = { tStart: 0, tEnd: 1, chapterContext: ['2kgs-14'], utterances: [utt(0, 0, 'x')] };
+	const chunk = { tStart: 0, tEnd: 1, chapterContext: ['2-kgs-14'], utterances: [utt(0, 0, 'x')] };
 	const p = buildChunkPrompt(chunk, {
 		candidates: { named: [], principles: [] },
 		episodeTitle: 't',
