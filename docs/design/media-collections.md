@@ -195,10 +195,32 @@ re-costs). Stage 4's eval is designed against A1's REAL transcripts
   Deepgram terms, current CFM block, entity density (risk 7).
 - **A2 `unshaken-extraction`** (feature-workflow, standard, from main, after
   A1) — stage 4 + edge load; eval vs real transcripts. Parallel with B.
+  SHIPPED 2026-07-18: eval round 2 passed (verse/chapter 0.932 · entity
+  0.900 · principle 0.925; 11/11 traps, 4/4 golds) — 2,250 extraction edges
+  / 7,970 timestamped mentions live behind `public=false`. LENS GREEN-LIT.
 - **B `unshaken-surfaces`** (feature-workflow, standard, from
   `proto/podcast-ui` + merge main) — real loaders, de-AI-UX pass, reader
   panel, admin collections page, `getChapterArt` collection scope fix,
-  lens-if-precision.
+  lens-if-precision (condition MET — see A2), **enrichment review UI
+  (below, Abram 2026-07-18)**.
+- **B-scope: enrichment review UI** (Abram, verbatim: "a system in which an
+  admin can review all collection AI enrichment. and they can go sort by AI
+  confidence and mark accepted or not… in the ui"). Design:
+  - `/admin/enrichment` route behind the `admin.collections` entitlement
+    (granted since A1's migration, so far surface-less). Table of enrichment
+    mentions across a collection: sortable by confidence (asc = worst-first
+    review queue), filterable by kind/episode/status, row actions
+    accept / reject with quote + transcript context inline.
+  - Review state is an OVERLAY table (`lumen.enrichment_reviews`: edge
+    triple + mention seq identity → status accepted|rejected, reviewer,
+    reviewed_at) — never rewrites edge jsonb, survives re-extraction
+    (seqs are stable while the transcript artifact is; re-loads re-apply
+    the overlay). Surfaces resolve: rejected → never shown; accepted →
+    shown regardless of threshold; pending → confidence-threshold rules.
+  - Seeds: the ~13 round-2 adjudicated-wrong eval mentions land as the
+    first `rejected` rows (verdicts double as review data). Review
+    decisions accumulate into a per-confidence-band calibration signal
+    that future extraction rounds and the lens threshold read.
 - **Later, in no order:** universal search UI · graph membership (episodes +
   art; absorbs parked art-neo4j) · transcript quality upgrade (Whisper) ·
   more shows (config reuse) · collections user-half (toggles/cookie — spine
