@@ -8,15 +8,29 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
 
-const RUNGS = [1, 2, 4, 8, 16];
+// Probed 2026-07-18: this DSN rides Supabase's SESSION-mode pooler
+// (aws-1-us-west-2.pooler.supabase.com:5432) with pool_size 15 — 17
+// concurrent sessions → EMAXCONNSESSION. Ladder tops at 12 so storm +
+// holders + control stay inside the budget; the cap itself is a documented
+// environment property, not a DB-capacity finding.
+export const POOLER_SESSION_CAP = 15;
+export const RUNGS = [1, 2, 4, 8, 12];
 const RUNG_SECONDS = 45;
 const WARMUP_DISCARD_S = 5;
 const BREAKER_WINDOW_S = 5;
 const PCTL_MIN_N = 300;
 
-function pct(sorted, p) {
+export function pct(sorted, p) {
 	if (!sorted.length) return null;
 	return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
+}
+
+/** Pooler admission-control errors are an environment property, not a DB
+ * failure — classified apart so rung stats never conflate them. */
+export function classifyError(message) {
+	if (/EMAXCONNSESSION|max clients reached/i.test(message)) return 'pool-cap';
+	if (/timeout|canceling statement/i.test(message)) return 'timeout';
+	return 'query-error';
 }
 
 export async function runLoad({ ROOT, assertReadOnly, log }) {
@@ -132,6 +146,8 @@ export async function runLoad({ ROOT, assertReadOnly, log }) {
 		const samples = Object.fromEntries(classNames.map((c) => [c, []]));
 		let errors = 0;
 		let timeouts = 0;
+		let poolCap = 0;
+		const errorSamples = new Set();
 		let total = 0;
 		const started = performance.now();
 		const endAt = started + RUNG_SECONDS * 1000;
@@ -151,8 +167,13 @@ export async function runLoad({ ROOT, assertReadOnly, log }) {
 						total += 1;
 					}
 				} catch (e) {
-					errors += 1;
-					if (/timeout|canceling statement/i.test(e.message)) timeouts += 1;
+					const kind = classifyError(e.message);
+					if (kind === 'pool-cap') poolCap += 1;
+					else {
+						errors += 1;
+						if (kind === 'timeout') timeouts += 1;
+					}
+					if (errorSamples.size < 5) errorSamples.add(e.message.slice(0, 100));
 				}
 			}
 		};
@@ -204,11 +225,13 @@ export async function runLoad({ ROOT, assertReadOnly, log }) {
 			queries: total,
 			errors,
 			timeouts,
+			pool_cap_rejections: poolCap,
+			error_samples: [...errorSamples],
 			aborted,
 			perClass,
 		};
 		rungResults.push(rung);
-		log({ event: 'rung_done', label, qps: rung.throughput_qps, errors, timeouts });
+		log({ event: 'rung_done', label, qps: rung.throughput_qps, errors, timeouts, pool_cap: poolCap });
 		return perClass;
 	}
 

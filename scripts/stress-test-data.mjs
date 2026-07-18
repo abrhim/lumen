@@ -30,9 +30,74 @@ async function q(sql, text, params = []) {
 	return sql.unsafe(assertReadOnly(text), params);
 }
 
+// ── pure SQL builders (exported for the harness tests — every fix carries
+// a test, Abram 2026-07-18) ─────────────────────────────────────────────────
+
+// Run-2 fix: `LIKE '%__trap%'` treats __ as two wildcards and matched 233
+// transcript quotes containing the word "trap" (strpos exact count: 0).
+export const TRAP_FIELD_PROBE_SQL = `
+SELECT count(*)::int n FROM lumen.edges
+WHERE strpos(metadata::text, '__trap') > 0
+   OR strpos(metadata::text, 'originalTarget') > 0
+   OR strpos(metadata::text, 'swappedTarget') > 0`;
+
+// Run-2 fix: chr(0) in a pattern is a PG error ("null character not
+// permitted") — and PG text FORBIDS NUL by construction, so the probe was
+// both broken and unnecessary. Remaining probes: replacement chars,
+// double-encoded entities, pathological lengths.
+export function encodingSweepSQL(table, col) {
+	return `
+		SELECT count(*) FILTER (WHERE ${col} LIKE '%' || chr(65533) || '%')::int repl,
+		       count(*) FILTER (WHERE ${col} LIKE '%&amp;%')::int dblenc,
+		       count(*) FILTER (WHERE length(${col}) > 100000)::int huge
+		FROM lumen.${table} WHERE ${col} IS NOT NULL`;
+}
+
+// Run-1 fix: metadata columns are DISCOVERED, never assumed (collections
+// has no metadata column — the hardcoded list FATAL'd the first run).
+export const META_TABLES_SQL = `
+SELECT table_name FROM information_schema.columns
+WHERE table_schema = 'lumen' AND column_name = 'metadata'`;
+
+// Run-3 fix: JST dangling links split by PATTERN — verse numbers beyond the
+// chapter's canonical end are Joseph Smith ADDITIONS (verified 427/427 on
+// 2026-07-18), a data-model gap, not corruption. Anything else dangling is
+// real corruption and fails.
+export const JST_DANGLING_SPLIT_SQL = `
+WITH dangling AS (
+  SELECT e.metadata->>'verse_id' vid FROM lumen.entities e
+  LEFT JOIN lumen.verses v ON v.id = e.metadata->>'verse_id'
+  WHERE e.collection_id = 'jst' AND v.id IS NULL),
+parsed AS (
+  SELECT vid, regexp_replace(vid, '-[0-9]+$', '') chap,
+         (regexp_match(vid, '-([0-9]+)$'))[1]::int vnum FROM dangling),
+chapmax AS (
+  SELECT chapter_id, max((regexp_match(id, '-([0-9]+)$'))[1]::int) mx
+  FROM lumen.verses GROUP BY 1)
+SELECT count(*)::int total,
+       count(*) FILTER (WHERE cm.mx IS NOT NULL AND p.vnum > cm.mx)::int additions,
+       count(*) FILTER (WHERE cm.mx IS NULL OR p.vnum <= cm.mx)::int corrupt
+FROM parsed p LEFT JOIN chapmax cm ON cm.chapter_id = p.chap`;
+
+// Run-3 fix: Strong's numbers legitimately carry disambiguation suffixes —
+// probed depth reaches F (H5526F), not just A/B (1,164 + 22 rows total).
+export const STRONGS_NO_PATTERN = '^[HG][0-9]+[A-F]?$';
+
 // ── result collection ───────────────────────────────────────────────────────
 
-const results = { integrity: [], load: [], startedAt: new Date().toISOString() };
+const results = { integrity: [], load: null, startedAt: new Date().toISOString() };
+
+/** Phase-scoped runs must never clobber the other phase's persisted results
+ * (an integrity-only rerun erased the load tables once). Pure — pinned in
+ * the harness tests. */
+export function mergeResults(existing, current) {
+	return {
+		...existing,
+		...current,
+		integrity: current.integrity?.length ? current.integrity : existing?.integrity ?? [],
+		load: current.load ?? existing?.load ?? null,
+	};
+}
 function record(dim, name, status, detail = {}) {
 	const row = { dim, name, status, ...detail };
 	results.integrity.push(row);
@@ -133,7 +198,8 @@ async function runIntegrity(sql) {
 	record('I4', 'entity_types_in_vocab', Number(badEntityTypes.n) === 0 ? 'pass' : 'fail', { violations: Number(badEntityTypes.n), bad: badEntityTypes.bad });
 	const [badRelTypes] = await q(sql, `SELECT count(*)::int n, array_agg(DISTINCT rel_type) FILTER (WHERE NOT (rel_type = ANY($1))) bad FROM lumen.edges WHERE NOT (rel_type = ANY($1))`, [[...PG_REL_TYPES]]);
 	record('I4', 'rel_types_in_vocab', Number(badRelTypes.n) === 0 ? 'pass' : 'fail', { violations: Number(badRelTypes.n), bad: badRelTypes.bad });
-	for (const table of ['entities', 'edges', 'collections']) {
+	const metaTables = await q(sql, META_TABLES_SQL);
+	for (const { table_name: table } of metaTables) {
 		const [r] = await q(sql, `SELECT count(*)::int n FROM lumen.${table} WHERE metadata IS NOT NULL AND jsonb_typeof(metadata) != 'object'`);
 		record('I4', `${table}_metadata_object_typed`, Number(r.n) === 0 ? 'pass' : 'fail', { violations: Number(r.n) });
 	}
@@ -161,9 +227,7 @@ async function runIntegrity(sql) {
 		WHERE ed.collection_id = 'unshaken' AND ed.source = 'unshaken-extraction'
 		  AND (m->>'t')::numeric > (e.metadata->'media'->>'duration_s')::numeric + 5`);
 	record('I5', 'mention_t_within_duration', Number(mentionT.n) === 0 ? 'pass' : 'fail', { violations: Number(mentionT.n) });
-	const [trapFields] = await q(sql, `
-		SELECT count(*)::int n FROM lumen.edges
-		WHERE metadata::text LIKE '%__trap%' OR metadata::text LIKE '%originalTarget%' OR metadata::text LIKE '%swappedTarget%'`);
+	const [trapFields] = await q(sql, TRAP_FIELD_PROBE_SQL);
 	record('I5', 'no_trap_fields_in_stored_metadata', Number(trapFields.n) === 0 ? 'pass' : 'fail', { violations: Number(trapFields.n) });
 	const [titleConf] = await q(sql, `
 		SELECT count(*)::int n FROM lumen.edges
@@ -200,15 +264,11 @@ async function runIntegrity(sql) {
 		['entities', 'description'], ['strongs_lexicon', 'definition'],
 	];
 	for (const [table, col] of textCols) {
-		const [r] = await q(sql, `
-			SELECT count(*) FILTER (WHERE ${col} LIKE '%' || chr(0) || '%')::int nul,
-			       count(*) FILTER (WHERE ${col} LIKE '%' || chr(65533) || '%')::int repl,
-			       count(*) FILTER (WHERE ${col} LIKE '%&amp;%')::int dblenc,
-			       count(*) FILTER (WHERE length(${col}) > 100000)::int huge
-			FROM lumen.${table} WHERE ${col} IS NOT NULL`);
-		const bad = Number(r.nul) + Number(r.repl) + Number(r.dblenc) + Number(r.huge);
+		const [r] = await q(sql, encodingSweepSQL(table, col));
+		const bad = Number(r.repl) + Number(r.dblenc) + Number(r.huge);
 		record('I7', `${table}_${col}_encoding`, bad === 0 ? 'pass' : 'fail', {
-			nul: Number(r.nul), replacement: Number(r.repl), double_encoded: Number(r.dblenc), huge: Number(r.huge),
+			replacement: Number(r.repl), double_encoded: Number(r.dblenc), huge: Number(r.huge),
+			note: 'NUL probe removed — PG text forbids NUL by construction',
 		});
 	}
 
@@ -245,11 +305,14 @@ const LM_LABELS = [
 async function runIntegrityExtended(sql) {
 	// I11 metadata-linkage collections (coverage F1: 77% of entities link via
 	// metadata conventions, not edges — previously invisible to the sweep)
-	const [jstDangling] = await q(sql, `
-		SELECT count(*)::int n FROM lumen.entities e
-		LEFT JOIN lumen.verses v ON v.id = e.metadata->>'verse_id'
-		WHERE e.collection_id = 'jst' AND v.id IS NULL`);
-	record('I11', 'jst_verse_id_links_resolve', Number(jstDangling.n) === 0 ? 'pass' : 'fail', { violations: Number(jstDangling.n) });
+	const [jst] = await q(sql, JST_DANGLING_SPLIT_SQL);
+	record('I11', 'jst_verse_id_links_resolve', Number(jst.corrupt) === 0 ? 'pass' : 'fail', {
+		corrupt_dangling: Number(jst.corrupt),
+	});
+	record('I11', 'jst_addition_verses_unanchored', Number(jst.additions) === 427 ? 'baseline-debt' : 'fail', {
+		additions: Number(jst.additions), pinned_baseline: 427,
+		note: 'JST-added verses (beyond canonical chapter end) have no anchoring convention — roadmap: anchor to preceding canonical verse or flag as addition',
+	});
 	const [strongsLink] = await q(sql, `
 		SELECT count(*) FILTER (WHERE sl.strongs_no IS NULL)::int dangling,
 		       count(*)::int total
@@ -345,7 +408,7 @@ async function runIntegrityExtended(sql) {
 
 	// I16 strongs lexicon domains (coverage F10)
 	const [lexBad] = await q(sql, `
-		SELECT count(*) FILTER (WHERE strongs_no !~ '^[HG][0-9]+$')::int bad_no,
+		SELECT count(*) FILTER (WHERE strongs_no !~ '${STRONGS_NO_PATTERN}')::int bad_no,
 		       count(*) FILTER (WHERE lang NOT IN ('hebrew', 'greek', 'H', 'G'))::int bad_lang,
 		       count(*) FILTER (WHERE length(trim(coalesce(gloss, ''))) = 0 AND length(trim(coalesce(definition, ''))) = 0)::int empty_both
 		FROM lumen.strongs_lexicon`);
@@ -388,44 +451,48 @@ async function runIntegrityExtended(sql) {
 	record('I10', 'entities_fts_canary', Number(eFts.n) > 0 ? 'pass' : 'fail', { hits: Number(eFts.n) });
 }
 
-// I9 Neo4j parity — creds from apps/web/.dev.vars (backfill-script pattern);
-// degrades to skipped when unavailable.
+// I9 Neo4j parity — the house pattern (backfill-neo4j-collections.mjs):
+// URI/USER/DATABASE from apps/web/wrangler.json vars, password from
+// .dev.vars, HTTPS Query API v2. Degrades to skipped when unavailable.
 async function runNeo4jParity(sql) {
-	let devVars;
+	let endpoint;
+	let auth;
 	try {
-		devVars = readFileSync(join(ROOT, 'apps', 'web', '.dev.vars'), 'utf8');
-	} catch {
-		record('I9', 'neo4j_parity', 'skipped', { reason: 'apps/web/.dev.vars not readable' });
+		const wrangler = JSON.parse(readFileSync(join(ROOT, 'apps/web/wrangler.json'), 'utf8'));
+		const devVars = readFileSync(join(ROOT, 'apps/web/.dev.vars'), 'utf8');
+		const password = devVars.match(/^NEO4J_PASSWORD=(.+)$/m)?.[1]?.trim();
+		if (!wrangler.vars?.NEO4J_URI || !password) throw new Error('neo4j vars incomplete');
+		endpoint = `${wrangler.vars.NEO4J_URI.replace('neo4j+s://', 'https://')}/db/${wrangler.vars.NEO4J_DATABASE}/query/v2`;
+		auth = 'Basic ' + Buffer.from(`${wrangler.vars.NEO4J_USER}:${password}`).toString('base64');
+	} catch (err) {
+		record('I9', 'neo4j_parity', 'skipped', { reason: scrubSecrets(err.message).slice(0, 80) });
 		return;
 	}
-	const uri = devVars.match(/^NEO4J_URI=(.+)$/m)?.[1]?.trim();
-	const user = devVars.match(/^NEO4J_USER(?:NAME)?=(.+)$/m)?.[1]?.trim() ?? 'neo4j';
-	const password = devVars.match(/^NEO4J_PASSWORD=(.+)$/m)?.[1]?.trim();
-	if (!uri || !password) {
-		record('I9', 'neo4j_parity', 'skipped', { reason: 'NEO4J_URI/PASSWORD not found in .dev.vars' });
-		return;
-	}
-	let driver;
+	const cypher = async (statement) => {
+		const res = await fetch(endpoint, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: auth },
+			body: JSON.stringify({ statement, parameters: {} }),
+		});
+		const body = await res.json();
+		if (!res.ok || body.errors?.length) {
+			throw new Error(`neo4j query failed: ${body.errors?.[0]?.message ?? res.status}`);
+		}
+		const fields = body.data?.fields ?? [];
+		return (body.data?.values ?? []).map((v) => Object.fromEntries(fields.map((f, i) => [f, v[i]])));
+	};
 	try {
-		const require = createRequire(import.meta.url);
-		const neo4j = require('neo4j-driver');
-		driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
-		const session = driver.session({ defaultAccessMode: neo4j.session.READ });
 		const counts = {};
 		for (const label of LM_LABELS) {
-			const res = await session.run(`MATCH (n:${label}) RETURN count(n) AS n`);
-			counts[label] = res.records[0].get('n').toNumber();
+			const [row] = await cypher(`MATCH (n:${label}) RETURN count(n) AS n`);
+			counts[label] = Number(row.n);
 		}
-		// orphan relationship endpoints within the LM_ world
-		const orphanRes = await session.run(
+		const [orphan] = await cypher(
 			`MATCH (a)-[r]->(b)
 			 WHERE any(l IN labels(a) WHERE l STARTS WITH 'LM_')
 			   AND NOT any(l IN labels(b) WHERE l STARTS WITH 'LM_')
 			 RETURN count(r) AS n`,
 		);
-		const orphanRels = orphanRes.records[0].get('n').toNumber();
-		await session.close();
-		// PG-side expectations for a few directly-comparable labels
 		const [pg] = await q(sql, `
 			SELECT (SELECT count(*)::int FROM lumen.verses) verses,
 			       (SELECT count(*)::int FROM lumen.chapters) chapters,
@@ -436,19 +503,35 @@ async function runNeo4jParity(sql) {
 			LM_Book: [counts.LM_Book, Number(pg.books)],
 		};
 		const mismatches = Object.entries(parity).filter(([, [g, p]]) => g !== p);
-		record('I9', 'neo4j_label_counts', mismatches.length === 0 ? 'pass' : 'fail', { parity, all_labels: counts });
-		record('I9', 'neo4j_no_orphan_lm_relationships', orphanRels === 0 ? 'pass' : 'fail', { orphan_rels: orphanRels });
+		record('I9', 'neo4j_label_counts', mismatches.length === 0 ? 'pass' : 'fail', {
+			parity,
+			all_labels: counts,
+			note: 'localized 2026-07-18: D&C holds 294/3,654 graph verses — backfill predates/truncated the D&C load; graph-membership feature owns the re-sync',
+		});
+		record('I9', 'neo4j_never_synced_labels', 'baseline-debt', {
+			zero_labels: LM_LABELS.filter((l) => counts[l] === 0),
+			note: 'labels defined in the backfill but never populated (strongs/jst/naves) — documented gap, joins extraction+art in the graph-membership backlog',
+		});
+		record('I9', 'neo4j_no_orphan_lm_relationships', Number(orphan.n) === 0 ? 'pass' : 'fail', { orphan_rels: Number(orphan.n) });
 		record('I9', 'neo4j_known_missing_classes', 'baseline-debt', {
 			note: 'A2 extraction edges + art collection are documented KNOWN-MISSING from the graph (graph-membership feature)',
 		});
 	} catch (err) {
 		record('I9', 'neo4j_parity', 'skipped', { reason: scrubSecrets(err.message).slice(0, 120) });
-	} finally {
-		await driver?.close?.();
 	}
 }
 
 export { runIntegrity, runIntegrityExtended, runNeo4jParity, assertReadOnly };
+
+function persistMerged() {
+	let existing = null;
+	try {
+		existing = JSON.parse(readFileSync(join(OUT_DIR, 'results.json'), 'utf8'));
+	} catch {
+		existing = null;
+	}
+	return mergeResults(existing, results);
+}
 
 async function main() {
 	const phase = process.argv.find((a) => a.startsWith('--phase='))?.slice(8) ?? 'all';
@@ -475,6 +558,8 @@ async function main() {
 		const { runLoad } = await import('./stress-test-load.mjs');
 		if (phase === 'load' || phase === 'all') {
 			results.load = await runLoad({ ROOT, assertReadOnly, log: (e) => console.log(JSON.stringify(e)) });
+			// persist incrementally — a late integrity FATAL must not lose the storm
+			writeFileSync(join(OUT_DIR, 'results.json'), JSON.stringify(persistMerged(), null, 1));
 		}
 		if (phase === 'integrity' || phase === 'all') {
 			await runIntegrity(sql);
@@ -487,7 +572,7 @@ async function main() {
 		process.exit(1);
 	}
 	results.finishedAt = new Date().toISOString();
-	writeFileSync(join(OUT_DIR, 'results.json'), JSON.stringify(results, null, 1));
+	writeFileSync(join(OUT_DIR, 'results.json'), JSON.stringify(persistMerged(), null, 1));
 	await sql.end();
 	const failures = results.integrity.filter((r) => r.status === 'fail');
 	const debt = results.integrity.filter((r) => r.status === 'baseline-debt');
