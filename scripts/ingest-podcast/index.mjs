@@ -27,6 +27,12 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
 import { UNSHAKEN } from './shows/unshaken.mjs';
+import { runExtractCode, runExtractMerge } from './extract.mjs';
+import {
+	EXISTING_EDGES_SQL,
+	buildExtractionLoadPlan,
+	executeExtractionLoadPlan,
+} from './load-extraction.mjs';
 import {
 	scrubSecrets,
 	childEnv,
@@ -255,6 +261,18 @@ function assertStagePrereqs(stage, episodes, dir) {
 			throw new Error(`--stage=load: ${missing.length} episode(s) missing transcripts (run --stage=transcribe first): ${missing.map((e) => e.id).join(', ')}`);
 		}
 	}
+	if (stage === 'extract-code' || stage === 'extract-merge') {
+		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir)));
+		if (missing.length) {
+			throw new Error(`--stage=${stage}: ${missing.length} episode(s) missing deepgram artifacts: ${missing.map((e) => e.id).join(', ')}`);
+		}
+	}
+	if (stage === 'load-extraction') {
+		const missing = episodes.filter((ep) => !existsSync(join(dir, `${ep.id}.extraction.json`)));
+		if (missing.length) {
+			throw new Error(`--stage=load-extraction: ${missing.length} episode(s) missing extraction artifacts (run --stage=extract-merge first): ${missing.map((e) => e.id).join(', ')}`);
+		}
+	}
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
@@ -301,6 +319,60 @@ async function main() {
 			bookIdByName: Object.fromEntries(bookRows.map((b) => [b.name, b.id])),
 			chapterCount: Object.fromEntries(chapterRows.map((c) => [c.book_id, Number(c.n)])),
 		};
+		// ── A2 stages: deterministic extraction + gated load; no fetch/probe
+		// machinery, no external calls. Judgment happens in Claude Code
+		// workflows BETWEEN these stages, coupled through artifacts. ──
+		if (['extract-code', 'extract-merge', 'load-extraction'].includes(opts.stage)) {
+			const bookRows = await sql`SELECT id, name FROM lumen.books`;
+			const stageOpts = { ...opts, showId: show.id, bookRows };
+			const rollup = { ok: [], failed: [] };
+			let verdict = null;
+			if (opts.stage === 'load-extraction') {
+				const verdictPath = join(dir, 'eval-verdict.json');
+				if (!existsSync(verdictPath)) {
+					fatal(new Error('eval-verdict.json missing — the checkpoint gates the load (PW-A6)'), 'prereq');
+				}
+				verdict = JSON.parse(readFileSync(verdictPath, 'utf8'));
+				if (verdict.passed !== true) {
+					fatal(new Error('eval verdict is not a pass — load refused'), 'prereq');
+				}
+			}
+			for (const ep of episodes) {
+				try {
+					if (opts.stage === 'extract-code') {
+						await runExtractCode(sql, ep, dir, lookup, stageOpts, log);
+					} else if (opts.stage === 'extract-merge') {
+						await runExtractMerge(sql, ep, dir, lookup, stageOpts, log);
+					} else {
+						const episodeId = `${show.id}-${ep.id}`;
+						const extraction = JSON.parse(readFileSync(join(dir, `${ep.id}.extraction.json`), 'utf8'));
+						// PW-A6: hash binding — the verdict must cover THIS artifact
+						if (verdict.episodeHashes?.[episodeId] !== extraction.contentHash) {
+							throw new Error('extraction hash lacks a matching eval verdict — re-run the checkpoint');
+						}
+						const existingEdges = await sql.unsafe(EXISTING_EDGES_SQL, [episodeId, show.id]);
+						const plan = buildExtractionLoadPlan({
+							episodeId,
+							collectionId: show.id,
+							edges: extraction.edges,
+							existingEdges,
+						});
+						if (opts.dryRun) {
+							log('extraction_load_dry_run', plan.summary);
+						} else {
+							await executeExtractionLoadPlan(sql, plan, { log });
+						}
+					}
+					rollup.ok.push(ep.id);
+				} catch (err) {
+					log('episode_failed', { episode: ep.id, stage: opts.stage, error: scrub(err.message) });
+					rollup.failed.push(ep.id);
+				}
+			}
+			log('stage_rollup', { stage: opts.stage, ok: rollup.ok.length, failed: rollup.failed });
+			return finish(rollup.failed.length ? 2 : 0);
+		}
+
 		const keytermRows = await sql`
       SELECT e.name FROM lumen.entities e
       JOIN lumen.edges ed ON ed.from_id = e.id OR ed.to_id = e.id

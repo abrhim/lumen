@@ -133,7 +133,7 @@ export function detectChapterTransitions(utterances, { episodeChapters, bookAlia
 			if (!Number.isInteger(f.num) || !blockByBook.get(f.bookId)?.has(f.num)) continue;
 			const chapter = `${f.bookId}-${f.num}`;
 			if (segs.at(-1)?.chapter === chapter) continue;
-			segs.push({ chapter, t_start_s: u.t_start_s, evidence: u.text });
+			segs.push({ chapter, t_start_s: u.t_start_s, seq: u.seq, evidence: u.text });
 		}
 	}
 	return segs;
@@ -200,7 +200,14 @@ export function detectForeignWindows(utterances, { foreignBooks, quietClose = 15
 	for (const u of utterances) {
 		let hit = null;
 		for (const [alias, book] of entries) {
-			if (new RegExp(`\\b${esc(alias)}\\b`, 'i').test(u.text)) {
+			// a CITATION opens a window, not a bare name-drop — "Job" the book
+			// vs "job" the noun, "Ruth" the book vs Ruth the person. Require
+			// the alias followed by a chapter/section/verse-style number.
+			const re = new RegExp(
+				`\\b${esc(alias)}\\s+(?:chapter\\s+|section\\s+)?${NUM}\\b`,
+				'i',
+			);
+			if (re.test(u.text)) {
 				hit = book;
 				break;
 			}
