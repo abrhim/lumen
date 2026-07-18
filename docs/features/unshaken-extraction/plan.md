@@ -349,7 +349,7 @@ plan-hash = `sed '/^## Drift baseline/,$d' docs/features/unshaken-extraction/pla
 eval-prompt-hash = `shasum -a 256 docs/features/unshaken-extraction/eval-prompt.md`.
 
 - plan-hash: 1bde04199976a6d1e847fbfbca12f4736d2ac9dd3000bb707bcde04eea7a286f
-- harness-hash: 62acf387af99e5db33ba422d4357f962e623caec3d018d3b4499807f070437e5
+- harness-hash: 2b4746d8f36a7af5d40f701642cd7594757b2cfa00a5d7dcb0485280287c3e11
 - eval-prompt-hash: beddaa88feddea01bedfdaeaeb519e9fb536ce440bae686e7c223131822be0f5
 
 ## Post-review amendments (steps 9–13, 2026-07-18)

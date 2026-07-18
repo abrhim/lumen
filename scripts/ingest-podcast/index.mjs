@@ -31,6 +31,7 @@ import { runExtractCode, runExtractMerge } from './extract.mjs';
 import {
 	EXISTING_EDGES_SQL,
 	buildExtractionLoadPlan,
+	checkLoadGate,
 	executeExtractionLoadPlan,
 } from './load-extraction.mjs';
 import {
@@ -278,14 +279,21 @@ function assertStagePrereqs(stage, episodes, dir) {
 // ── main ────────────────────────────────────────────────────────────────────
 
 async function main() {
+	// R-runner-gates-1: fatal() schedules exit via the log-flush callback and
+	// RETURNS — every gate needs its own `return` or execution falls through
+	// on the event-loop race (the F1 class, swept across ALL call sites).
 	let opts;
 	try {
 		opts = parseArgs(process.argv.slice(2));
 	} catch (err) {
 		fatal(err, 'args');
+		return;
 	}
 	const show = SHOWS[opts.show];
-	if (!show) fatal(new Error(`unknown show ${opts.show}`), 'args');
+	if (!show) {
+		fatal(new Error(`unknown show ${opts.show}`), 'args');
+		return;
+	}
 	const dir = join(ROOT, 'data', 'podcasts', show.id);
 	mkdirSync(dir, { recursive: true });
 	// B1: runner-owned per-invocation log — no tee, no shared file
@@ -297,9 +305,15 @@ async function main() {
 	const postgres = require('postgres');
 	const envText = readFileSync(join(ROOT, '.env'), 'utf8');
 	const dsn = envText.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
-	if (!dsn) fatal(new Error('DATABASE_URL not found in root .env'), 'env');
+	if (!dsn) {
+		fatal(new Error('DATABASE_URL not found in root .env'), 'env');
+		return;
+	}
 	const apiKey = envText.match(/^DEEPGRAM_API_KEY=(.+)$/m)?.[1]?.trim();
-	if (!apiKey) fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
+	if (!apiKey) {
+		fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
+		return;
+	}
 	// B4: every in-run scrub carries the live key explicitly
 	const scrub = makeScrubber(apiKey);
 	const sql = postgres(dsn, { prepare: false, max: 2 });
@@ -351,17 +365,9 @@ async function main() {
 					} else {
 						const episodeId = `${show.id}-${ep.id}`;
 						const extraction = JSON.parse(readFileSync(join(dir, `${ep.id}.extraction.json`), 'utf8'));
-						// PW-A6: hash binding — the verdict must cover THIS artifact.
-						// F8: presence-checked; undefined !== undefined must never
-						// admit an uncovered episode.
-						const boundHash = verdict.episodeHashes?.[episodeId];
-						if (!boundHash || !extraction.contentHash || boundHash !== extraction.contentHash) {
-							throw new Error('extraction hash lacks a matching eval verdict — re-run the checkpoint');
-						}
-						// F27: partial-judgment artifacts are diagnosable, never loadable
-						if (extraction.judgmentComplete !== true) {
-							throw new Error(`judgment incomplete (${(extraction.judgmentMissing ?? []).join(', ')}) — episode not loadable`);
-						}
+						// PW-A6/F8/F27 via the harness-pinned pure gate
+						const gate = checkLoadGate({ verdict, episodeId, extraction });
+						if (!gate.ok) throw new Error(`${gate.reason} — episode not loadable`);
 						const existingEdges = await sql.unsafe(EXISTING_EDGES_SQL, [episodeId, show.id]);
 						const plan = buildExtractionLoadPlan({
 							episodeId,

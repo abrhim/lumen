@@ -146,18 +146,21 @@ export function deriveRound(artifacts, round, { verseExistsByEpisode, blockChapt
 	}
 
 	// traps: target-swapped REAL mentions riding ON TOP of sample n (EV-A2).
-	// per-stratum minimum 3 so the per-kind trap floor (A4) is measurable.
-	const trapCount = 10 + Math.floor(rng() * 5);
-	const perStratumMin = { verseChapter: 3, entity: 3, principle: 3 };
-	const trapPlan = [];
-	for (const [name, min] of Object.entries(perStratumMin)) for (let i = 0; i < min; i += 1) trapPlan.push(name);
+	// R-eval-machinery-1: planting quotas are per-KIND — a kind with 0-1
+	// traps can never trip the ≥2-missed void floor, making the floor
+	// structurally unmeasurable for exactly that kind.
+	const kindsWithPool = [...byKind.keys()].filter((k) => (byKind.get(k) ?? []).length >= 10);
+	const trapPlan = kindsWithPool.flatMap((k) => [k, k]); // 2 per measurable kind
+	const trapCount = Math.max(trapPlan.length, 10 + Math.floor(rng() * 5));
 	while (trapPlan.length < trapCount) {
-		trapPlan.push(Object.keys(STRATA)[Math.floor(rng() * 3)]);
+		trapPlan.push(kindsWithPool[Math.floor(rng() * kindsWithPool.length)]);
 	}
-	for (const stratum of trapPlan) {
-		const s = STRATA[stratum];
+	const stratumOfKind = (k) =>
+		Object.entries(STRATA).find(([, s]) => s.kinds.includes(k))[0];
+	for (const kind of trapPlan) {
+		const stratum = stratumOfKind(kind);
 		const pool = shuffle(
-			s.kinds.flatMap((k) => byKind.get(k) ?? []).filter((m) => !pickedKeys.has(keyOf(m))),
+			(byKind.get(kind) ?? []).filter((m) => !pickedKeys.has(keyOf(m))),
 			rng,
 		);
 		let planted = false;
@@ -297,10 +300,13 @@ async function build(sql, round) {
 
 	const outDir = join(DIR, 'eval', `round-${round}`);
 	mkdirSync(outDir, { recursive: true });
-	// F5: a rebuilt round must never score verdicts from a previous build —
-	// item ids restart at r{round}-i000, so stale verdicts LOOK valid.
+	// F5 + R-eval-machinery-3: purge verdicts AND stale packets/reports — a
+	// rebuild with fewer shards leaves colliding-id packets the evaluator
+	// workflow could pick up.
 	for (const f of readdirSync(outDir)) {
-		if (f.endsWith('.verdict.json')) rmSync(join(outDir, f));
+		if (f.endsWith('.verdict.json') || /^shard-\d+\.json$/.test(f) || f === 'report.json') {
+			rmSync(join(outDir, f));
+		}
 	}
 
 	// shard by stratum, then add ~10% cross-shard duplicates (EV-A3.5)
@@ -364,7 +370,10 @@ async function score(sql, round) {
 	}
 	// F4: prove the key recomputed IDENTICALLY — derivation also depends on
 	// live DB pools + episodes.json spans, which episodeHashes don't cover.
-	if (meta.keyHash && meta.keyHash !== derived.keyHash) {
+	// R-eval-machinery-2: an absent baseline must WARN, never silently skip.
+	if (!meta.keyHash) {
+		console.log(JSON.stringify({ event: 'keyhash_absent_legacy_round', round }));
+	} else if (meta.keyHash !== derived.keyHash) {
 		throw new Error('answer-key derivation diverged since --build (DB or spans changed) — rebuild the round');
 	}
 	// F24: the evaluators ran from the hash-pinned prompt file — assert the
@@ -374,7 +383,11 @@ async function score(sql, round) {
 	const promptHashNow = createHash('sha256')
 		.update(readFileSync(join(ROOT, 'docs/features/unshaken-extraction/eval-prompt.md')))
 		.digest('hex');
-	if (baselineHash && baselineHash !== promptHashNow) {
+	if (!baselineHash) {
+		// R-eval-machinery-2: a missing stamp disables the drift check — refuse
+		throw new Error('eval-prompt-hash stamp not found in plan.md drift baseline — restore it before scoring');
+	}
+	if (baselineHash !== promptHashNow) {
 		throw new Error('eval-prompt.md drifted from the stamped baseline — re-baseline before scoring');
 	}
 
@@ -385,14 +398,14 @@ async function score(sql, round) {
 		const p = join(outDir, `shard-${String(i).padStart(2, '0')}.verdict.json`);
 		if (!existsSync(p)) throw new Error(`missing verdict for shard ${i} — run the unshaken-eval workflow`);
 		for (const v of JSON.parse(readFileSync(p, 'utf8')).verdicts ?? []) {
-			// F18: schema-validate — an invalid verdict string must never
-			// silently become 'missing' and shrink the denominator.
-			if (!v || typeof v.id !== 'string' || !VALID_VERDICTS.has(v.verdict)) {
+			// F18 + R-eval-machinery-6: schema-validate INCLUDING anchor_ok — a
+			// missing field must not silently zero the F20 metric.
+			if (!v || typeof v.id !== 'string' || !VALID_VERDICTS.has(v.verdict) || typeof v.anchor_ok !== 'boolean') {
 				invalidEntries += 1;
 				continue;
 			}
 			if (!verdicts.has(v.id)) verdicts.set(v.id, []);
-			verdicts.get(v.id).push({ verdict: v.verdict, anchor_ok: v.anchor_ok !== false });
+			verdicts.get(v.id).push({ verdict: v.verdict, anchor_ok: v.anchor_ok });
 		}
 	}
 	// F18: every derived item must have a valid verdict — a selectively lazy
@@ -407,7 +420,7 @@ async function score(sql, round) {
 	const report = {
 		round,
 		seedHex: derived.seedHex,
-		evaluator: { model: 'session-inherited', effort: 'high', promptHash: promptHashNow },
+		evaluator: { model: 'claude-fable-5 (session-inherited)', effort: 'high', promptHash: promptHashNow },
 		strata: {},
 		perKind: {},
 		traps: {},
@@ -515,7 +528,17 @@ async function score(sql, round) {
 	writeArtifactAtomic(
 		join(DIR, 'eval-verdict.json'),
 		JSON.stringify(
-			{ round, passed, strata: Object.fromEntries(Object.entries(report.strata).map(([k, v]) => [k, { point: v.point, wilsonLB: v.wilsonLB, n: v.n, pass: v.pass }])), episodeHashes: derived.episodeHashes, evalPromptHash },
+			{
+				round,
+				passed,
+				strata: Object.fromEntries(
+					Object.entries(report.strata).map(([k, v]) => [k, { point: v.point, wilsonLB: v.wilsonLB, n: v.n, pass: v.pass }]),
+				),
+				episodeHashes: derived.episodeHashes,
+				evalPromptHash,
+				seedHex: derived.seedHex,
+				evaluator: report.evaluator,
+			},
 			null,
 			1,
 		),

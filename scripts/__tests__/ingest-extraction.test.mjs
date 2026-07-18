@@ -28,6 +28,7 @@ import {
 } from '../ingest-podcast/extract-lib.mjs';
 import {
 	buildExtractionLoadPlan,
+	checkLoadGate,
 	EXISTING_EDGES_SQL,
 } from '../ingest-podcast/load-extraction.mjs';
 import { verifyQuoteAtSeq, validateAliasTable } from '../ingest-podcast/extract-lib.mjs';
@@ -748,6 +749,75 @@ test('F12-pin: bare "chapter N" in an utterance naming a foreign book emits no s
 		foreignBooks: { Helaman: 'hel' },
 	});
 	assert.deepEqual(segs, []);
+});
+
+test('GATE-pin: checkLoadGate — vacuous hash, failed verdict, partial judgment all refuse', () => {
+	const good = {
+		verdict: { passed: true, episodeHashes: { 'unshaken-x': 'abc' } },
+		episodeId: 'unshaken-x',
+		extraction: { contentHash: 'abc', judgmentComplete: true },
+	};
+	assert.equal(checkLoadGate(good).ok, true);
+	// F8: undefined !== undefined must never admit an uncovered episode
+	assert.equal(
+		checkLoadGate({ ...good, extraction: { judgmentComplete: true } }).ok,
+		false,
+	);
+	assert.equal(
+		checkLoadGate({ ...good, verdict: { passed: true, episodeHashes: {} } }).ok,
+		false,
+	);
+	assert.equal(checkLoadGate({ ...good, verdict: { passed: false } }).ok, false);
+	// F27: partial judgment refuses with the missing list in the reason
+	const partial = checkLoadGate({
+		...good,
+		extraction: { contentHash: 'abc', judgmentComplete: false, judgmentMissing: ['aliases'] },
+	});
+	assert.equal(partial.ok, false);
+	assert.match(partial.reason, /aliases/);
+});
+
+test('R1-pin: bare "chapter N" inside an open foreign window never segments', () => {
+	const us = [
+		utt(0, 10, 'let us look at Second Chronicles fifteen for a moment'),
+		utt(1, 40, 'chapter sixteen then shows the sad decline'),
+	];
+	const windows = detectForeignWindows(us, {
+		foreignBooks: { 'Second Chronicles': '2-chr' },
+	});
+	const segs = detectChapterTransitions(us, {
+		episodeChapters: ['2-kgs-15', '2-kgs-16'],
+		bookAliases: { '2 Kings': '2-kgs' },
+		foreignBooks: { 'Second Chronicles': '2-chr' },
+		suppressWindows: windows,
+	});
+	assert.deepEqual(segs, []);
+});
+
+test('R2-pin: bare foreign-book NAME (noun homograph) never suppresses transitions', () => {
+	const us = [utt(0, 10, 'they did a faithful job and in chapter six we see why')];
+	const segs = detectChapterTransitions(us, {
+		episodeChapters: ['2-kgs-6'],
+		bookAliases: { '2 Kings': '2-kgs' },
+		foreignBooks: { Job: 'job' },
+	});
+	assert.equal(segs.length, 1);
+	assert.equal(segs[0].chapter, '2-kgs-6');
+});
+
+test('Q6-pin: in-block citation closes an open foreign window immediately', () => {
+	const us = [
+		utt(0, 10, 'turn to Second Chronicles 28 for the fuller account'),
+		utt(1, 40, 'verse nine there is devastating'),
+		utt(2, 70, 'now back in Second Kings 18 the siege begins'),
+		utt(3, 100, 'verse five says he trusted the Lord'),
+	];
+	const windows = detectForeignWindows(us, {
+		foreignBooks: { 'Second Chronicles': '2-chr' },
+		inBlockBooks: { 'Second Kings': '2-kgs' },
+	});
+	assert.equal(windows.length, 1);
+	assert.ok(windows[0].tEnd < 70, `window must close before the in-block citation (tEnd=${windows[0].tEnd})`);
 });
 
 test('F29-pin: duplicate (toId, relType) pairs refuse the artifact loudly', () => {

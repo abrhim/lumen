@@ -97,7 +97,7 @@ function inForeignWindow(t, windows) {
 }
 
 function quoteFrom(u) {
-	return u.text.split(/\s+/).slice(0, 25).join(' ');
+	return String(u.text ?? '').split(/\s+/).slice(0, 25).join(' ');
 }
 
 export function contentHash(value) {
@@ -117,13 +117,20 @@ export function runDeterministicExtraction(utterances, ctx) {
 		timelineOverride = null,
 	} = ctx;
 
-	const timeline =
-		timelineOverride ??
-		detectChapterTransitions(utterances, { episodeChapters, bookAliases, foreignBooks });
+	// R-extract-lib-1: windows FIRST — bare "chapter N" inside an open
+	// tangent window must not become a block segment.
 	const foreignWindows = detectForeignWindows(utterances, {
 		foreignBooks,
 		inBlockBooks: bookAliases,
 	});
+	const timeline =
+		timelineOverride ??
+		detectChapterTransitions(utterances, {
+			episodeChapters,
+			bookAliases,
+			foreignBooks,
+			suppressWindows: foreignWindows,
+		});
 	const verseExists = ctx.verseExists;
 
 	const mentions = [];
@@ -245,6 +252,16 @@ export function runDeterministicExtraction(utterances, ctx) {
 			const k = e.name.toLowerCase();
 			if (!nameClaims.has(k)) nameClaims.set(k, []);
 			nameClaims.get(k).push(e.id);
+		}
+	}
+	// R-extract-merge-2 (base-pool half): a name CONTAINED in another pool
+	// name ("Sinai" in "Mount Sinai") fires on every longer-name occurrence
+	// — the contained name is excluded (fail-closed; census surfaces it).
+	const allNames = [...nameClaims.keys()];
+	for (const shorter of allNames) {
+		const re = new RegExp(`\\b${shorter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+		if (allNames.some((longer) => longer !== shorter && re.test(longer))) {
+			nameClaims.set(shorter, [...(nameClaims.get(shorter) ?? []), '__contained__']);
 		}
 	}
 	const ambiguousNames = new Set([...nameClaims.entries()].filter(([, ids]) => ids.length > 1).map(([k]) => k));
@@ -385,7 +402,13 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 	) {
 		const cached = JSON.parse(readFileSync(paths.extractionCode, 'utf8'));
 		const dgCheck = JSON.parse(readFileSync(paths.deepgram, 'utf8'));
-		if (utterancesToRows(dgCheck, episodeId).length === cached.fingerprint.utteranceCount) {
+		// R-extract-merge-4: utteranceCount AND duration — same-count
+		// re-transcriptions with shifted timings must invalidate too.
+		const durNow = Number(dgCheck?.metadata?.duration ?? 0);
+		if (
+			utterancesToRows(dgCheck, episodeId).length === cached.fingerprint.utteranceCount &&
+			Math.abs(durNow - cached.fingerprint.durationS) < 1
+		) {
 			log('extract_code_cached', { episode: ep.id });
 			return cached;
 		}
@@ -429,10 +452,9 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 		drops: result.drops.slice(0, 500),
 		counts: result.counts,
 	};
-	writeArtifactAtomic(paths.extractionCode, JSON.stringify(codeArtifact, null, 1), {
-		writeFileSync,
-		renameSync,
-	});
+	// R-extract-merge-3: extraction-code is the validity ANCHOR — write it
+	// LAST so a crash mid-sequence leaves no valid anchor beside stale
+	// siblings (resume then rebuilds everything).
 	writeArtifactAtomic(
 		paths.judgmentBrief,
 		JSON.stringify({
@@ -451,6 +473,10 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 		}, null, 1),
 		{ writeFileSync, renameSync },
 	);
+	writeArtifactAtomic(paths.extractionCode, JSON.stringify(codeArtifact, null, 1), {
+		writeFileSync,
+		renameSync,
+	});
 	log('extract_code_done', {
 		episode: ep.id,
 		segments: result.timeline.length,
@@ -487,7 +513,10 @@ function readJudgment(paths, log, epId, episodeChapters) {
 						Number.isInteger(s.seq) &&
 						typeof s.t_start_s === 'number' &&
 						Number.isFinite(s.t_start_s) &&
-						s.t_start_s >= 0,
+						s.t_start_s >= 0 &&
+						// R-extract-merge-1: evidence is optional but must be a
+						// string when present — quoteFrom crashes on numbers
+						(s.evidence === undefined || s.evidence === null || typeof s.evidence === 'string'),
 				);
 				const dropped = tr.timeline.length - valid.length;
 				if (dropped > 0) {
@@ -546,14 +575,14 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 	for (const u of utterances) for (const m of u.text.matchAll(/\b([A-Za-z][a-z]{1,})\b/g)) censusTokens.add(m[1].toLowerCase());
 	const poolIds = new Set(['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => e.id)));
 	const aliasCheck = validateAliasTable(judgment.aliases, { censusTokens, poolIds });
-	// F14: cross-SET collisions — an agent alias equal to another entity's
-	// base name would double-match; route those out like any collision.
-	const baseNames = new Set(
-		['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => e.name.toLowerCase())),
-	);
-	const crossCollisions = aliasCheck.valid.filter((r) =>
-		r.names.some((n) => baseNames.has(n.toLowerCase())),
-	);
+	// F14 + R-extract-merge-2: cross-SET collisions — an agent alias equal
+	// to OR CONTAINED IN another entity's base name double-matches (the
+	// matcher is word-boundary: alias "Sinai" fires inside "Mount Sinai").
+	const baseNameList = ['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => e.name));
+	const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const collidesWithBase = (aliasName) =>
+		baseNameList.some((bn) => new RegExp(`\\b${escRe(aliasName)}\\b`, 'i').test(bn));
+	const crossCollisions = aliasCheck.valid.filter((r) => r.names.some(collidesWithBase));
 	const usableAliases = aliasCheck.valid.filter((r) => !crossCollisions.includes(r));
 	if (aliasCheck.rejected.length || aliasCheck.collisions.length || crossCollisions.length) {
 		log('alias_validation', {

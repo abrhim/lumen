@@ -10,6 +10,25 @@ SELECT from_id, to_id, rel_type, source, metadata
 FROM lumen.edges
 WHERE from_id = $1 AND collection_id = $2 AND source = 'unshaken-youtube'`;
 
+/** R-runner-gates-2: the load gate as a PURE function so the harness can pin
+ * it — the runner shell stays untested by design, the gate logic must not. */
+export function checkLoadGate({ verdict, episodeId, extraction }) {
+	if (!verdict || verdict.passed !== true) {
+		return { ok: false, reason: 'eval verdict is not a pass' };
+	}
+	const bound = verdict.episodeHashes?.[episodeId];
+	if (!bound || !extraction?.contentHash || bound !== extraction.contentHash) {
+		return { ok: false, reason: 'extraction hash lacks a matching eval verdict' };
+	}
+	if (extraction.judgmentComplete !== true) {
+		return {
+			ok: false,
+			reason: `judgment incomplete (${(extraction.judgmentMissing ?? []).join(', ') || 'unknown'})`,
+		};
+	}
+	return { ok: true };
+}
+
 /** Semantic statement plan for one episode. Executor renders SQL and runs
  * everything in ONE tx with SET LOCAL guards. */
 export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existingEdges = [] }) {

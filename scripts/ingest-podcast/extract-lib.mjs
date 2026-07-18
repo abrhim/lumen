@@ -104,7 +104,10 @@ export function stampChunks(chunks, timeline) {
 /** Chapter-transition segments from announced ("chapter fifteen") and
  * INLINE ("of Second Kings 21" — panel F2) forms. Chapters outside the
  * episode block are never emitted (census surfaces them instead). */
-export function detectChapterTransitions(utterances, { episodeChapters, bookAliases, foreignBooks = {} }) {
+export function detectChapterTransitions(
+	utterances,
+	{ episodeChapters, bookAliases, foreignBooks = {}, suppressWindows = [] },
+) {
 	const foreignAliases = Object.keys(foreignBooks);
 	const blockByBook = new Map();
 	for (const ch of episodeChapters) {
@@ -123,11 +126,18 @@ export function detectChapterTransitions(utterances, { episodeChapters, bookAlia
 				found.push({ idx: m.index, bookId, num: spokenNumberToInt(m[1]) });
 			}
 		}
-		// F12: a bare "chapter N" in an utterance that NAMES a foreign book is
-		// that book's chapter ("Helaman chapter 5" must never become a block
-		// segment just because 5 coincides with a block chapter number).
-		const namesForeign = foreignAliases.some((a) => new RegExp(`\\b${esc(a)}\\b`, 'i').test(u.text));
-		if (!namesForeign) {
+		// F12 + R-extract-lib-1/2: a bare "chapter N" is suppressed when the
+		// utterance carries a foreign CITATION (alias + number — bare names
+		// like "job"/"ruth" as common nouns must not suppress), OR when the
+		// utterance sits inside an open foreign window (the citation was a
+		// few utterances back). In-block alias+NUM forms still emit above.
+		const namesForeign = foreignAliases.some((a) =>
+			new RegExp(`\\b${esc(a)}\\s+(?:chapter\\s+|section\\s+)?${NUM}\\b`, 'i').test(u.text),
+		);
+		const inSuppressedWindow = suppressWindows.some(
+			(w) => u.t_start_s >= w.tStart && u.t_start_s <= w.tEnd,
+		);
+		if (!namesForeign && !inSuppressedWindow) {
 			const chRe = new RegExp(`\\bchapter\\s+${NUM}\\b`, 'gi');
 			for (const m of u.text.matchAll(chRe)) {
 				const num = spokenNumberToInt(m[1]);
@@ -482,7 +492,8 @@ export function seedTraps(mentions, { count, rng, swapPool }) {
 		guard += 1;
 		// F2: once every index is used the linear probe would orbit forever
 		if (used.size >= evalSample.length) break;
-		let idx = Math.floor(rng() * evalSample.length);
+		// R-extract-lib-4: rng() === 1 would index past the end
+		let idx = Math.min(Math.floor(rng() * evalSample.length), evalSample.length - 1);
 		while (used.has(idx)) idx = (idx + 1) % evalSample.length;
 		const entry = evalSample[idx];
 		const alternatives = swapPool.filter((id) => id !== entry.target);
