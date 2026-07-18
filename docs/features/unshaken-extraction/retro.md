@@ -18,7 +18,7 @@ Phase-B review-table seed. LENS GREEN-LIT. Bonus: found and repaired a
 LATENT A1 PROD BUG (194 double-encoded jsonb metadata rows) that A1's own
 smoke had been masking with its parse-if-string accommodation.
 
-## Drift record
+## Plan accuracy
 
 Baseline stamped at synthesis; 2 pre-baseline amendments (Revision 1;
 panel-1 criticals), 2 post-baseline plan-amendment commits (review-round
@@ -26,7 +26,7 @@ F1–F29; residual round R1–R17), each restamping. Eval-prompt hash held
 constant through all 4 eval rounds — and the F24 fix now makes the scorer
 REFUSE if it drifts. No un-amended drift.
 
-## Panels + dissent
+## Panel signal
 
 Panel-1 (3 specialists): 24 findings — 3 probe-verified criticals BEFORE
 code (double-encoding, id shape, source column) + the alias blind spot
@@ -55,6 +55,15 @@ deferred with reasons. Fix-verification (5 clusters): 25/25 fixes verified,
 18 residuals found → closed. THE PASS IS NOW 3-FOR-3 across features at
 finding real residuals over green suites.
 
+## Harness coverage
+
+Harness grew 35 → 72 tests across three explicit amendments (id shapes,
+source-column semantics, extractor contracts, review-fix pins, gate pin).
+It caught zero regressions across 4 re-extraction cycles because every
+fixed bug got a named pin — and it PINNED one bug itself (H8's trap-marker
+leak), the reminder that harnesses need review too. A1's harness gained 2
+pins (upsert preservation, stale-anchor delete) + the serialization audit.
+
 ## What worked
 
 - Workflows as substrate: enrichment (40 agents), eval (4×16 evaluators),
@@ -67,7 +76,16 @@ finding real residuals over green suites.
 - Panel probes against LIVE prod: 3 criticals killed pre-code, including
   our own masked write bug.
 
-## What to fix in the process
+## Wasted effort
+
+Genuinely little: the Batch-API design (probe 5 + SDK install) was
+superseded mid-flight by Revision 1 — ~1 hour of design work retained for
+the record; one durable takeaway (json-schema numeric ranges) survived it.
+The r1 eval round "wasted" a 16-agent run on a failing extractor — that was
+the gate working, not waste. One fix-verification agent died to a session
+limit and was re-run for free.
+
+## Recommendations
 
 - **fatal()-without-return is a CLASS**: found at the verdict gate, fixed,
   then found again at env gates by fix-verification. New rule: any fatal()
@@ -82,14 +100,26 @@ finding real residuals over green suites.
   file-based resume + journaled workflows made the interruption free, but
   plan fleet bursts away from limit edges when possible.
 
+## Provenance histogram
+
+Bug provenance across the feature: panel-1 probes 3 (criticals, pre-code) ·
+panel-2 adversarial 24 findings → plan/harness amendments · code-review
+workflow 71 confirmed (finders: data-integrity 12, extraction-correctness
+22, eval-integrity 18, reliability-secrets 19) · fix-verification residuals
+18 · eval-adjudicated data errors pruned: 10 (r3) + 13 (r4). Emergent (found
+by running, not reviewing): 4 (chapter-28 poison, census noise, Kings-alias
+gap, smoke SQL error).
+
 ## Quality signals
 
 ```json
 {
-  "feature": "unshaken-extraction",
+  "feature_slug": "unshaken-extraction",
   "tier": "standard",
   "gates_waived": ["1b", "7"],
   "revisions_mid_flight": 1,
+  "plan_to_code_drift": "2 pre-baseline amendments + 2 post-baseline plan-amendment commits, all restamped; no un-amended drift",
+  "panel_2_dissent_rate": 0.21,
   "panel_findings": 48,
   "probe_verified_criticals_pre_code": 3,
   "eval_rounds": 4,
