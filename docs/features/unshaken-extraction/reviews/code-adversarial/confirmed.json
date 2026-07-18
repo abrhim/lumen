@@ -1,0 +1,888 @@
+{
+ "total": 78,
+ "deduped": 78,
+ "confirmed": [
+  {
+   "title": "fatal() does not halt: failed eval verdict races the load instead of blocking it",
+   "severity": "high",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 337,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The PW-A6 checkpoint gate (verdict.passed !== true) calls fatal(), which returns without throwing and defers process.exit to a log-stream flush callback, so execution falls through into the episode loop and can begin issuing DB statements (SELECT/DELETE/INSERT) before the process exits — the load-bearing gate is enforced only by an event-loop race."
+  },
+  {
+   "title": "A1 pinned harness FAILS on branch: stale STAGES whitelist pin",
+   "severity": "med",
+   "file": "scripts/__tests__/ingest-podcast.test.mjs",
+   "line": 459,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The branch ships with a failing pinned contract: `node --test scripts/__tests__/ingest-podcast.test.mjs` fails 1/53 because the B7 test still pins the pre-A2 four-stage whitelist while cli.mjs now exports seven stages, despite plan.md declaring this test amended in this feature."
+  },
+  {
+   "title": "Hash-binding checkpoint passes vacuously when contentHash and verdict entry are both absent",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 350,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The PW-A6 hash binding (`verdict.episodeHashes?.[episodeId] !== extraction.contentHash`) admits an episode whose extraction artifact lacks contentHash whenever the verdict also lacks that episode's key, because undefined !== undefined evaluates false — e.g. --episode load of a truncated/hand-edited artifact against a verdict from a round that never covered that episode."
+  },
+  {
+   "title": "A1 ON CONFLICT DO UPDATE never repairs the source column: chimera row self-perpetuates and a later A2 run deletes a title anchor",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/load.mjs",
+   "line": 137,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "A1's DISCUSSES upsert arbitrates on the partial unique index (which ignores source) but DO UPDATE sets only metadata, so if the conflicting row is extraction-sourced (possible when the title's parsed block gains a chapter A2 previously inserted as source='unshaken-extraction'), the row keeps source='unshaken-extraction' with title-shaped metadata; the next A2 run's EXISTING_EDGES_SQL (title-filtered) misses it, classifies INSERT, and its scoped delete DESTROYS the title anchor — permanently, since every later A1 upsert hits the same row and never fixes source, and both smokes filter on source='unshaken-youtube' so no invariant ever sees it."
+  },
+  {
+   "title": "repair dry-run counts JSON arrays as valid objects — array-content string rows unwrap to jsonb-array garbage",
+   "severity": "med",
+   "file": "scripts/repair-metadata-encoding.mjs",
+   "line": 63,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The EV-A11 validation admits arrays (`typeof [] === 'object'` and `[] !== null`), contradicting both the code's own comment (\"scalar/array content would ship garbage\") and plan.md's \"asserting object-typeof\": a string row containing an array passes DRY_RUN, unwraps to jsonb_typeof='array' metadata, and the string-only in-tx invariant plus post-state report both pass it."
+  },
+  {
+   "title": "repair validates only one unwrap layer of double-wrapped rows; inner non-object content ships or aborts mid-tx",
+   "severity": "low",
+   "file": "scripts/repair-metadata-encoding.mjs",
+   "line": 61,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Rows classified doubleWrapped are never recursively validated, so the COMMIT unwrap loop can either ship non-object jsonb (inner array/number is no longer 'string'-typed, so the loop stops and the string-only invariant passes) or throw inside the tx on unparseable inner text — falsifying the \"abort before any write\" DRY_RUN guarantee (rollback keeps data safe, but the green light was wrong)."
+  },
+  {
+   "title": "A2 executor is per-row, not batched — diverges from plan §Design load step 5",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/load-extraction.mjs",
+   "line": 116,
+   "dimension": "data-integrity",
+   "tags": [
+    "noise",
+    "material"
+   ],
+   "claim": "plan.md §Design pins \"Batched statements, SET LOCAL guards, house logging\" for the A2 load, but executeExtractionLoadPlan issues one round-trip per edge (one INSERT or UPDATE each) inside a 60s-statement-timeout tx — the same per-row-through-the-pooler pattern the A1 run-1 lesson (load.mjs:95-97, 12min stall) exists to avoid; divergence between code and pinned contract."
+  },
+  {
+   "title": "A2 classification read runs outside the write transaction",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 353,
+   "dimension": "data-integrity",
+   "tags": [
+    "risky",
+    "noise"
+   ],
+   "claim": "EXISTING_EDGES_SQL executes on the pool connection before buildExtractionLoadPlan, and the tx opens afterward in executeExtractionLoadPlan, so a concurrent A1 run between read and write can invalidate the UPDATE/INSERT classification; failure is loud in both directions (rowCount assert / unique-index violation) but the classify-then-write is not atomic."
+  },
+  {
+   "title": "Plan builder never asserts (toId, relType) uniqueness — duplicate UPDATE-classified pairs silently last-win",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/load-extraction.mjs",
+   "line": 41,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "buildExtractionLoadPlan trusts the disk-read extraction artifact's edge list without a duplicate-pair check: two entries with the same (toId, relType) that classify UPDATE each touch exactly 1 row (rowCount assert passes) and silently overwrite each other, whereas duplicate INSERTs at least abort loudly on the unique index."
+  },
+  {
+   "title": "load-extraction never checks judgmentComplete — partial-judgment artifacts are loadable",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 348,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "runExtractMerge writes the extraction artifact even when judgment artifacts are missing or unparseable (judgmentComplete:false, principles silently absent), and the load path gates only on contentHash — so a hash-bound, eval-passed partial artifact ships an episode with silently reduced principle/alias coverage, diverging from the harness-pinned H5 spirit (missing input → episode fails, mentions withheld)."
+  },
+  {
+   "title": "Missing-verdict path double-reports fatal and relies on a downstream ENOENT throw for safety",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 333,
+   "dimension": "data-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "When eval-verdict.json is absent, fatal() is called but execution continues into JSON.parse(readFileSync(verdictPath)) which throws ENOENT into the outer catch — emitting a second 'fatal' log event and racing finish(1) against the pending fatal exit; no write can start here, but the gate's safety depends accidentally on re-reading the very file just declared missing (same fall-through mechanics as the high-severity verdict-gate finding)."
+  },
+  {
+   "title": "repair COMMIT run has an unlocked window between JS validation scan and unwrap tx",
+   "severity": "low",
+   "file": "scripts/repair-metadata-encoding.mjs",
+   "line": 80,
+   "dimension": "data-integrity",
+   "tags": [
+    "noise",
+    "noise"
+   ],
+   "claim": "The dry-run validation scan runs outside any transaction and the commit tx re-selects by predicate, so a string-typed row written by a concurrent legacy writer between scan and unwrap would be unwrapped without ever being JS-validated; practical exposure is near zero (one-time hand-run migration, post-fix writers emit objects) but the validated-set and unwrapped-set are not guaranteed identical."
+  },
+  {
+   "title": "seedTraps infinite-loops when trap count >= number of mentions",
+   "severity": "high",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 444,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Once every sample index is used, the inner `while (used.has(idx)) idx = (idx + 1) % evalSample.length;` cycles a fully-used index set forever; the outer guard counter never advances because the inner loop is what spins, synchronously blocking the process."
+  },
+  {
+   "title": "Agent timeline-review artifact trusted verbatim: out-of-block chapters become 0.95 DISCUSSES edges; malformed t disables pre-segment dropping",
+   "severity": "high",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 120,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "timelineOverride rows from the untrusted <id>.timeline-review.json are never validated against episodeChapters and their t_start_s/seq/evidence types are never checked, so hallucinated or malformed rows flow into chapter mentions, edges, and verse-ref governing, violating the fail-closed closed-vocab contract every other path enforces."
+  },
+  {
+   "title": "verifyQuoteAtSeq passes empty/punctuation-only quotes — PW-A7 fabricated-evidence gate bypass",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 345,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "norm('') and norm('!!!…') normalize to '' and windowText.includes('') is always true, so a judged mention with empty or punctuation-only quote passes the gate the plan designates as the anti-fabrication wall; no other layer (schema quote:{type:'string'}, validateMention) requires a non-empty quote."
+  },
+  {
+   "title": "Foreign-window Q6 close condition #1 unimplemented; quiet tail extends tEnd, dropping in-block refs",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 226,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Plan Q6 records close = first in-block explicit chapter/verse-with-book ref OR 15 quiet utterances, whichever first; the code implements only the quiet-count close and extends open.tEnd across every quiet utterance, so explicit in-block citations right after a tangent stay inside the window and their verse refs are foreignDropped."
+  },
+  {
+   "title": "Foreign-book 'chapter N' citations create false in-block timeline segments",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 125,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The bare `chapter N` fallback in detectChapterTransitions ignores a preceding foreign book name in the same utterance, so 'Second Chronicles chapter fifteen' emits a transition to the block's chapter 15, and the false segment governs verse resolution after the foreign window closes."
+  },
+  {
+   "title": "validateAliasTable throws TypeError on malformed rows instead of rejecting them",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 280,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Rows from the untrusted aliases.json with names not an array (line 280) or non-string members (line 291) crash the merge for the whole episode instead of landing in `rejected`, so one malformed row poisons all valid rows."
+  },
+  {
+   "title": "Cross-set alias collision unrouted: agent alias equal to another entity's base name double-matches",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 248,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Collision routing exists within the base pool (ambiguousNames) and within the agent table (validateAliasTable) but never across them, so a validated alias token identical to a different entity's unambiguous base name matches BOTH ids on every occurrence, emitting a wrong-entity mention above the write floor alongside each correct one."
+  },
+  {
+   "title": "Elided-pair heuristic fabricates wide verse ranges",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 168,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The elision rule (a>=20 && b<10 && end>a) intended for 'verse twenty one and two' = 21-22 accepts any larger final digit, turning enumerations into ranges and emitting confidence-0.9 mentions for verses the speaker never referenced."
+  },
+  {
+   "title": "Null entries in judgment principles crash the merge episode",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 536,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The principles loop reads m.target/m.seq before any validation, so a null element in a parseable principles.<w>.json ({\"mentions\":[null,...]}) throws TypeError and fails the whole episode including all valid rows, where the design elsewhere is per-row drop with reason."
+  },
+  {
+   "title": "Common-word guard: one lowercase ASR occurrence erases an entity for the whole episode",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 247,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "risky",
+    "risky"
+   ],
+   "claim": "commonWordName excludes a base name if every token appears lowercase anywhere in the transcript, so a single Deepgram capitalization slip suppresses all capitalized occurrences of that name in the episode, frequency-blind — despite panel F1's premise that ASR mangles proper nouns."
+  },
+  {
+   "title": "chapterAt guesses the first segment's chapter for pre-first t",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 77,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "`return current ?? sorted[0]?.chapter ?? null` returns the first segment's chapter for t before any segment, contradicting the A9 flagged-never-guessed contract that stampChunks implements correctly; reachable in production via F2's malformed override (NaN firstSegT disables the pre-segment drop that normally shields it)."
+  },
+  {
+   "title": "dedupeMentions merges transitively beyond ±5s",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 367,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "risky",
+    "material"
+   ],
+   "claim": "The 5s window is measured from the currently-kept mention and the kept pointer advances when a later higher-confidence mention wins, so chains each <=5s apart collapse into one mention even when the extremes exceed 5s, under-counting distinct moments (Q2 says same target within ±5s merges)."
+  },
+  {
+   "title": "Ambiguous or out-of-block announced chapters vanish silently — no counter, no census surface",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 129,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "noise"
+   ],
+   "claim": "Bare 'chapter N' where N exists in multiple block books (books.length!==1) and alias-matched chapters outside the block are skipped with no drops entry, no counts field, and the coverage census cannot see them (lowercase 'chapter' never matches the capitalized-head bigram; 'chapter' is a CONTAINER_NOUN), contradicting EV-A7's surface-at-run-time premise."
+  },
+  {
+   "title": "'<book> chapter N' in-block form not matched by the alias pattern",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 120,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The in-block transition regex requires the number immediately after the book alias, so 'Second Kings chapter 21' falls through to the bare-chapter path (dropped when block books share the number), asymmetric with detectForeignWindows whose regex supports '(?:chapter\\s+|section\\s+)?'."
+  },
+  {
+   "title": "assembleEpisode: Number('')===0 lets malformed custom_id claim chunk 0; non-array mentions throws",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 414,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "A custom_id ending in ':' yields Number('')===0 which passes Number.isInteger and silently claims/clobbers chunk 0 (hex '0x2'->2 also passes), and `mentions.push(...(r.mentions ?? []))` throws on non-iterable mentions instead of treating the chunk as invalid."
+  },
+  {
+   "title": "rng edge and empty-input crashes in eval helpers (stratifiedSample rng()===1 pushes undefined)",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 472,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "noise"
+   ],
+   "claim": "An injected rng returning exactly 1 (legal for some seeded PRNGs) makes pool.splice(pool.length,1)[0] undefined, which is pushed into the sample and counted toward perEpisode; seedTraps on empty mentions throws TypeError."
+  },
+  {
+   "title": "Coverage census counts digit-form book heads ('2 Kings 21' -> 'Kings') as unmatched",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 303,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The capitalized-head bigram regex cannot start at a digit, so '2 Kings 21' matches 'Kings 21' and reports head 'Kings' which is not in knownHeads ('2 kings'/'second kings' are) — every digit-form citation of an already-covered book inflates unmatchedBookHeads with false alarms."
+  },
+  {
+   "title": "Fingerprint mismatch check compares utteranceCount only, ignores durationS",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 489,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "noise"
+   ],
+   "claim": "The PW-A6 guard records {utteranceCount, durationS} but extract-merge compares only the count, so a re-transcription that yields the same utterance count with shifted t/seq values passes the gate with stale anchors."
+  },
+  {
+   "title": "Agent-timeline seq fallback `?? 0` mislabels evidence on float-t mismatch",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 139,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "When an override segment lacks seq and its t_start_s does not float-equal any utterance t (the trap the adjacent comment names), the fallback stamps seq 0 and quotes utterance 0 — a wrong-but-plausible anchor instead of a flagged one, feeding fabricated evidence pairs to eval gold selection."
+  },
+  {
+   "title": "Citation guard gaps: number-words uncovered; suppression is per-utterance not per-occurrence",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 263,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "citationRe covers only digit forms after a name ('Samuel 8') so 'Samuel eight' still emits Samuel-the-person for a citation; conversely a name appearing both as citation and standalone in one utterance has its standalone mention suppressed too."
+  },
+  {
+   "title": "spokenNumberToInt is order- and repetition-insensitive",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract-lib.mjs",
+   "line": 25,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "It sums any sequence of number words ('three twenty' -> 23, 'twenty twenty' -> 40); unreachable via the shape-constrained NUM regexes but reachable via the contextBreak capture in extract.mjs:164 whose `[a-z]+(?:[ -][a-z]+)?` captures arbitrary word pairs, where a nonsense sum colliding with a block chapter number changes drop behavior."
+  },
+  {
+   "title": "Unused import statSync",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 6,
+   "dimension": "extraction-correctness",
+   "tags": [
+    "noise",
+    "noise"
+   ],
+   "claim": "statSync is imported from node:fs and never used anywhere in the file."
+  },
+  {
+   "title": "Answer-key recomputation depends on un-fingerprinted live DB state and episodes.json spans",
+   "severity": "high",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 313,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "deriveRound's trap planting consumes rng draws conditioned on blockChaptersByEpisode/verseExistsByEpisode (live lumen.books/chapters/verses queries + episodes.json spans) at both --build and --score, but the stale-eval check compares only meta.episodeHashes (extraction-artifact hashes), so DB or spans drift between build and score changes the rng stream, permutes the final shuffle, and reassigns r{round}-i{NNN} ids to different items — verdicts then silently grade the wrong items."
+  },
+  {
+   "title": "--build never purges stale shard-*.verdict.json; a rebuilt round silently scores old verdicts",
+   "severity": "high",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 261,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Rebuilding a round after artifacts changed (iteration protocol A6) leaves the previous run's verdict files in eval/round-N/; meta.json is rewritten to the new hashes so the stale check passes, ids are ordinal and collide with the new id space, and score() matches old verdicts against the new recomputed key with no error."
+  },
+  {
+   "title": "Golds are not correct-by-construction: regex-picked chapter mentions with no number-to-target check, from agent-influenced timelines",
+   "severity": "high",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 121,
+   "dimension": "eval-integrity",
+   "tags": [
+    "noise",
+    "material"
+   ],
+   "claim": "Plan A3 specifies golds as title-derived chapter pairs correct by construction, but the code selects any chapter mention whose quote matches /\\bchapter\\s+\\w+/i (which matches 'the chapter we just read'), never verifies the spoken number matches the target id, and draws from timeline-derived mentions that can originate from the timeline-review agent's corrections — so a gold can be genuinely wrong and two correct rejections VOID the whole eval as 'evaluator over-strict', inverting the detector."
+  },
+  {
+   "title": "Trap floor implemented per-stratum, not per-kind as plan A4 requires",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 367,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Plan A4 voids a KIND's number on >=2 missed traps of that kind, but the code plants a minimum of 3 traps per STRATUM and voids per stratum, so within the entity stratum (person+place+event) an individual kind can receive 0-1 traps, making the per-kind leniency floor structurally unmeasurable despite the code comment claiming it is measurable."
+  },
+  {
+   "title": "Plan A5 per-kind sub-floors (n >= 15 for person/place/event) not implemented",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 25,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The gate only checks the pooled stratum n >= nFloor (30), so a sample of 55 persons + 5 places + 0 events passes the entity gate with two kinds effectively unevaluated, violating plan A5's 'person/place/event >=60 (per-kind sub-floors 15)'."
+  },
+  {
+   "title": "Verdict files are schema-unvalidated at scoring; invalid verdict strings silently become 'missing'",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 359,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The workflow's VERDICT_SCHEMA validates only the agent's structured return while score() reads the file the agent wrote with the Write tool — never compared or schema-checked — so a malformed file entry ('Correct', missing verdict field) matches no branch and is silently counted as missing (shrinking n), and verdict ids outside the derived key are silently ignored with no per-shard coverage check."
+  },
+  {
+   "title": "Missing/skipped verdicts shrink n, letting a selectively-lazy evaluator inflate measured precision",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 362,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "n = sample.length - missing excludes unanswered items from the denominator, so an evaluator that answers only easy items raises the point estimate while n stays above the floor (sampleN 60 vs nFloor 30) — up to half a stratum can be silently skipped and still pass, contradicting plan A5's 'anything else = NOT EVALUABLE, never a pass'."
+  },
+  {
+   "title": "Harness pins seedTraps/stratifiedSample but the real eval path (deriveRound) never calls them — pinned behavior is dead code",
+   "severity": "med",
+   "file": "scripts/__tests__/ingest-extraction.test.mjs",
+   "line": 603,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "H8 (trap indistinguishability, key never embedded) and the sampling determinism test exercise extract-lib.mjs seedTraps/stratifiedSample, which no production code imports; the actual trap seeding/sampling/shuffling lives in deriveRound in extraction-eval.mjs and has zero harness coverage, so the pinned guarantees do not constrain the machinery that actually runs."
+  },
+  {
+   "title": "anchor_ok is collected and dropped; plan requires anchor offsets tracked as a separate count",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 322,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Plan A1 requires anchor offsets tracked as a separate count and eval-prompt.md section 4 mandates reporting anchor_ok per item, but score() reads only v.verdict from each verdict entry and the report contains no anchor statistics at all."
+  },
+  {
+   "title": "Report/verdict artifact omits seed and evaluator model, both required by plan A5",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 393,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Plan A5 requires the artifact to report seed and evaluator model + prompt hash; report.json and eval-verdict.json record evalPromptHash but derived.seedHex is computed and discarded and the evaluator model is recorded nowhere."
+  },
+  {
+   "title": "Entity trap swap pool is cross-episode, so roster evidence makes entity traps trivially catchable",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 157,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Entity traps swap to any same-kind target corpus-wide while the packet's evidence includes the episode's own roster, so a swapped entity absent from the roster is a giveaway 'wrong' — trap-catch over-measures diligence and weakens the leniency detector plan A2 designed around near-misses."
+  },
+  {
+   "title": "Trap planting can silently under-fill below plan's 10-14 count and the per-stratum min 3; trailing continue is dead code",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 166,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "When no pool candidate yields a swappable target, the planned trap is silently dropped — planted counts can fall below the per-stratum minimum 3 (making the >=2-missed void floor easier or impossible to trigger) with no warning, and `if (!planted) continue;` as the last statement of the loop body is a no-op."
+  },
+  {
+   "title": "evalPromptHash captured at scoring time, not evaluator run time, and never compared to the drift baseline",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 390,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The verdict records the hash of eval-prompt.md as it exists when --score runs, so a prompt edit between the evaluator workflow run and scoring misattributes what evaluators executed, and neither the workflow nor score compares the hash to plan.md's pinned drift baseline — 'hash-pinned' is asserted in comments but enforced nowhere."
+  },
+  {
+   "title": "Duplicate-verdict any-wrong-wins asymmetrically biases golds toward eval-void",
+   "severity": "low",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 339,
+   "dimension": "eval-integrity",
+   "tags": [
+    "noise",
+    "risky"
+   ],
+   "claim": "For cross-shard duplicated items a single 'wrong' from either evaluator becomes the item's verdict, so a duplicated GOLD counts a full rejection toward the >=2 whole-eval void on one over-strict evaluator out of two, doubling its strictness exposure relative to non-duplicated golds."
+  },
+  {
+   "title": "insufficient-evidence counts against precision identically to wrong in the gate math",
+   "severity": "low",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 363,
+   "dimension": "eval-integrity",
+   "tags": [
+    "risky",
+    "risky"
+   ],
+   "claim": "point = correct/n with n including insufficient-evidence, so the honest-uncertainty verdict the prompt encourages is scored exactly like a confirmed error — an unrecorded design choice that pressures evaluators toward agreeable 'correct' verdicts."
+  },
+  {
+   "title": "Degenerate duplicate mechanics: single-shard self-duplication and re-duplication of augmented neighbors",
+   "severity": "low",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 271,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "noise"
+   ],
+   "claim": "With shards.length === 1 the 'cross-shard' duplicate is the same id twice in one packet (one evaluator, zero independence); for the last shard, shards[(i+1)%len] is shard 0 after augmentation, so its already-appended duplicate is eligible for re-duplication."
+  },
+  {
+   "title": "Workflow takes shards as a caller-supplied arg instead of reading meta.json",
+   "severity": "low",
+   "file": ".claude/workflows/unshaken-eval.mjs",
+   "line": 15,
+   "dimension": "eval-integrity",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The shard count is manually passed: too few leaves shards un-evaluated (caught loud only at score), too many runs evaluators against leftover higher-numbered shard files from a previous larger build of the same round — meta.json records the authoritative count and is never consulted."
+  },
+  {
+   "title": "Plan's evaluator model diversity ('different models where available') not implemented",
+   "severity": "low",
+   "file": ".claude/workflows/unshaken-eval.mjs",
+   "line": 57,
+   "dimension": "eval-integrity",
+   "tags": [
+    "risky",
+    "risky"
+   ],
+   "claim": "Plan A3 records that judgment and eval phases use different models where available, but the eval workflow spawns evaluators with only effort: 'high' and no model selection on the same defaults as the enrichment judges, and the verdict artifact cannot report the model so the divergence is invisible."
+  },
+  {
+   "title": "fatal() is non-terminating; eval-verdict gate falls through into the prod load loop",
+   "severity": "high",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 336,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Once logSink exists, fatal() only schedules process.exit via logSink.end callback plus an unref'd 500ms timer and then returns, so the `verdict.passed !== true` branch of --stage=load-extraction falls straight through into the episode load loop and prod writes are prevented only by an event-loop race (and not at all if the sink callback stalls, since the unref'd timer cannot fire and finish() later exits with the rollup code)."
+  },
+  {
+   "title": "Crash between extraction-code.json and judgment-brief.json writes wedges resume — skip-if-valid predicate covers only one of three stage outputs",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 414,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "runExtractCode writes transcript.txt, extraction-code.json, then judgment-brief.json as three separate atomic writes, but the resume check only validates extraction-code.json, so a crash after the second write leaves judgment-brief.json permanently missing while every re-run logs extract_code_cached and skips, breaking the enrichment workflow until the operator discovers --refresh."
+  },
+  {
+   "title": "isValidCodeArtifact never checks fingerprint against the current deepgram artifact; mismatch error's advice is non-actionable",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 359,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The code-artifact validity predicate only checks episodeId and utteranceCount>0, so after a --refresh re-transcription extract-code returns the stale cached artifact and extract-merge's error 'transcript fingerprint mismatch — re-run extract-code' loops forever, because re-running extract-code without --refresh is a no-op and --refresh additionally forces a yt-dlp manifest refetch in discover."
+  },
+  {
+   "title": "Stale shard verdict files from a previous build of the same round silently feed the gate — item ids are reused and verdicts are not hash-bound",
+   "severity": "med",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 320,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Item ids are positional (`r{round}-i{nnn}`) and reused across rebuilds of the same round, and --score reads any existing shard-XX.verdict.json without binding verdicts to the build that produced their shards, so rebuilding a round after artifacts change and then scoring against leftover verdict files matches old judgments to new items by reused id and can emit a wrong eval-verdict.json (including passed:true) that index.mjs trusts; stale extra shard/verdict files from a larger prior build also linger."
+  },
+  {
+   "title": "Enrichment workflow has no skip-if-valid / file-based resume, contradicting plan EV-A12",
+   "severity": "med",
+   "file": ".claude/workflows/unshaken-enrichment.mjs",
+   "line": 154,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The workflow unconditionally spawns all 4 judgment agents per episode with no validity check on existing artifacts, so a crash after 9/10 episodes forces a full ~40-agent re-run and overwrites already-valid (possibly human-reviewed) judgment artifacts, despite plan §Design declaring 'skip-if-valid per artifact = FILE-based resume primary'."
+  },
+  {
+   "title": "extract-merge proceeds on missing/unparseable judgment artifacts and nothing downstream gates judgmentComplete=false",
+   "severity": "med",
+   "file": "scripts/ingest-podcast/extract.mjs",
+   "line": 474,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "readJudgment converts missing or crash-truncated judgment artifacts (agent Write-tool output is not atomic) into a log line and an extraction with judgmentComplete:false, but neither extraction-eval.mjs nor the load-extraction gate checks that flag, so a silently degraded extraction (no aliases, no principles, uncorrected timeline) can pass eval and load to prod."
+  },
+  {
+   "title": "A2 stages ignore --dry-run: extract-code/extract-merge write artifacts anyway",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 342,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "Every A1 stage gates writes on opts.dryRun but runExtractCode/runExtractMerge never consult it, so --stage=extract-merge --dry-run rewrites extraction.json (changing contentHash and invalidating an existing eval-verdict binding) and --stage=extract-code --refresh --dry-run clobbers all three artifacts."
+  },
+  {
+   "title": "smoke-extraction mentions invariant excludes title-sourced edges and NULL confidences pass bool_and silently",
+   "severity": "low",
+   "file": "scripts/smoke-extraction.mjs",
+   "line": 105,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "mentions_sorted_and_floored filters `ed.source = 'unshaken-extraction'`, so chapter mentions rewritten onto source='unshaken-youtube' title edges by update-title-edge are never checked for sortedness or the 0.5 floor, and because bool_and ignores NULL inputs a mention object missing its confidence (or t) key passes the check."
+  },
+  {
+   "title": "Verse-target orphan detection keyed on to_id LIKE '%-%-%-%' id-shape heuristic",
+   "severity": "low",
+   "file": "scripts/smoke-extraction.mjs",
+   "line": 79,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "The only orphan detector for a table with no FKs distinguishes verses from chapters by counting hyphens in the id, which is correct for 2-kgs but false-positives/negatives for any book id scheme where chapter ids carry three hyphens or verse ids carry fewer, making the F7 kind-aware invariant shape-fragile for reuse."
+  },
+  {
+   "title": "Presence canary false-positives for an episode whose extraction produced only title-edge updates",
+   "severity": "low",
+   "file": "scripts/smoke-extraction.mjs",
+   "line": 36,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "risky"
+   ],
+   "claim": "every_transcribed_episode_has_extraction_edges requires at least one source='unshaken-extraction' row per transcribed episode, but an episode whose extraction yielded only chapter mentions on existing title pairs (all UPDATEs, zero INSERTs) loads successfully yet fails the canary with exit 2."
+  },
+  {
+   "title": "writeArtifactAtomic: fixed .tmp name, no O_EXCL, no fsync",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/util.mjs",
+   "line": 44,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "risky",
+    "noise"
+   ],
+   "claim": "Two concurrent runner invocations on the same show can interleave writes to the same fixed `${path}.tmp` and publish a torn artifact via rename, a crash between write and rename leaves .tmp litter that is never cleaned, and the absence of fsync before rename can publish an empty artifact on power loss — a pre-existing util whose call sites this branch multiplies across 8+ new artifact types."
+  },
+  {
+   "title": "extraction-eval reads episodes.json at module top level, before arg handling and outside error handling",
+   "severity": "low",
+   "file": "scripts/extraction-eval.mjs",
+   "line": 19,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "noise"
+   ],
+   "claim": "A missing or corrupt episodes.json crashes the script with a raw ENOENT/SyntaxError stack at import time, before the usage message or the scrubbed FATAL path can run, violating the house error-path style every sibling script follows (no secret content, path only)."
+  },
+  {
+   "title": "repair dry-run validates only the outer wrap layer; double-wrapped scalars pass validation but unwrap to non-object garbage",
+   "severity": "low",
+   "file": "scripts/repair-metadata-encoding.mjs",
+   "line": 61,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "noise",
+    "noise"
+   ],
+   "claim": "Rows whose raw value parses to a string are counted as doubleWrapped without recursive validation, so a double-wrapped scalar like '\"5\"' passes the dry run yet the unwrap loop peels it to a jsonb number scalar, and the in-tx invariant only asserts zero string rows remain — shipping exactly the non-object garbage the EV-A11 validation comment claims to prevent (latent given known prod data)."
+  },
+  {
+   "title": "Outer catch writes to a possibly-ended logSink; write-after-end can raise an unhandled stream error masking the real failure",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 461,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "After any in-try fatal() has called logSink.end, a subsequent throw reaches the outer catch which does logSink?.write, emitting 'error' on a stream with no error listener and replacing the scrubbed fatal line with a raw ERR_STREAM_WRITE_AFTER_END stack; finish() then calls logSink.end a second time and races exit codes with fatal's scheduled exit."
+  },
+  {
+   "title": ".env read sits outside the try block: missing .env crashes with a raw stack and an unflushed run log",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 298,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "readFileSync of .env and postgres(dsn) run after run_start is buffered to the sink but before the try/catch, so a missing .env produces an unhandled top-level rejection with a raw stack (path only, no secret), no fatal record, and a likely-empty run log for exactly the runs that need forensics."
+  },
+  {
+   "title": "Duplicate bookRows query inside the A2 block shadows the outer fetch",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 326,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "material"
+   ],
+   "claim": "SELECT id, name FROM lumen.books runs twice per A2 invocation, with the inner const shadowing the outer one used to build lookup — harmless today but a needless round trip and a drift hazard."
+  },
+  {
+   "title": "A2 stage exit code is 2 even when ALL episodes failed",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 373,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "risky",
+    "noise"
+   ],
+   "claim": "finish(rollup.failed.length ? 2 : 0) makes total failure (0 ok / N failed) indistinguishable from one straggler; under the documented contract (1 fatal, 2 partial) an all-failed stage reads as 'mostly worked' to automation deciding whether to proceed."
+  },
+  {
+   "title": "Pre-existing: --stage=load still routes through fetchEpisode; missing audio triggers a network re-download in a load-scoped run",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 410,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "oos",
+    "oos"
+   ],
+   "claim": "assertStagePrereqs('load') requires only transcripts, but the probe chain calls fetchEpisode unconditionally, so a deleted .m4a causes a yt-dlp re-download in a run that needs no audio (transcribeEpisode would skip via the valid transcript artifact) — a B7-spirit cascade, pre-existing from A1 but highlighted by the A2 stages correctly bypassing the chain."
+  },
+  {
+   "title": "stage_rollup logs ok as a count and failed as an array",
+   "severity": "low",
+   "file": "scripts/ingest-podcast/index.mjs",
+   "line": 372,
+   "dimension": "reliability-secrets",
+   "tags": [
+    "material",
+    "noise"
+   ],
+   "claim": "The A2 rollup emits `ok` as a number and `failed` as an id list while the A1 rollups (summarizeResults) emit counts for both — an inconsistent shape for log consumers on the crash-forensics surface."
+  }
+ ],
+ "killed": [
+  {
+   "title": "A1 stale-anchor delete with empty chapterIds deletes every title edge for the episode",
+   "file": "scripts/ingest-podcast/load.mjs"
+  },
+  {
+   "title": "Trap refusal is edge-level only; a __trap marker inside mentions would serialize into metadata",
+   "file": "scripts/ingest-podcast/load-extraction.mjs"
+  },
+  {
+   "title": "Symbol entities fetched and prompted but can never produce a mention or edge",
+   "file": "scripts/ingest-podcast/extract.mjs"
+  },
+  {
+   "title": "Multi-word agent aliases can never validate (census holds single tokens)",
+   "file": "scripts/ingest-podcast/extract-lib.mjs"
+  },
+  {
+   "title": "Floating-point gate comparison lb >= s.gate - 0.08",
+   "file": "scripts/extraction-eval.mjs"
+  },
+  {
+   "title": "eval-prompt.md wording mismatch: 'packet directory' / 'packet.json' vs actual shard file parameter",
+   "file": "docs/features/unshaken-extraction/eval-prompt.md"
+  },
+  {
+   "title": "fatal's fallback timer is unref'd so the bounded exit cannot fire if the loop drains; theoretical clean exit 0 after a fatal",
+   "file": "scripts/ingest-podcast/index.mjs"
+  }
+ ]
+}

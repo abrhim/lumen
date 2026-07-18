@@ -699,6 +699,73 @@ test('prompts: timeline prompt lists episode chapters as the closed set', () => 
 
 // ---------- H9: secrets ----------
 
+// ---------- code-review fix pins (F2/F11/F13/F15/F29, review round) ----------
+
+test('F2-pin: seedTraps terminates when trap count exceeds mention count', () => {
+	const clean = [mention()];
+	const { evalSample, answerKey } = seedTraps(clean, {
+		count: 5,
+		rng: () => 0.5,
+		swapPool: ['person-hezekiah', 'person-ahaz'],
+	});
+	assert.equal(evalSample.length, 1);
+	assert.ok(answerKey.traps.length <= 1); // terminated, no infinite orbit
+});
+
+test('F11-pin: empty/punctuation quotes never satisfy the evidence gate', () => {
+	const utterances = [utt(9, 90, 'a'), utt(10, 100, 'b c d'), utt(11, 110, 'e')];
+	for (const quote of ['', '   ', '...', '—', 'a']) {
+		const r = verifyQuoteAtSeq(mention({ quote }), { utterances });
+		assert.equal(r.ok, false, `quote ${JSON.stringify(quote)} must fail`);
+	}
+});
+
+test('F13-pin: malformed alias rows reject, never throw', () => {
+	const r = validateAliasTable(
+		[null, { id: 42, names: ['x'] }, { id: 'person-ahaz' }, { id: 'person-ahaz', names: [7] }],
+		{ censusTokens: new Set(['ahas']), poolIds: new Set(['person-ahaz']) },
+	);
+	assert.equal(r.valid.length, 0);
+	assert.equal(r.rejected.length, 4);
+});
+
+test('F15-pin: non-adjacent elision splits — "thirty and five" is never 30–35', () => {
+	assert.deepEqual(parseSpokenVerseRefs('read verse thirty and five'), [
+		{ verse: 30 },
+		{ verse: 5 },
+	]);
+	// the true elision form still ranges
+	assert.deepEqual(parseSpokenVerseRefs('verse twenty one and two'), [
+		{ verse: 21, verseEnd: 22 },
+	]);
+});
+
+test('F12-pin: bare "chapter N" in an utterance naming a foreign book emits no segment', () => {
+	const us = [utt(0, 10, 'over in Helaman chapter 5 we read the same warning')];
+	const segs = detectChapterTransitions(us, {
+		episodeChapters: ['2-kgs-5', '2-kgs-6'],
+		bookAliases: { '2 Kings': '2-kgs' },
+		foreignBooks: { Helaman: 'hel' },
+	});
+	assert.deepEqual(segs, []);
+});
+
+test('F29-pin: duplicate (toId, relType) pairs refuse the artifact loudly', () => {
+	assert.throws(
+		() =>
+			buildExtractionLoadPlan({
+				episodeId: 'unshaken-x',
+				collectionId: 'unshaken',
+				edges: [
+					{ toId: '2-kgs-14-3', relType: 'DISCUSSES', mentions: [] },
+					{ toId: '2-kgs-14-3', relType: 'DISCUSSES', mentions: [] },
+				],
+				existingEdges: [],
+			}),
+		/duplicate/i,
+	);
+});
+
 test('H9: scrubber removes ANTHROPIC_API_KEY material from error text', () => {
 	const scrub = makeScrubber('sk-ant-api03-FAKEFAKE');
 	const dirty = `401 unauthorized: key sk-ant-api03-FAKEFAKE rejected`;

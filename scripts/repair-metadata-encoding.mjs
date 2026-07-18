@@ -50,22 +50,35 @@ async function main() {
 			let objects = 0;
 			let doubleWrapped = 0;
 			for (const r of rows) {
-				let parsed;
-				try {
-					parsed = JSON.parse(r.raw);
-				} catch {
-					unparseable += 1;
-					console.log(JSON.stringify({ event: 'unparseable_row', table, row_ref: r.row_ref }));
-					continue;
+				// F10: validate to the INNERMOST layer — arrays are typeof
+				// 'object' but unwrap to jsonb-array garbage, and double-wrapped
+				// rows can hide non-object content one layer down.
+				let inner = r.raw;
+				let layers = 0;
+				let parseFailed = false;
+				while (typeof inner === 'string' && layers < 6) {
+					try {
+						inner = JSON.parse(inner);
+					} catch {
+						parseFailed = true;
+						break;
+					}
+					layers += 1;
 				}
-				if (typeof parsed === 'string') doubleWrapped += 1;
-				else if (parsed !== null && typeof parsed === 'object') objects += 1;
-				else {
+				const isObject = !parseFailed && inner !== null && typeof inner === 'object' && !Array.isArray(inner);
+				if (!isObject) {
 					unparseable += 1;
 					console.log(
-						JSON.stringify({ event: 'non_object_row', table, row_ref: r.row_ref, typeof: typeof parsed }),
+						JSON.stringify({
+							event: 'non_object_row',
+							table,
+							row_ref: r.row_ref,
+							layers,
+							inner_type: parseFailed ? 'unparseable' : Array.isArray(inner) ? 'array' : typeof inner,
+						}),
 					);
-				}
+				} else if (layers > 1) doubleWrapped += 1;
+				else objects += 1;
 			}
 			console.log(
 				JSON.stringify({ event: 'dry_run_scan', table, string_rows: rows.length, objects, double_wrapped: doubleWrapped }),

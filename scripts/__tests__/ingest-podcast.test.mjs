@@ -372,6 +372,10 @@ test('PW-A1: DISCUSSES upsert preserves existing mentions on conflict', () => {
   assert.match(edge.text, /jsonb_typeof\(lumen\.edges\.metadata\) = 'object'/);
   assert.match(edge.text, /lumen\.edges\.metadata->'mentions'/);
   assert.doesNotMatch(edge.text, /DO NOTHING/);
+  // review F9: DO UPDATE must also repair the source column, or a chimera
+  // extraction-sourced row keeps title metadata and a later A2 delete
+  // destroys the anchor permanently
+  assert.match(edge.text, /DO UPDATE SET source = 'unshaken-youtube'/);
 });
 
 test('F1-audit: no plan value is pre-stringified JSON (executor serializes once)', () => {
@@ -456,8 +460,13 @@ test('B1: run log path is per-invocation unique and runner-owned', () => {
 
 test('B7: unknown --stage rejected; valid stages whitelisted', () => {
   assert.throws(() => parseArgs(['--stage=laod']), /stage/i);
-  assert.deepEqual([...STAGES], ['discover', 'fetch', 'transcribe', 'load']);
+  // A2 amendment (review F7): whitelist grew by the three extraction stages
+  assert.deepEqual(
+    [...STAGES],
+    ['discover', 'fetch', 'transcribe', 'load', 'extract-code', 'extract-merge', 'load-extraction'],
+  );
   assert.equal(parseArgs(['--stage=load']).stage, 'load');
+  assert.equal(parseArgs(['--stage=extract-merge']).stage, 'extract-merge');
 });
 
 test('B7: --episode outside the manifest fails with the id in the message', () => {

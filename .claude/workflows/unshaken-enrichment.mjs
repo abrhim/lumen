@@ -72,14 +72,19 @@ const PRINCIPLES_SCHEMA = {
 	},
 }
 
-const shared = (ep) => `Work ONLY from these two files (do not read anything else in the repo —
+const shared = (ep, outPath) => `RESUME CHECK FIRST (EV-A12 file-based resume): if ${outPath} already
+exists, Read it; if it parses as JSON with the required output shape,
+return its contents as your structured output WITHOUT re-analyzing, and do
+not rewrite the file. Otherwise proceed:
+
+Work ONLY from these two files (do not read anything else in the repo —
 no plan docs, no review docs, no other artifacts):
 - Brief: ${DIR}/${ep}.judgment-brief.json
 - Transcript: ${DIR}/${ep}.transcript.txt (line N = seq N−1; every line is
   "[seq @ h:mm:ss] text" — cite the seq inside the brackets, and Read with
   offset/limit to move through it in slices)`
 
-const aliasPrompt = (ep) => `${shared(ep)}
+const aliasPrompt = (ep) => `${shared(ep, `${DIR}/${ep}.aliases.json`)}
 
 You are the ALIAS-MAP judge for this podcast episode. Deepgram's ASR spells
 biblical names phonetically ("Ahas" for Ahaz, "Jehoiachim" for Jehoiakim).
@@ -103,7 +108,7 @@ Write EXACTLY this JSON to ${DIR}/${ep}.aliases.json using the Write tool:
 {"aliases": [{"id": "<pool id>", "names": ["<VariantToken>", ...]}, ...]}
 Then return the same object as your structured output.`
 
-const timelinePrompt = (ep) => `${shared(ep)}
+const timelinePrompt = (ep) => `${shared(ep, `${DIR}/${ep}.timeline-review.json`)}
 
 You are the TIMELINE-REVIEW judge. The brief's "timeline" is a code-detected
 list of chapter segments {chapter, seq, t_start_s}; "coverage" lists
@@ -126,7 +131,7 @@ plus one-paragraph notes on what you changed and why. Write EXACTLY
 {"timeline": [...], "notes": "..."} to ${DIR}/${ep}.timeline-review.json
 using the Write tool, then return the same object as structured output.`
 
-const principlesPrompt = (ep, w) => `${shared(ep)}
+const principlesPrompt = (ep, w) => `${shared(ep, `${DIR}/${ep}.principles.${w}.json`)}
 
 You are PRINCIPLES judge, window ${w} of 2. The brief's fingerprint gives
 utteranceCount N; your window is seq ${w === 0 ? '0 to floor(N/2)-1' : 'floor(N/2) to N-1'}.

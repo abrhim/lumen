@@ -104,7 +104,8 @@ export function stampChunks(chunks, timeline) {
 /** Chapter-transition segments from announced ("chapter fifteen") and
  * INLINE ("of Second Kings 21" — panel F2) forms. Chapters outside the
  * episode block are never emitted (census surfaces them instead). */
-export function detectChapterTransitions(utterances, { episodeChapters, bookAliases }) {
+export function detectChapterTransitions(utterances, { episodeChapters, bookAliases, foreignBooks = {} }) {
+	const foreignAliases = Object.keys(foreignBooks);
 	const blockByBook = new Map();
 	for (const ch of episodeChapters) {
 		const m = ch.match(/^(.+)-(\d+)$/);
@@ -122,11 +123,17 @@ export function detectChapterTransitions(utterances, { episodeChapters, bookAlia
 				found.push({ idx: m.index, bookId, num: spokenNumberToInt(m[1]) });
 			}
 		}
-		const chRe = new RegExp(`\\bchapter\\s+${NUM}\\b`, 'gi');
-		for (const m of u.text.matchAll(chRe)) {
-			const num = spokenNumberToInt(m[1]);
-			const books = [...blockByBook].filter(([, set]) => set.has(num)).map(([b]) => b);
-			if (books.length === 1) found.push({ idx: m.index, bookId: books[0], num });
+		// F12: a bare "chapter N" in an utterance that NAMES a foreign book is
+		// that book's chapter ("Helaman chapter 5" must never become a block
+		// segment just because 5 coincides with a block chapter number).
+		const namesForeign = foreignAliases.some((a) => new RegExp(`\\b${esc(a)}\\b`, 'i').test(u.text));
+		if (!namesForeign) {
+			const chRe = new RegExp(`\\bchapter\\s+${NUM}\\b`, 'gi');
+			for (const m of u.text.matchAll(chRe)) {
+				const num = spokenNumberToInt(m[1]);
+				const books = [...blockByBook].filter(([, set]) => set.has(num)).map(([b]) => b);
+				if (books.length === 1) found.push({ idx: m.index, bookId: books[0], num });
+			}
 		}
 		found.sort((a, b) => a.idx - b.idx);
 		for (const f of found) {
@@ -165,9 +172,11 @@ export function parseSpokenVerseRefs(text) {
 		const a = spokenNumberToInt(m[1]);
 		const b = spokenNumberToInt(m[2]);
 		if (b === a + 1) return [{ verse: a, verseEnd: b }];
+		// F15: elision is ONLY the adjacent-pair form ("twenty one and two" =
+		// 21–22). "thirty and five" must split, never fabricate a 30–35 range.
 		if (a >= 20 && b < 10) {
 			const end = Math.floor(a / 10) * 10 + b;
-			if (end > a) return [{ verse: a, verseEnd: end }];
+			if (end === a + 1) return [{ verse: a, verseEnd: end }];
 		}
 		return [{ verse: a }, { verse: b }];
 	});
@@ -192,12 +201,25 @@ export function parseSpokenVerseRefs(text) {
 
 /** Cross-book tangent windows (panel F3; "section" unit for D&C). Close:
  * 15 consecutive utterances without foreign tokens (Q6), else end-of-input. */
-export function detectForeignWindows(utterances, { foreignBooks, quietClose = 15 }) {
+export function detectForeignWindows(utterances, { foreignBooks, quietClose = 15, inBlockBooks = {} }) {
 	const entries = Object.entries(foreignBooks ?? {});
+	const inBlockAliases = Object.keys(inBlockBooks);
 	const windows = [];
 	let open = null;
 	let quiet = 0;
 	for (const u of utterances) {
+		// Q6 close condition #1 (F12 rider): an explicit in-block citation
+		// ("back in Second Kings 18") closes the window immediately.
+		if (
+			open &&
+			inBlockAliases.some((a) =>
+				new RegExp(`\\b${esc(a)}\\s+(?:chapter\\s+|section\\s+)?${NUM}\\b`, 'i').test(u.text),
+			)
+		) {
+			windows.push(open);
+			open = null;
+			quiet = 0;
+		}
 		let hit = null;
 		for (const [alias, book] of entries) {
 			// a CITATION opens a window, not a bare name-drop — "Job" the book
@@ -273,6 +295,18 @@ export function validateAliasTable(table, { censusTokens, poolIds }) {
 	const rejected = [];
 	const candidates = [];
 	for (const row of table) {
+		// F13: agent artifacts are untrusted input — malformed rows reject,
+		// never throw.
+		if (
+			!row ||
+			typeof row.id !== 'string' ||
+			!Array.isArray(row.names) ||
+			row.names.length === 0 ||
+			row.names.some((n) => typeof n !== 'string')
+		) {
+			rejected.push({ row, reason: 'malformed row' });
+			continue;
+		}
 		if (!poolIds.has(row.id)) {
 			rejected.push({ row, reason: 'id not in pool' });
 			continue;
@@ -335,6 +369,12 @@ export function validateMention(m, { poolIds }) {
 export function verifyQuoteAtSeq(m, { utterances }) {
 	const norm = (s) =>
 		String(s).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+	const q = norm(m.quote);
+	// F11: an empty/near-empty normalized quote is substring-of-anything —
+	// the fabricated-evidence gate must not be satisfiable by punctuation.
+	if (q.length < 8 || q.split(' ').length < 2) {
+		return { ok: false, reason: 'quote too short to verify evidence' };
+	}
 	const windowText = norm(
 		utterances
 			.filter((u) => Math.abs(u.seq - m.seq) <= 1)
@@ -342,7 +382,7 @@ export function verifyQuoteAtSeq(m, { utterances }) {
 			.join(' '),
 	);
 	if (!windowText) return { ok: false, reason: `no utterances at seq ${m.seq}±1 to verify quote` };
-	if (!windowText.includes(norm(m.quote))) {
+	if (!windowText.includes(q)) {
 		return { ok: false, reason: `quote not found at seq ${m.seq}±1` };
 	}
 	return { ok: true };
@@ -440,6 +480,8 @@ export function seedTraps(mentions, { count, rng, swapPool }) {
 	let guard = 0;
 	while (traps.length < count && guard < evalSample.length * 4 + 16) {
 		guard += 1;
+		// F2: once every index is used the linear probe would orbit forever
+		if (used.size >= evalSample.length) break;
 		let idx = Math.floor(rng() * evalSample.length);
 		while (used.has(idx)) idx = (idx + 1) % evalSample.length;
 		const entry = evalSample[idx];

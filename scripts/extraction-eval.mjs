@@ -6,12 +6,13 @@
 // --score re-runs the same derivation to recompute the key (EV-A2 — the key
 // is never persisted where an evaluator could read it).
 // Exit 0 ok, 1 fatal, 2 gate-fail/void.
-import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync, readdirSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { scrubSecrets, writeArtifactAtomic } from './ingest-podcast/util.mjs';
+import { spokenNumberToInt } from './ingest-podcast/extract-lib.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = join(ROOT, 'data', 'podcasts', 'unshaken');
@@ -90,35 +91,53 @@ export function deriveRound(artifacts, round, { verseExistsByEpisode, blockChapt
 		byKind.get(m.kind).push(m);
 	}
 
-	// stratum samples (per-episode cap so one 3.6h episode can't dominate)
+	// stratum samples (per-episode cap so one 3.6h episode can't dominate).
+	// F17/A5: per-kind sub-floors — kinds with pool ≥ 15 get ≥ 15 items so a
+	// thin kind (events) can't hide inside a pooled stratum gate.
 	const items = [];
 	const pickedKeys = new Set();
 	const keyOf = (m) => `${m.episodeId}|${m.kind}|${m.target}|${m.seq}`;
+	const poolSizes = {};
 	for (const [name, s] of Object.entries(STRATA)) {
-		const pool = shuffle(
-			s.kinds.flatMap((k) => byKind.get(k) ?? []),
-			rng,
-		);
 		const perEpisode = new Map();
 		const cap = Math.ceil((s.sampleN / EPISODES.length) * 2.5);
 		let taken = 0;
-		for (const m of pool) {
-			if (taken >= s.sampleN) break;
-			const k = keyOf(m);
-			if (pickedKeys.has(k)) continue;
-			const epn = perEpisode.get(m.episodeId) ?? 0;
-			if (epn >= cap) continue;
-			pickedKeys.add(k);
-			perEpisode.set(m.episodeId, epn + 1);
-			items.push({ ...m, stratum: name, role: 'sample' });
-			taken += 1;
+		const takeFrom = (pool, limit) => {
+			for (const m of pool) {
+				if (taken >= s.sampleN || limit <= 0) break;
+				const k = keyOf(m);
+				if (pickedKeys.has(k)) continue;
+				const epn = perEpisode.get(m.episodeId) ?? 0;
+				if (epn >= cap) continue;
+				pickedKeys.add(k);
+				perEpisode.set(m.episodeId, epn + 1);
+				items.push({ ...m, stratum: name, role: 'sample' });
+				taken += 1;
+				limit -= 1;
+			}
+		};
+		for (const k of s.kinds) {
+			const kindPool = byKind.get(k) ?? [];
+			poolSizes[k] = kindPool.length;
+			if (s.kinds.length > 1 && kindPool.length >= 15) {
+				takeFrom(shuffle(kindPool, rng), 15);
+			}
 		}
+		takeFrom(shuffle(s.kinds.flatMap((k) => byKind.get(k) ?? []), rng), s.sampleN);
 	}
 
-	// golds: chapter mentions whose quote contains an explicit "chapter N" —
-	// correct by construction (title-anchored timeline evidence)
+	// golds: chapter mentions whose quote SAYS the chapter number the target
+	// claims — F6: correct-by-construction requires the number-to-target
+	// check, not just the word "chapter" appearing.
 	const goldPool = shuffle(
-		(byKind.get('chapter') ?? []).filter((m) => /\bchapter\s+\w+/i.test(m.quote) && !pickedKeys.has(keyOf(m))),
+		(byKind.get('chapter') ?? []).filter((m) => {
+			if (pickedKeys.has(keyOf(m))) return false;
+			const qm = m.quote.match(/\bchapter\s+(\d{1,3}|[a-z]+(?:[ -][a-z]+)?)\b/i);
+			if (!qm) return false;
+			const spoken = spokenNumberToInt(qm[1]);
+			const targetNum = Number(m.target.match(/-(\d+)$/)?.[1]);
+			return Number.isInteger(spoken) && spoken === targetNum;
+		}),
 		rng,
 	);
 	for (const m of goldPool.slice(0, GOLD_COUNT)) {
@@ -154,7 +173,15 @@ export function deriveRound(artifacts, round, { verseExistsByEpisode, blockChapt
 				const candidates = (blockChaptersByEpisode.get(m.videoId) ?? []).filter((c) => c !== m.target);
 				if (candidates.length) swapped = candidates[Math.floor(rng() * candidates.length)];
 			} else {
-				const sameKind = (byKind.get(m.kind) ?? []).map((x) => x.target).filter((t) => t !== m.target);
+				// F22: swap within the SAME episode's roster — a cross-episode
+				// entity is absent from the packet roster and trivially caught.
+				const sameKind = [
+					...new Set(
+						(byKind.get(m.kind) ?? [])
+							.filter((x) => x.videoId === m.videoId)
+							.map((x) => x.target),
+					),
+				].filter((t) => t !== m.target);
 				if (sameKind.length) swapped = sameKind[Math.floor(rng() * sameKind.length)];
 			}
 			if (!swapped) continue;
@@ -171,7 +198,17 @@ export function deriveRound(artifacts, round, { verseExistsByEpisode, blockChapt
 	shuffled.forEach((it, i) => {
 		it.id = `r${round}-i${String(i).padStart(3, '0')}`;
 	});
-	return { items: shuffled, episodeHashes, seedHex };
+	// F4: the answer key is recomputed at score time from live DB + spans —
+	// hash the key components at build so score can PROVE the derivation
+	// reproduced identically instead of silently diverging.
+	const keyHash = createHash('sha256')
+		.update(
+			JSON.stringify(
+				shuffled.map((it) => ({ id: it.id, role: it.role, target: it.target, o: it.originalTarget ?? null })),
+			),
+		)
+		.digest('hex');
+	return { items: shuffled, episodeHashes, seedHex, keyHash, poolSizes, trapPlanned: trapPlan.length };
 }
 
 function buildEvidence(item, ctx) {
@@ -260,6 +297,11 @@ async function build(sql, round) {
 
 	const outDir = join(DIR, 'eval', `round-${round}`);
 	mkdirSync(outDir, { recursive: true });
+	// F5: a rebuilt round must never score verdicts from a previous build —
+	// item ids restart at r{round}-i000, so stale verdicts LOOK valid.
+	for (const f of readdirSync(outDir)) {
+		if (f.endsWith('.verdict.json')) rmSync(join(outDir, f));
+	}
 
 	// shard by stratum, then add ~10% cross-shard duplicates (EV-A3.5)
 	const shards = [];
@@ -293,7 +335,14 @@ async function build(sql, round) {
 	writeArtifactAtomic(
 		join(outDir, 'meta.json'),
 		JSON.stringify(
-			{ round, shards: shards.length, itemsTotal: derived.items.length, episodeHashes: derived.episodeHashes },
+			{
+				round,
+				shards: shards.length,
+				itemsTotal: derived.items.length,
+				episodeHashes: derived.episodeHashes,
+				keyHash: derived.keyHash,
+				trapPlanned: derived.trapPlanned,
+			},
 			null,
 			1,
 		),
@@ -313,32 +362,77 @@ async function score(sql, round) {
 	if (JSON.stringify(meta.episodeHashes) !== JSON.stringify(derived.episodeHashes)) {
 		throw new Error('extraction artifacts changed since --build — stale eval (PW-A6); rebuild the round');
 	}
+	// F4: prove the key recomputed IDENTICALLY — derivation also depends on
+	// live DB pools + episodes.json spans, which episodeHashes don't cover.
+	if (meta.keyHash && meta.keyHash !== derived.keyHash) {
+		throw new Error('answer-key derivation diverged since --build (DB or spans changed) — rebuild the round');
+	}
+	// F24: the evaluators ran from the hash-pinned prompt file — assert the
+	// file still matches the drift baseline before trusting any verdict.
+	const baselineHash = readFileSync(join(ROOT, 'docs/features/unshaken-extraction/plan.md'), 'utf8')
+		.match(/^- eval-prompt-hash: ([0-9a-f]{64})$/m)?.[1];
+	const promptHashNow = createHash('sha256')
+		.update(readFileSync(join(ROOT, 'docs/features/unshaken-extraction/eval-prompt.md')))
+		.digest('hex');
+	if (baselineHash && baselineHash !== promptHashNow) {
+		throw new Error('eval-prompt.md drifted from the stamped baseline — re-baseline before scoring');
+	}
 
-	const verdicts = new Map(); // id → [verdict,...] (duplicates collect)
+	const VALID_VERDICTS = new Set(['correct', 'wrong', 'insufficient-evidence']);
+	const verdicts = new Map(); // id → [{verdict, anchor_ok}...] (duplicates collect)
+	let invalidEntries = 0;
 	for (let i = 0; i < meta.shards; i += 1) {
 		const p = join(outDir, `shard-${String(i).padStart(2, '0')}.verdict.json`);
 		if (!existsSync(p)) throw new Error(`missing verdict for shard ${i} — run the unshaken-eval workflow`);
-		for (const v of JSON.parse(readFileSync(p, 'utf8')).verdicts) {
+		for (const v of JSON.parse(readFileSync(p, 'utf8')).verdicts ?? []) {
+			// F18: schema-validate — an invalid verdict string must never
+			// silently become 'missing' and shrink the denominator.
+			if (!v || typeof v.id !== 'string' || !VALID_VERDICTS.has(v.verdict)) {
+				invalidEntries += 1;
+				continue;
+			}
 			if (!verdicts.has(v.id)) verdicts.set(v.id, []);
-			verdicts.get(v.id).push(v.verdict);
+			verdicts.get(v.id).push({ verdict: v.verdict, anchor_ok: v.anchor_ok !== false });
 		}
 	}
+	// F18: every derived item must have a valid verdict — a selectively lazy
+	// evaluator must fail the scoring run, not inflate precision.
+	const unjudged = derived.items.filter((it) => !verdicts.has(it.id));
+	if (unjudged.length || invalidEntries) {
+		throw new Error(
+			`scoring refused: ${unjudged.length} item(s) without valid verdicts, ${invalidEntries} invalid entries — fix the evaluator run`,
+		);
+	}
 
-	const report = { round, strata: {}, traps: {}, golds: { total: 0, rejected: 0 }, duplicates: { pairs: 0, disagreements: 0 }, voided: [] };
-	for (const [id, vs] of verdicts.entries()) {
+	const report = {
+		round,
+		seedHex: derived.seedHex,
+		evaluator: { model: 'session-inherited', effort: 'high', promptHash: promptHashNow },
+		strata: {},
+		perKind: {},
+		traps: {},
+		trapPlanned: meta.trapPlanned ?? null,
+		anchorIssues: 0,
+		golds: { total: 0, rejected: 0 },
+		duplicates: { pairs: 0, disagreements: 0 },
+		voided: [],
+	};
+	for (const vs of verdicts.values()) {
 		if (vs.length > 1) {
 			report.duplicates.pairs += 1;
-			if (new Set(vs).size > 1) report.duplicates.disagreements += 1;
+			if (new Set(vs.map((v) => v.verdict)).size > 1) report.duplicates.disagreements += 1;
 		}
 	}
 	const verdictOf = (id) => {
-		const vs = verdicts.get(id);
-		if (!vs?.length) return 'missing';
-		// duplicates: any 'wrong' wins (conservative)
-		if (vs.includes('wrong')) return 'wrong';
+		const vs = verdicts.get(id).map((v) => v.verdict);
+		if (vs.includes('wrong')) return 'wrong'; // duplicates: conservative
 		if (vs.includes('insufficient-evidence')) return 'insufficient-evidence';
 		return vs[0];
 	};
+	// F20: anchor problems tracked as their own count, never precision failures
+	for (const it of derived.items) {
+		if (verdicts.get(it.id).some((v) => v.anchor_ok === false)) report.anchorIssues += 1;
+	}
 
 	for (const [name, s] of Object.entries(STRATA)) {
 		const sample = derived.items.filter((i) => i.stratum === name && i.role === 'sample');
@@ -346,7 +440,6 @@ async function score(sql, round) {
 		let correct = 0;
 		let wrong = 0;
 		let insufficient = 0;
-		let missing = 0;
 		const perEpisode = {};
 		for (const it of sample) {
 			const v = verdictOf(it.id);
@@ -356,27 +449,50 @@ async function score(sql, round) {
 				correct += 1;
 				perEpisode[it.episodeId].correct += 1;
 			} else if (v === 'wrong') wrong += 1;
-			else if (v === 'insufficient-evidence') insufficient += 1;
-			else missing += 1;
+			else insufficient += 1;
 		}
-		const n = sample.length - missing;
+		const n = sample.length;
 		const point = n ? correct / n : 0;
 		const lb = wilsonLB(point, n);
-		const trapsCaught = traps.filter((t) => verdictOf(t.id) === 'wrong').length;
-		const trapsMissed = traps.length - trapsCaught;
-		const voided = trapsMissed >= 2;
-		if (voided) report.voided.push(name);
-		report.traps[name] = { planted: traps.length, caught: trapsCaught, missed: trapsMissed };
+		// F17: trap floor per KIND (plan A4) — a stratum-pooled floor lets
+		// exactly the principle traps be the missed ones. ≥2 missed traps of
+		// any kind voids the CONTAINING stratum.
+		let voided = false;
+		const trapByKind = {};
+		for (const t of traps) {
+			trapByKind[t.kind] = trapByKind[t.kind] ?? { planted: 0, caught: 0, missed: 0 };
+			trapByKind[t.kind].planted += 1;
+			if (verdictOf(t.id) === 'wrong') trapByKind[t.kind].caught += 1;
+			else trapByKind[t.kind].missed += 1;
+		}
+		for (const [kind, tk] of Object.entries(trapByKind)) {
+			if (tk.missed >= 2) {
+				voided = true;
+				report.voided.push(`${name}(kind:${kind} traps)`);
+			}
+		}
+		// F17/A5: per-kind sub-floors — every kind with a mention pool ≥ 15
+		// must carry n ≥ 15 in the sample, or the stratum is not evaluable.
+		const kindNs = {};
+		for (const it of sample) kindNs[it.kind] = (kindNs[it.kind] ?? 0) + 1;
+		let subFloorFail = false;
+		for (const k of s.kinds) {
+			report.perKind[k] = { n: kindNs[k] ?? 0, pool: derived.poolSizes[k] ?? 0 };
+			if (s.kinds.length > 1 && (derived.poolSizes[k] ?? 0) >= 15 && (kindNs[k] ?? 0) < 15) {
+				subFloorFail = true;
+				report.voided.push(`${name}(kind:${k} n=${kindNs[k] ?? 0} < 15 sub-floor)`);
+			}
+		}
+		report.traps[name] = { byKind: trapByKind, planted: traps.length };
 		report.strata[name] = {
 			n,
 			correct,
 			wrong,
 			insufficient,
-			missing,
 			point: +point.toFixed(4),
 			wilsonLB: +lb.toFixed(4),
 			gate: s.gate,
-			pass: !voided && point >= s.gate && lb >= s.gate - 0.08 && n >= s.nFloor,
+			pass: !voided && !subFloorFail && point >= s.gate && lb >= s.gate - 0.08 && n >= s.nFloor,
 			perEpisode,
 		};
 	}
@@ -386,10 +502,15 @@ async function score(sql, round) {
 	const evalVoid = report.golds.rejected >= 2;
 	if (evalVoid) report.voided.push('ALL(golds-rejected — evaluator over-strict)');
 
+	// F23: silent trap under-fill would weaken the floor without anyone
+	// noticing — surface planted-vs-planned in the report and the log.
+	const planted = derived.items.filter((i) => i.role === 'trap').length;
+	report.trapPlantedActual = planted;
+	if (meta.trapPlanned && planted < meta.trapPlanned) {
+		console.log(JSON.stringify({ event: 'trap_underfill', planned: meta.trapPlanned, planted }));
+	}
 	const passed = !evalVoid && report.voided.length === 0 && Object.values(report.strata).every((s) => s.pass);
-	const evalPromptHash = createHash('sha256')
-		.update(readFileSync(join(ROOT, 'docs/features/unshaken-extraction/eval-prompt.md')))
-		.digest('hex');
+	const evalPromptHash = promptHashNow;
 	writeArtifactAtomic(join(outDir, 'report.json'), JSON.stringify(report, null, 1), { writeFileSync, renameSync });
 	writeArtifactAtomic(
 		join(DIR, 'eval-verdict.json'),

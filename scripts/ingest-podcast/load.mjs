@@ -134,7 +134,7 @@ VALUES ${tuples.join(', ')}`,
 			text: `INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, metadata, source)
 VALUES ${tuples.join(', ')}
 ON CONFLICT (from_id, to_id, rel_type) WHERE collection_id = '${show.id}'
-DO UPDATE SET metadata = jsonb_build_object(
+DO UPDATE SET source = 'unshaken-youtube', metadata = jsonb_build_object(
   'source', 'title', 'confidence', 1,
   'mentions', COALESCE(
     CASE WHEN jsonb_typeof(lumen.edges.metadata) = 'object'

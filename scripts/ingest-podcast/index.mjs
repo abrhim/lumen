@@ -328,13 +328,18 @@ async function main() {
 			const rollup = { ok: [], failed: [] };
 			let verdict = null;
 			if (opts.stage === 'load-extraction') {
+				// F1: fatal() defers process.exit to the log-flush callback and
+				// RETURNS — without these returns the gate is an event-loop race
+				// and the load loop can start issuing DB statements.
 				const verdictPath = join(dir, 'eval-verdict.json');
 				if (!existsSync(verdictPath)) {
 					fatal(new Error('eval-verdict.json missing — the checkpoint gates the load (PW-A6)'), 'prereq');
+					return;
 				}
 				verdict = JSON.parse(readFileSync(verdictPath, 'utf8'));
 				if (verdict.passed !== true) {
 					fatal(new Error('eval verdict is not a pass — load refused'), 'prereq');
+					return;
 				}
 			}
 			for (const ep of episodes) {
@@ -346,9 +351,16 @@ async function main() {
 					} else {
 						const episodeId = `${show.id}-${ep.id}`;
 						const extraction = JSON.parse(readFileSync(join(dir, `${ep.id}.extraction.json`), 'utf8'));
-						// PW-A6: hash binding — the verdict must cover THIS artifact
-						if (verdict.episodeHashes?.[episodeId] !== extraction.contentHash) {
+						// PW-A6: hash binding — the verdict must cover THIS artifact.
+						// F8: presence-checked; undefined !== undefined must never
+						// admit an uncovered episode.
+						const boundHash = verdict.episodeHashes?.[episodeId];
+						if (!boundHash || !extraction.contentHash || boundHash !== extraction.contentHash) {
 							throw new Error('extraction hash lacks a matching eval verdict — re-run the checkpoint');
+						}
+						// F27: partial-judgment artifacts are diagnosable, never loadable
+						if (extraction.judgmentComplete !== true) {
+							throw new Error(`judgment incomplete (${(extraction.judgmentMissing ?? []).join(', ')}) — episode not loadable`);
 						}
 						const existingEdges = await sql.unsafe(EXISTING_EDGES_SQL, [episodeId, show.id]);
 						const plan = buildExtractionLoadPlan({

@@ -35,7 +35,15 @@ export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existi
 		},
 	];
 	const summary = { episode: episodeId, updates: 0, inserts: 0, mentionCount: 0 };
+	const seenPairs = new Set();
 	for (const e of edges) {
+		// F29: duplicate pairs that classify UPDATE would silently last-win
+		// (each touches exactly 1 row); refuse the artifact loudly instead.
+		const pairKey = `${e.toId}|${e.relType}`;
+		if (seenPairs.has(pairKey)) {
+			throw new Error(`duplicate (toId, relType) pair in extraction artifact: ${pairKey}`);
+		}
+		seenPairs.add(pairKey);
 		const mentions = [...(e.mentions ?? [])].sort((a, b) => a.t - b.t);
 		summary.mentionCount += mentions.length;
 		if (titlePairs.has(`${e.toId}|${e.relType}`)) {
@@ -113,12 +121,27 @@ export async function executeExtractionLoadPlan(sql, plan, { log = () => {} } = 
 					);
 				}
 			} else if (s.kind === 'insert-edge') {
-				await tx`
-					INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, source, metadata)
-					VALUES (${s.episodeId}, ${s.toId}, ${s.relType}, ${s.collectionId}, ${s.source}, ${sql.json(s.metadata)})`;
+				// handled below in batches (F28 — the A1 per-row-through-the-
+				// pooler lesson; 2,400 round trips cost 7 minutes)
 			} else {
 				throw new Error(`unknown statement kind: ${s.kind}`);
 			}
+		}
+		const inserts = plan.statements.filter((s) => s.kind === 'insert-edge');
+		const CHUNK = 500;
+		for (let i = 0; i < inserts.length; i += CHUNK) {
+			const chunk = inserts.slice(i, i + CHUNK);
+			const values = [];
+			const tuples = chunk.map((s, j) => {
+				const b = j * 6;
+				values.push(s.episodeId, s.toId, s.relType, s.collectionId, s.source, s.metadata);
+				return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}::jsonb)`;
+			});
+			await tx.unsafe(
+				`INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, source, metadata)
+VALUES ${tuples.join(', ')}`,
+				values,
+			);
 		}
 	});
 	log('extraction_load_done', plan.summary);

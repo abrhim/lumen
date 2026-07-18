@@ -349,5 +349,15 @@ plan-hash = `sed '/^## Drift baseline/,$d' docs/features/unshaken-extraction/pla
 eval-prompt-hash = `shasum -a 256 docs/features/unshaken-extraction/eval-prompt.md`.
 
 - plan-hash: 1bde04199976a6d1e847fbfbca12f4736d2ac9dd3000bb707bcde04eea7a286f
-- harness-hash: 956dda31052f638e8050d564d8f6e7138ed86cbe80ba9fce09c4073fa194f6eb
+- harness-hash: 62acf387af99e5db33ba422d4357f962e623caec3d018d3b4499807f070437e5
 - eval-prompt-hash: beddaa88feddea01bedfdaeaeb519e9fb536ce440bae686e7c223131822be0f5
+
+## Post-review amendments (steps 9–13, 2026-07-18)
+
+Code-review workflow: 78 findings, 71 adversarially confirmed, triaged in
+bugs.md. F1–F29 fixed (gate fall-through, trap-seeder termination,
+untrusted-judgment validation, eval key-hash binding, verdict purge/
+validation, per-kind trap floors + sub-floors, gold number-checks,
+same-episode trap swaps, chimera source repair, batched inserts, et al.);
+full re-extract → eval round 3 → reload follows. Harness re-pinned
+(F2/F11/F12/F13/F15/F29 + STAGES + upsert-source); baseline restamped below.

@@ -117,8 +117,13 @@ export function runDeterministicExtraction(utterances, ctx) {
 		timelineOverride = null,
 	} = ctx;
 
-	const timeline = timelineOverride ?? detectChapterTransitions(utterances, { episodeChapters, bookAliases });
-	const foreignWindows = detectForeignWindows(utterances, { foreignBooks });
+	const timeline =
+		timelineOverride ??
+		detectChapterTransitions(utterances, { episodeChapters, bookAliases, foreignBooks });
+	const foreignWindows = detectForeignWindows(utterances, {
+		foreignBooks,
+		inBlockBooks: bookAliases,
+	});
 	const verseExists = ctx.verseExists;
 
 	const mentions = [];
@@ -369,9 +374,22 @@ export function isValidCodeArtifact(path, epId) {
 export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 	const paths = pathsFor(ep, dir);
 	const episodeId = `${opts.showId}-${ep.id}`;
-	if (!opts.refresh && isValidCodeArtifact(paths.extractionCode, episodeId)) {
-		log('extract_code_cached', { episode: ep.id });
-		return JSON.parse(readFileSync(paths.extractionCode, 'utf8'));
+	// F25: validity spans ALL three outputs (a crash between writes must not
+	// wedge resume) and the cached fingerprint must match the CURRENT
+	// deepgram artifact (a --refresh re-transcription shifts every seq).
+	if (
+		!opts.refresh &&
+		isValidCodeArtifact(paths.extractionCode, episodeId) &&
+		existsSync(paths.judgmentBrief) &&
+		existsSync(paths.transcriptTxt)
+	) {
+		const cached = JSON.parse(readFileSync(paths.extractionCode, 'utf8'));
+		const dgCheck = JSON.parse(readFileSync(paths.deepgram, 'utf8'));
+		if (utterancesToRows(dgCheck, episodeId).length === cached.fingerprint.utteranceCount) {
+			log('extract_code_cached', { episode: ep.id });
+			return cached;
+		}
+		log('extract_code_stale_fingerprint', { episode: ep.id });
 	}
 	const dg = JSON.parse(readFileSync(paths.deepgram, 'utf8'));
 	const utterances = utterancesToRows(dg, episodeId);
@@ -444,11 +462,12 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 	return codeArtifact;
 }
 
-function readJudgment(paths, log, epId) {
+function readJudgment(paths, log, epId, episodeChapters) {
 	const out = { aliases: [], timeline: null, principles: [], missing: [] };
 	if (existsSync(paths.aliases)) {
 		try {
-			out.aliases = JSON.parse(readFileSync(paths.aliases, 'utf8')).aliases ?? [];
+			const parsed = JSON.parse(readFileSync(paths.aliases, 'utf8')).aliases;
+			out.aliases = Array.isArray(parsed) ? parsed : [];
 		} catch {
 			out.missing.push('aliases(unparseable)');
 		}
@@ -456,7 +475,28 @@ function readJudgment(paths, log, epId) {
 	if (existsSync(paths.timelineReview)) {
 		try {
 			const tr = JSON.parse(readFileSync(paths.timelineReview, 'utf8'));
-			if (Array.isArray(tr.timeline) && tr.timeline.length) out.timeline = tr.timeline;
+			// F3: agent timelines are UNTRUSTED — out-of-block chapters would
+			// become 0.95 DISCUSSES edges; malformed seq/t poisons stamping.
+			// Validate per segment, drop invalid loudly, sort ascending.
+			if (Array.isArray(tr.timeline)) {
+				const valid = tr.timeline.filter(
+					(s) =>
+						s &&
+						typeof s.chapter === 'string' &&
+						episodeChapters.includes(s.chapter) &&
+						Number.isInteger(s.seq) &&
+						typeof s.t_start_s === 'number' &&
+						Number.isFinite(s.t_start_s) &&
+						s.t_start_s >= 0,
+				);
+				const dropped = tr.timeline.length - valid.length;
+				if (dropped > 0) {
+					log('timeline_review_segments_dropped', { episode: epId, dropped });
+				}
+				if (valid.length) {
+					out.timeline = [...valid].sort((a, b) => a.t_start_s - b.t_start_s);
+				}
+			}
 		} catch {
 			out.missing.push('timeline-review(unparseable)');
 		}
@@ -498,7 +538,7 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 		(await sql`SELECT id FROM lumen.verses WHERE chapter_id = ANY(${episodeChapters})`).map((r) => r.id),
 	);
 
-	const judgment = readJudgment(paths, log, ep.id);
+	const judgment = readJudgment(paths, log, ep.id, episodeChapters);
 
 	// EV-A10: agent alias tables are validated deterministically — census
 	// membership, pool membership, collisions routed (dropped in v1 + logged)
@@ -506,12 +546,22 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 	for (const u of utterances) for (const m of u.text.matchAll(/\b([A-Za-z][a-z]{1,})\b/g)) censusTokens.add(m[1].toLowerCase());
 	const poolIds = new Set(['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => e.id)));
 	const aliasCheck = validateAliasTable(judgment.aliases, { censusTokens, poolIds });
-	if (aliasCheck.rejected.length || aliasCheck.collisions.length) {
+	// F14: cross-SET collisions — an agent alias equal to another entity's
+	// base name would double-match; route those out like any collision.
+	const baseNames = new Set(
+		['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => e.name.toLowerCase())),
+	);
+	const crossCollisions = aliasCheck.valid.filter((r) =>
+		r.names.some((n) => baseNames.has(n.toLowerCase())),
+	);
+	const usableAliases = aliasCheck.valid.filter((r) => !crossCollisions.includes(r));
+	if (aliasCheck.rejected.length || aliasCheck.collisions.length || crossCollisions.length) {
 		log('alias_validation', {
 			episode: ep.id,
-			valid: aliasCheck.valid.length,
+			valid: usableAliases.length,
 			rejected: aliasCheck.rejected.length,
 			collisions: aliasCheck.collisions.map((c) => c.token),
+			cross_collisions: crossCollisions.map((c) => c.id),
 		});
 	}
 
@@ -521,7 +571,7 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 		bookAliases,
 		foreignBooks,
 		pool,
-		aliasTable: aliasCheck.valid,
+		aliasTable: usableAliases,
 		timelineOverride: judgment.timeline,
 		verseExists: (id) => verseSet.has(id),
 	};
@@ -531,6 +581,18 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 	const principleIds = new Set(pool.principle.map((e) => e.id));
 	const principleDrops = [];
 	for (const m of judgment.principles) {
+		// F16: judgment artifacts are untrusted — null/malformed entries drop,
+		// never crash the episode.
+		if (
+			!m ||
+			typeof m.target !== 'string' ||
+			!Number.isInteger(m.seq) ||
+			typeof m.quote !== 'string' ||
+			typeof m.confidence !== 'number'
+		) {
+			principleDrops.push({ seq: m?.seq ?? null, reason: 'malformed judgment entry' });
+			continue;
+		}
 		const mention = {
 			kind: 'principle',
 			target: m.target,
