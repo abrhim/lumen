@@ -131,15 +131,19 @@ export function runDeterministicExtraction(utterances, ctx) {
 	};
 
 	// chapter mentions from the timeline itself (seq recorded at detection —
-	// float-equality lookups against t are a trap)
+	// float-equality lookups against t are a trap). Agent-reviewed timelines
+	// carry no evidence text — fall back to the utterance at seq so gold
+	// selection (eval) has real quotes to work with.
+	const bySeq = new Map(utterances.map((u) => [u.seq, u]));
 	for (const seg of timeline) {
+		const seq = seg.seq ?? utterances.find((x) => x.t_start_s === seg.t_start_s)?.seq ?? 0;
 		mentions.push({
 			kind: 'chapter',
 			target: seg.chapter,
-			seq: seg.seq ?? utterances.find((x) => x.t_start_s === seg.t_start_s)?.seq ?? 0,
+			seq,
 			t: seg.t_start_s,
 			confidence: CONFIDENCE.chapter,
-			quote: quoteFrom({ text: seg.evidence ?? '' }),
+			quote: quoteFrom({ text: seg.evidence ?? bySeq.get(seq)?.text ?? '' }),
 		});
 	}
 
@@ -217,10 +221,35 @@ export function runDeterministicExtraction(utterances, ctx) {
 		}
 	}
 
-	// entity mentions: pool names + validated agent aliases
+	// entity mentions: pool names + validated agent aliases. Round-1 eval
+	// verdicts drove four deterministic guards (entity stratum 0.667 → the
+	// error classes were ALL mechanical):
+	// (1) collision routing on the BASE pool — naaman-1 vs naaman-2 share a
+	//     name; matching either is a coin flip, so ambiguous names are
+	//     excluded and surfaced in coverage (EV-A10 extended to base names);
+	// (2) common-word guard — pool has persons named "So" and "On"; any name
+	//     token that also appears lowercase in THIS transcript is running
+	//     English, not a proper-noun hit ("wilderness" too);
+	const lowerTokens = new Set();
+	for (const u of utterances) {
+		for (const m of u.text.matchAll(/(?<=[a-z] )([a-z]{2,})\b/g)) lowerTokens.add(m[1]);
+	}
+	const nameClaims = new Map();
+	for (const kind of ['person', 'place', 'event']) {
+		for (const e of pool[kind]) {
+			const k = e.name.toLowerCase();
+			if (!nameClaims.has(k)) nameClaims.set(k, []);
+			nameClaims.get(k).push(e.id);
+		}
+	}
+	const ambiguousNames = new Set([...nameClaims.entries()].filter(([, ids]) => ids.length > 1).map(([k]) => k));
+	counts.ambiguousNamesExcluded = [...ambiguousNames];
+	const commonWordName = (name) => name.split(/\s+/).every((w) => lowerTokens.has(w.toLowerCase()));
 	const baseTable = [
 		...['person', 'place', 'event'].flatMap((kind) =>
-			pool[kind].map((e) => ({ id: e.id, names: [e.name], kind, base: true })),
+			pool[kind]
+				.filter((e) => !ambiguousNames.has(e.name.toLowerCase()) && !commonWordName(e.name))
+				.map((e) => ({ id: e.id, names: [e.name], kind, base: true })),
 		),
 		...aliasTable.map((row) => ({ ...row, base: false })),
 	];
@@ -228,10 +257,23 @@ export function runDeterministicExtraction(utterances, ctx) {
 	for (const kind of ['person', 'place', 'event', 'principle', 'symbol']) {
 		for (const e of pool[kind]) kindById.set(e.id, kind);
 	}
+	// (3) book-citation guard — "first Samuel chapter eight" is a citation,
+	//     not Samuel-the-person; (4) formula guard — "law of Moses" in a Ruth
+	//     episode is a formula, not a Moses mention.
+	const citationRe = (name) =>
+		new RegExp(
+			`(?:\\b(?:first|second|third|1st|2nd|3rd)\\s+${name}\\b|\\b${name}\\s+(?:chapter|section)\\b|\\b${name}\\s+\\d|\\b(?:law|book|books)\\s+of\\s+${name}\\b)`,
+			'i',
+		);
 	for (const u of utterances) {
 		for (const hit of aliasMatchCandidates(u.text, baseTable)) {
 			const kind = kindById.get(hit.id);
 			if (!kind || kind === 'principle' || kind === 'symbol') continue;
+			const matchedName = hit.names.find((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(u.text)) ?? hit.names[0];
+			if (citationRe(matchedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(u.text)) {
+				counts.citationSuppressed = (counts.citationSuppressed ?? 0) + 1;
+				continue;
+			}
 			mentions.push({
 				kind,
 				target: hit.id,
