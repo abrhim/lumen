@@ -92,6 +92,15 @@ try {
 		coerced,
 	});
 
+	// PW-A3: typeof invariant — parse-if-string below is DEFENSE, not license.
+	// A1's own smoke must catch the double-encoding class it once masked.
+	const [{ n: stringMeta }] = await sql`
+    SELECT (SELECT count(*)::int FROM lumen.edges
+            WHERE collection_id = ${show} AND jsonb_typeof(metadata) = 'string')
+         + (SELECT count(*)::int FROM lumen.entities
+            WHERE collection_id = ${show} AND jsonb_typeof(metadata) = 'string') AS n`;
+	check('metadata_jsonb_is_object', Number(stringMeta) === 0, { string_typed_rows: Number(stringMeta) });
+
 	// media descriptor completeness (Phase B render contract). COR-5 class:
 	// the driver can return jsonb as a STRING — parse-if-string before use.
 	const [ent] = await sql`
