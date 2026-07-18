@@ -33,9 +33,14 @@ export function buildLoadPlan(episode, transcriptRows, chapterIds, show) {
 		text: 'DELETE FROM lumen.entities WHERE id = $1',
 		values: [episodeId],
 	});
+	// PW-A1: STALE ANCHORS ONLY — a blanket delete would wipe A2 extraction
+	// edges, and deleting title edges first would defeat the mentions-
+	// preserving ON CONFLICT below (the conflict row would already be gone).
 	statements.push({
-		text: 'DELETE FROM lumen.edges WHERE from_id = $1 AND collection_id = $2',
-		values: [episodeId, show.id],
+		text: `DELETE FROM lumen.edges
+WHERE from_id = $1 AND collection_id = $2
+  AND source = 'unshaken-youtube' AND to_id != ALL($3)`,
+		values: [episodeId, show.id, chapterIds],
 	});
 	statements.push({
 		text: "DELETE FROM lumen.search_index WHERE kind = 'episode' AND ref_id = $1",
@@ -121,9 +126,20 @@ VALUES ${tuples.join(', ')}`,
 			);
 			return `($${b + 1}, $${b + 2}, 'DISCUSSES', $${b + 3}, $${b + 4}::jsonb, $${b + 5})`;
 		});
+		// PW-A1: UPSERT-ONLY, arbitrated on the partial unique index. DO UPDATE
+		// preserves A2-written mentions (object-guarded: pre-repair string rows
+		// must not poison the merge) instead of resetting them to [] weekly.
+		if (!/^[a-z0-9-]+$/.test(show.id)) throw new Error(`unsafe show id: ${show.id}`);
 		statements.push({
 			text: `INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, metadata, source)
-VALUES ${tuples.join(', ')}`,
+VALUES ${tuples.join(', ')}
+ON CONFLICT (from_id, to_id, rel_type) WHERE collection_id = '${show.id}'
+DO UPDATE SET metadata = jsonb_build_object(
+  'source', 'title', 'confidence', 1,
+  'mentions', COALESCE(
+    CASE WHEN jsonb_typeof(lumen.edges.metadata) = 'object'
+         THEN lumen.edges.metadata->'mentions' END,
+    '[]'::jsonb))`,
 			values,
 		});
 	}

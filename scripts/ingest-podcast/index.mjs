@@ -229,8 +229,11 @@ async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 		await tx.unsafe("SET LOCAL statement_timeout = '60s'");
 		await tx.unsafe("SET LOCAL idle_in_transaction_session_timeout = '60s'");
 		for (const s of plan.statements) {
-			const values = s.values.map((v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v));
-			await tx.unsafe(s.text, values);
+			// F1 class: values pass RAW. Pre-stringifying made postgres.js
+			// JSON-encode the string AGAIN → jsonb string scalars in prod
+			// (repaired by repair-metadata-encoding.mjs; probed 2026-07-18:
+			// raw object → 'object', pre-stringified → 'string').
+			await tx.unsafe(s.text, s.values);
 		}
 	});
 	log('load_done', { episode: ep.id, ...plan.summary });

@@ -306,12 +306,18 @@ test('H4: transcript deletes are unnecessary by construction (FK cascade) OR exp
   assert.ok(deletesEntity || touchesTranscripts, 'episode replacement path must exist');
 });
 
-test('H4/COR-1: edges get an explicit scoped delete — edges have no PK/cascade', () => {
+test('H4/COR-1/PW-A1: edge delete is source-aware and STALE-ANCHOR-ONLY', () => {
+  // A2 amendment: a blanket delete wipes extraction edges; deleting live
+  // title edges defeats the mentions-preserving upsert. Only anchors that
+  // left the block on a title re-parse may be deleted.
   const plan = buildLoadPlan(episodeFixture, [], ['2-kgs-14'], UNSHAKEN);
   const edgeDelete = plan.statements.find(
     (s) => /DELETE FROM lumen\.edges/i.test(s.text) && /collection_id/i.test(s.text),
   );
   assert.ok(edgeDelete, 'DELETE FROM lumen.edges scoped by episode + collection required');
+  assert.match(edgeDelete.text, /source\s*=\s*'unshaken-youtube'/);
+  assert.match(edgeDelete.text, /to_id\s*!=\s*ALL/);
+  assert.ok(edgeDelete.values.some((v) => Array.isArray(v) && v.includes('2-kgs-14')));
 });
 
 test('COR-2: every anchored chapter becomes exactly one edge row (Joshua=24)', () => {
@@ -353,6 +359,41 @@ test('edges: DISCUSSES carries title provenance and confidence 1 with EMPTY ment
   const meta = JSON.stringify(edge.values);
   assert.ok(meta.includes('"source":"title"'));
   assert.ok(meta.includes('"mentions":[]'), 'mentions array reserved for A2, present and empty');
+});
+
+test('PW-A1: DISCUSSES upsert preserves existing mentions on conflict', () => {
+  // Weekly A1 re-runs must never reset A2-written mention arrays. The
+  // preservation lives in the ON CONFLICT clause (insert VALUES still carry
+  // []); pre-repair string-typed rows are object-guarded out of the merge.
+  const plan = buildLoadPlan(episodeFixture, [], ['2-kgs-14'], UNSHAKEN);
+  const edge = plan.statements.find((s) => /INSERT INTO lumen\.edges/i.test(s.text));
+  assert.match(edge.text, /ON CONFLICT \(from_id, to_id, rel_type\)/);
+  assert.match(edge.text, /WHERE collection_id = 'unshaken'/);
+  assert.match(edge.text, /jsonb_typeof\(lumen\.edges\.metadata\) = 'object'/);
+  assert.match(edge.text, /lumen\.edges\.metadata->'mentions'/);
+  assert.doesNotMatch(edge.text, /DO NOTHING/);
+});
+
+test('F1-audit: no plan value is pre-stringified JSON (executor serializes once)', () => {
+  // Probed 2026-07-18: pre-stringified + ::jsonb → jsonb STRING scalar (the
+  // prod corruption); raw object → 'object'. Builders must emit raw objects.
+  const plan = buildLoadPlan(episodeFixture, [{ seq: 0, t_start_s: 0, text: 'x' }], ['2-kgs-14'], UNSHAKEN);
+  for (const s of plan.statements) {
+    for (const v of s.values) {
+      if (typeof v !== 'string') continue;
+      const t = v.trim();
+      if (!(t.startsWith('{') || t.startsWith('['))) continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(t);
+      } catch {
+        continue; // plain text that happens to start with a brace
+      }
+      if (parsed !== null && typeof parsed === 'object') {
+        assert.fail(`pre-stringified JSON value in: ${s.text.slice(0, 60)}…`);
+      }
+    }
+  }
 });
 
 // ── step-12 repro tests (bugs.md B1-B7) ─────────────────────────────────────
