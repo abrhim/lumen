@@ -44,17 +44,22 @@ try {
 		missing: noExtraction.map((r) => r.id),
 	});
 
-	// PW-A1 reset canary: chapter (title) edges of extracted episodes carry
-	// non-empty mentions.
-	const [{ n: emptyChapterMentions }] = await sql`
-    SELECT count(*)::int AS n FROM lumen.edges ed
-    WHERE ed.collection_id = ${SHOW} AND ed.source = 'unshaken-youtube'
-      AND jsonb_array_length(ed.metadata->'mentions') = 0
+	// PW-A1 reset canary: an A1-rerun wipe empties EVERY mentions array of an
+	// episode at once — so the signature is an extracted episode with ZERO
+	// non-empty chapter mentions. Individual empty edges are legitimate
+	// (chapters the podcast never discussed have no timestamped moments).
+	const resetEpisodes = await sql`
+    SELECT e.id,
+           count(*) FILTER (WHERE jsonb_array_length(ed.metadata->'mentions') > 0)::int AS with_mentions
+    FROM lumen.entities e
+    JOIN lumen.edges ed ON ed.from_id = e.id AND ed.source = 'unshaken-youtube'
+    WHERE e.collection_id = ${SHOW} AND e.entity_type = 'content_item'
       AND EXISTS (
         SELECT 1 FROM lumen.edges x
-        WHERE x.from_id = ed.from_id AND x.source = 'unshaken-extraction')`;
-	check('title_edges_have_mentions_after_extraction', Number(emptyChapterMentions) === 0, {
-		empty: Number(emptyChapterMentions),
+        WHERE x.from_id = e.id AND x.source = 'unshaken-extraction')
+    GROUP BY e.id HAVING count(*) FILTER (WHERE jsonb_array_length(ed.metadata->'mentions') > 0) = 0`;
+	check('no_episode_shows_mention_reset_signature', resetEpisodes.length === 0, {
+		reset_episodes: resetEpisodes.map((r) => r.id),
 	});
 
 	// typeof invariant, edges AND entities (PW-A3)
@@ -91,9 +96,12 @@ try {
 	const badMentions = await sql`
     SELECT ed.from_id, ed.to_id FROM lumen.edges ed,
       LATERAL (
-        SELECT bool_and((m->>'confidence')::numeric BETWEEN 0.5 AND 1) AS conf_ok,
-               bool_and((m->>'t')::numeric >= COALESCE(lag((m->>'t')::numeric) OVER (), 0)) AS sorted_ok
-        FROM jsonb_array_elements(ed.metadata->'mentions') m) chk
+        SELECT bool_and(x.conf_ok) AS conf_ok, bool_and(x.sorted_ok) AS sorted_ok
+        FROM (
+          SELECT (m->>'confidence')::numeric BETWEEN 0.5 AND 1 AS conf_ok,
+                 (m->>'t')::numeric >= COALESCE(lag((m->>'t')::numeric) OVER (ORDER BY ord), 0) AS sorted_ok
+          FROM jsonb_array_elements(ed.metadata->'mentions') WITH ORDINALITY AS e(m, ord)
+        ) x) chk
     WHERE ed.collection_id = ${SHOW} AND ed.source = 'unshaken-extraction'
       AND (NOT chk.conf_ok OR NOT chk.sorted_ok) LIMIT 5`;
 	check('mentions_sorted_and_floored', badMentions.length === 0, {

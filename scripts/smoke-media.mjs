@@ -70,11 +70,14 @@ try {
 	const [coll] = await sql`SELECT public FROM lumen.collections WHERE id = ${show}`;
 	check('collection_public_false', coll?.public === false, { public: coll?.public });
 
-	// every episode's edges resolve to real chapters (fail-closed anchoring)
+	// every TITLE edge resolves to a real chapter (fail-closed anchoring).
+	// A2 extraction edges target verses/entities too — those get kind-aware
+	// resolution in smoke-extraction.mjs; this invariant owns the A1 slice.
 	const [{ n: badAnchors }] = await sql`
     SELECT count(*)::int AS n FROM lumen.edges ed
     LEFT JOIN lumen.chapters c ON c.id = ed.to_id
-    WHERE ed.collection_id = ${show} AND c.id IS NULL`;
+    WHERE ed.collection_id = ${show} AND ed.source = 'unshaken-youtube'
+      AND c.id IS NULL`;
 	check('anchors_resolve_to_chapters', badAnchors === 0, { unresolved: badAnchors });
 
 	// COR-5 + content VALUE canary: a 2 Kings deep dive that never says
