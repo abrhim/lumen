@@ -109,7 +109,7 @@ describe("scripture loader — happy paths", () => {
 		const kv = kvNoop();
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		await data.connections;
-		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v2:1-ne-3-7$/));
+		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^vconn:v3:1-ne-3-7$/));
 	});
 
 	it("exposes real chapter bounds so the last chapter has no next link (FM-10)", async () => {

@@ -122,7 +122,7 @@ describe("scripture loader — ?graph param (graph-view harness)", () => {
 		const kv = kvNoop();
 		const data = await loader(makeArgs("?graph=obedience&depth=2", kv));
 		await data.graph;
-		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^graph:v1:obedience:2:/));
+		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^graph:v2:obedience:2:/));
 	});
 
 	it("composes with ?verse — both panel and graph promises stream independently", async () => {

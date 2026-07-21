@@ -1,12 +1,7 @@
 import { sql } from "drizzle-orm";
-import {
-	searchAll,
-	getPublicCollectionIds,
-	GROUP_KEYS,
-	type GroupKey,
-} from "@lumen/scripture";
+import { searchAll, GROUP_KEYS, type GroupKey } from "@lumen/scripture";
 import { getSessionUser } from "~/lib/auth.server";
-import { ADMIN_COLLECTIONS, getEntitlements } from "~/lib/entitlements.server";
+import { getCollectionAccessStrict } from "~/lib/collection-access.server";
 import { logEvent } from "~/lib/log.server";
 import type { Route } from "./+types/api.search";
 
@@ -91,17 +86,17 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		const session = await getSessionUser(request, context.cloudflare.env);
 		const user = session.user;
 		headers = session.headers;
-		const publicIds = (await getPublicCollectionIds(context.db)) as string[];
-		let visibleCollections = publicIds;
-		if (user) {
-			const entitlements = await getEntitlements(context.db, user.id);
-			if (entitlements.has(ADMIN_COLLECTIONS)) {
-				const rows = (await context.db.execute(
-					sql`SELECT id FROM lumen.collections`,
-				)) as Array<{ id: string }>;
-				visibleCollections = rows.map((r) => r.id);
-				visibility = "admin";
-			}
+		// B7: one visibility source with the Phase B surfaces — the strict
+		// variant so a lookup failure hits this try's 500 contract instead of
+		// silently searching nothing.
+		const access = await getCollectionAccessStrict(context.db, user?.id ?? null);
+		let visibleCollections = access.publicIds;
+		if (access.entitled) {
+			const rows = (await context.db.execute(
+				sql`SELECT id FROM lumen.collections`,
+			)) as Array<{ id: string }>;
+			visibleCollections = rows.map((r) => r.id);
+			visibility = "admin";
 		}
 
 		const result = await searchAll(context.db, {

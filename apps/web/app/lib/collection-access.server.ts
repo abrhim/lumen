@@ -15,6 +15,21 @@ export interface CollectionAccess {
 	entitled: boolean;
 }
 
+/**
+ * Throwing variant for callers with an explicit failure contract (the search
+ * API returns a JSON 500 + `search_failed` log instead of silently rendering
+ * as "nothing visible" — B7). getEntitlements is internally fail-closed;
+ * only the public-ids lookup can throw here.
+ */
+export async function getCollectionAccessStrict(
+	db: PostgresJsDatabase,
+	userId: string | null,
+): Promise<CollectionAccess> {
+	const publicIds = (await getPublicCollectionIds(db)) as string[];
+	const entitled = userId ? (await getEntitlements(db, userId)).has(ADMIN_COLLECTIONS) : false;
+	return { publicIds, entitled };
+}
+
 export async function getCollectionAccess(
 	db: PostgresJsDatabase,
 	userId: string | null,
