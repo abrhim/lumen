@@ -185,40 +185,44 @@ async function main() {
 	} catch (err) {
 		if (err.message === 'DRY_RUN_ROLLBACK') {
 			console.log(JSON.stringify({ event: 'migration_dry_run_ok', commit: false }));
+		} else {
+			console.error('FATAL:', scrubSecrets(err.message));
 			await sql.end();
-			console.log(JSON.stringify({ event: 'migration_done', commit: false, invariant_failures: 0 }));
-			return;
+			process.exit(1);
 		}
-		console.error('FATAL:', scrubSecrets(err.message));
-		await sql.end();
-		process.exit(1);
 	}
 
 	// Batched trigger-driven backfill (DAT-7: 1–5k per tx, never one giant tx).
-	try {
-		for (const [table, col] of [['verses', 'text'], ['entities', 'name']]) {
-			const ids = await sql.unsafe(`SELECT id FROM lumen.${table} ORDER BY id`);
-			let done = 0;
-			for (let i = 0; i < ids.length; i += BATCH) {
-				const chunk = ids.slice(i, i + BATCH).map((r) => r.id);
-				await sql.unsafe(
-					`UPDATE lumen.${table} SET ${col} = ${col} WHERE id = ANY($1)`,
-					[chunk],
-				);
-				done += chunk.length;
-				console.log(JSON.stringify({ event: 'backfill_progress', table, done, total: ids.length }));
+	if (commit) {
+		try {
+			for (const [table, col] of [['verses', 'text'], ['entities', 'name']]) {
+				const ids = await sql.unsafe(`SELECT id FROM lumen.${table} ORDER BY id`);
+				let done = 0;
+				for (let i = 0; i < ids.length; i += BATCH) {
+					const chunk = ids.slice(i, i + BATCH).map((r) => r.id);
+					await sql.unsafe(
+						`UPDATE lumen.${table} SET ${col} = ${col} WHERE id = ANY($1)`,
+						[chunk],
+					);
+					done += chunk.length;
+					console.log(JSON.stringify({ event: 'backfill_progress', table, done, total: ids.length }));
+				}
 			}
+			await top10('post');
+			await sql.unsafe(`VACUUM ANALYZE lumen.verses`);
+			await sql.unsafe(`VACUUM ANALYZE lumen.entities`);
+			console.log(JSON.stringify({ event: 'backfill_complete', analyzed: true }));
+		} catch (err) {
+			console.error('FATAL (backfill — re-run to resume; idempotent):', scrubSecrets(err.message));
+			await sql.end();
+			process.exit(1);
 		}
-		await top10('post');
-		await sql.unsafe(`VACUUM ANALYZE lumen.verses`);
-		await sql.unsafe(`VACUUM ANALYZE lumen.entities`);
-		console.log(JSON.stringify({ event: 'backfill_complete', analyzed: true }));
-	} catch (err) {
-		console.error('FATAL (backfill — re-run to resume; idempotent):', scrubSecrets(err.message));
-		await sql.end();
-		process.exit(1);
 	}
 
+	// Invariants run read-only in BOTH modes (OBSC-8,
+	// migrate-media-collections convention): post-commit they verify reality;
+	// after a dry-run they report against the untouched database (pre-M2 they
+	// are expected to fail) — report, don't judge.
 	let failures = 0;
 	for (const inv of INVARIANTS) {
 		try {
@@ -232,8 +236,8 @@ async function main() {
 		}
 	}
 	await sql.end();
-	if (failures > 0) process.exit(2);
-	console.log(JSON.stringify({ event: 'migration_done', commit: true, invariant_failures: 0 }));
+	if (commit && failures > 0) process.exit(2);
+	console.log(JSON.stringify({ event: 'migration_done', commit, invariant_failures: failures }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

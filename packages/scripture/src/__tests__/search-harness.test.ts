@@ -199,6 +199,12 @@ describe('M4 — projections', () => {
 describe('M5 — searchAll contract', () => {
 	const loadSearch = () => import('../search');
 
+	it('groups arrive in GROUP_KEYS order on a LIVE unscoped search (decision 5 MUST, B1)', async () => {
+		const { searchAll, GROUP_KEYS } = await loadSearch();
+		const res = await searchAll(db, { q: 'faith', visibleCollections: ALL_PUBLIC });
+		expect(res.groups.map((g: any) => g.key)).toEqual([...GROUP_KEYS]);
+	});
+
 	it('H8: visibility is a hard filter, fails closed, and gates the JST leg (SEC-3)', async () => {
 		const { searchAll } = await loadSearch();
 		const hidden = await searchAll(db, { q: 'Halverson', visibleCollections: NO_UNSHAKEN });
@@ -257,6 +263,10 @@ describe('M5 — searchAll contract', () => {
 	it('H10: exact name outranks mentions; duplicate-name pages are deterministic (COR-4)', async () => {
 		const { searchAll } = await loadSearch();
 		const res = await searchAll(db, { q: 'melchizedek', visibleCollections: ALL_PUBLIC });
+		// The PER-3 primary path must actually be the path taken (TESC-1): a broken
+		// combined statement would otherwise silently fall back and stay green.
+		expect(res.meta.mode).toBe('combined');
+		expect(res.meta.combinedError).toBeUndefined();
 		expect(res.groups.find((g: any) => g.key === 'people')?.results?.[0]?.id).toBe('melchizedek-1');
 		expect(res.groups.find((g: any) => g.key === 'topics')?.results?.[0]?.id).toBe(
 			'naves-melchizedek',
@@ -288,11 +298,12 @@ describe('M5 — searchAll contract', () => {
 		const { searchAll } = await loadSearch();
 		await searchAll(db, { q: 'warmup', visibleCollections: ALL_PUBLIC });
 		const t0 = performance.now();
-		await searchAll(db, { q: 'faith', visibleCollections: ALL_PUBLIC });
+		const res = await searchAll(db, { q: 'faith', visibleCollections: ALL_PUBLIC });
 		const ms = performance.now() - t0;
 		// eslint-disable-next-line no-console
 		console.log(`H12 latency: ${Math.round(ms)}ms`);
 		expect(ms).toBeLessThan(1500);
+		expect(res.meta.mode).toBe('combined');
 	});
 
 	it('H13: payloads are objects and numerics are numbers across ALL kinds (API-6/SEC-8)', async () => {
@@ -313,16 +324,72 @@ describe('M5 — searchAll contract', () => {
 			}
 		}
 		expect(sawMoment, 'expected at least one timestamped moment').toBe(true);
+		expect(res.meta.mode).toBe('combined');
+		expect(res.meta.combinedError).toBeUndefined();
+		// Combined mode is one statement — per-group ms is unknowable there and
+		// must be null, never the whole-statement elapsed (PER-5/OBS-6).
+		for (const [key, m] of Object.entries(res.meta.perGroup)) {
+			expect(m.ms, `${key} ms in combined mode`).toBeNull();
+		}
+	});
+
+	it('H13b: per-kind payload contract — allowlisted keys, coerced numerics (decision 5)', async () => {
+		const { searchAll } = await loadSearch();
+
+		const faith = await searchAll(db, { q: 'faith', visibleCollections: ALL_PUBLIC });
+		const verse = faith.groups
+			.find((g: any) => g.key === 'scripture')!
+			.results.find((r: any) => r.type === 'verse');
+		expect(verse, 'faith returns a verse').toBeTruthy();
+		expect(typeof verse!.payload.verse_id).toBe('string');
+		const moment = faith.groups
+			.find((g: any) => g.key === 'episodes')!
+			.results.find((r: any) => r.type === 'moment');
+		expect(moment, 'faith returns a moment').toBeTruthy();
+		expect(typeof moment!.payload.episode_id).toBe('string');
+		expect(typeof moment!.payload.t_start_s).toBe('number');
+		expect(typeof moment!.payload.t_end_s).toBe('number');
+
+		const jst = await searchAll(db, { q: 'JST Genesis', visibleCollections: ALL_PUBLIC });
+		const jstRow = jst.groups
+			.find((g: any) => g.key === 'scripture')!
+			.results.find((r: any) => r.type === 'jst');
+		expect(jstRow, 'JST Genesis returns a jst reading').toBeTruthy();
+		expect(typeof jstRow!.payload.verse_id).toBe('string');
+		expect(jstRow!.payload.variant).toBe('jst');
+
+		const art = await searchAll(db, { q: 'pentecost', visibleCollections: ALL_PUBLIC, scope: ['art'] });
+		const artwork = art.groups.find((g: any) => g.key === 'art')!.results[0];
+		expect(artwork, 'pentecost returns artwork').toBeTruthy();
+		expect(artwork.type).toBe('artwork');
+		// Exactly the decision-5 contract — passthrough would ship future
+		// projection fields to clients automatically (SEC allowlist).
+		expect(Object.keys(artwork.payload).sort()).toEqual(['refs', 'thumbnail_url']);
+		expect(typeof artwork.payload.thumbnail_url).toBe('string');
+		expect(Array.isArray(artwork.payload.refs)).toBe(true);
+
+		const words = await searchAll(db, { q: 'agape', visibleCollections: ALL_PUBLIC, scope: ['words'] });
+		const strongs = words.groups
+			.find((g: any) => g.key === 'words')!
+			.results.find((r: any) => r.id === 'G26');
+		expect(strongs, 'agape returns G26').toBeTruthy();
+		expect(strongs!.type).toBe('strongs');
+		expect(Object.keys(strongs!.payload)).toEqual(['strongs_no']);
+		expect(typeof strongs!.payload.strongs_no).toBe('string');
 	});
 
 	it('H17: a failing group degrades to empty results + meta.error — never a throw (COR-1)', async () => {
-		const { searchAll } = await loadSearch();
+		const { searchAll, GROUP_RESULT_TYPES } = await loadSearch();
 		let poisoned = 0;
 		const wrapped = {
+			// Brittle-but-deliberate coupling: drizzle serializes raw SQL chunks,
+			// so statement text is greppable through JSON.stringify.
 			execute: async (q: any) => {
 				const text = JSON.stringify(q);
 				if (text.includes('entity_degree')) {
 					poisoned++;
+					// Real elapsed time so the degraded meta must carry it (OBS-5).
+					await new Promise((r) => setTimeout(r, 25));
 					throw new Error('simulated: relation lumen.entity_degree does not exist');
 				}
 				return db.execute(q);
@@ -331,11 +398,97 @@ describe('M5 — searchAll contract', () => {
 		const res = await searchAll(wrapped, { q: 'melchizedek', visibleCollections: ALL_PUBLIC });
 		expect(poisoned, 'the poison actually fired').toBeGreaterThan(0);
 		expect(res).toHaveProperty('groups');
+		// The combined statement was poisoned too: fallback mode, reason captured (OBS-2).
+		expect(res.meta.mode).toBe('fallback');
+		expect(res.meta.combinedError).toContain('simulated');
+		// Poisoned groups: empty WITH error AND real elapsed ms (OBS-5).
+		for (const key of ['people', 'places', 'topics']) {
+			const m = res.meta.perGroup[key];
+			expect(m.hits, `${key} hits`).toBe(0);
+			expect(m.error, `${key} error`).toBeTruthy();
+			expect(m.ms, `${key} degraded ms is real elapsed`).toBeGreaterThanOrEqual(20);
+			expect(res.groups.find((g: any) => g.key === key)?.results).toHaveLength(0);
+		}
+		// Survivors: populated AND positionally intact — no fallback contamination.
 		const scripture = res.groups.find((g: any) => g.key === 'scripture');
 		expect((scripture?.results ?? []).length, 'unaffected groups still return').toBeGreaterThan(0);
+		for (const key of ['episodes', 'art', 'words'] as const) {
+			const g = res.groups.find((x: any) => x.key === key)!;
+			expect(g.results.length, `${key} survives a sibling poisoning`).toBeGreaterThan(0);
+			for (const r of g.results) {
+				expect(GROUP_RESULT_TYPES[key], `${key} carries only its own types`).toContain(r.type);
+			}
+			expect(res.meta.perGroup[key].error).toBeUndefined();
+			expect(typeof res.meta.perGroup[key].ms, `${key} fallback ms is measured`).toBe('number');
+		}
+	});
+
+	it('H17b: fuzzy episode-title recall — leviticas reaches the Leviticus episode (decision 2 tier-2)', async () => {
+		const { searchAll } = await loadSearch();
+		// word_similarity('leviticas', title)=0.6999 ≥ 0.45; FTS, prefix and exact
+		// all miss — only the trgm tier can serve this (CORC-3 live case).
+		const res = await searchAll(db, { q: 'leviticas', visibleCollections: ALL_PUBLIC, scope: ['episodes'] });
+		const eps = res.groups.find((g: any) => g.key === 'episodes')?.results ?? [];
+		expect(eps.map((r: any) => r.id)).toContain('unshaken-yAQlljeet-0');
+		const hit = eps.find((r: any) => r.id === 'unshaken-yAQlljeet-0')!;
+		expect(hit.type).toBe('episode');
+		expect(hit.tier).toBe(2);
+	});
+
+	it('H19: a poisoned payload row degrades its own group, never the search (decision 7)', async () => {
+		const { searchAll } = await loadSearch();
+		// Combined mode: real statement, words rows corrupted in flight.
+		const combinedPoison = {
+			execute: async (q: any) => {
+				const rows = (await db.execute(q)) as any[];
+				return rows.map((r) => (r?.grp === 'words' ? { ...r, payload: '{not-json' } : r));
+			},
+		};
+		const a = await searchAll(combinedPoison, { q: 'agape', visibleCollections: ALL_PUBLIC });
+		expect(a.meta.mode).toBe('combined');
+		expect(a.groups.find((g: any) => g.key === 'words')?.results).toHaveLength(0);
+		expect(a.meta.perGroup.words.hits).toBe(0);
+		expect(a.meta.perGroup.words.error, 'poisoned group surfaces in meta').toBeTruthy();
+
+		// Fallback mode: combined fails, the words leg serves a non-JSON payload.
+		const badRow = {
+			grp: 'words', type: 'strongs', id: 'G0', title: 'poisoned',
+			snippet: null, tier: 1, score: 1, payload: '{not-json',
+		};
+		const fallbackPoison = {
+			execute: async (q: any) => {
+				const text = JSON.stringify(q);
+				const isWords = text.includes(`'words' AS grp`);
+				if (isWords && text.includes(`'scripture' AS grp`)) throw new Error('simulated combined failure');
+				if (isWords) return [badRow];
+				return db.execute(q);
+			},
+		};
+		const b = await searchAll(fallbackPoison, { q: 'faith', visibleCollections: ALL_PUBLIC });
+		expect(b.meta.mode).toBe('fallback');
+		expect(b.meta.combinedError).toContain('simulated');
+		expect(b.groups.find((g: any) => g.key === 'words')?.results).toHaveLength(0);
+		expect(b.meta.perGroup.words.error, 'poisoned group surfaces in meta').toBeTruthy();
 		expect(
-			Object.values(res.meta.perGroup).some((m: any) => m.error),
-			'failed group surfaces in meta',
-		).toBe(true);
+			(b.groups.find((g: any) => g.key === 'scripture')?.results ?? []).length,
+			'siblings unaffected by the poisoned row',
+		).toBeGreaterThan(0);
+	});
+
+	it('H20: delta-only matches still carry ⟪⟫ snippet markers (API-1; believe→believeth class)', async () => {
+		const { searchAll } = await loadSearch();
+		// 'swore' reaches verses ONLY via kjv_delta (KJV spells it 'sware'; 86
+		// verses live) — the flagship Gap-1 path must still highlight (APIC-3).
+		const res = await searchAll(db, { q: 'swore', visibleCollections: ALL_PUBLIC, scope: ['scripture'] });
+		const results = res.groups.find((g: any) => g.key === 'scripture')?.results ?? [];
+		expect(results.length, 'delta recall').toBeGreaterThan(0);
+		const withSnippet = results.filter((r: any) => r.snippet);
+		expect(withSnippet.length).toBeGreaterThan(0);
+		for (const r of withSnippet) {
+			expect(r.snippet, `${r.id} delta match must highlight`).toContain('⟪');
+		}
+		// Control: modern-text matches keep their markers.
+		const ctl = await searchAll(db, { q: 'faith', visibleCollections: ALL_PUBLIC, scope: ['scripture'] });
+		expect(ctl.groups[0].results[0]?.snippet).toContain('⟪');
 	});
 });

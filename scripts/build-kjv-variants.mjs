@@ -5,7 +5,9 @@
 // Rules (plan decision 9, REL-1/REL-2):
 //   morphology  -ieth→y | -eth→strip'th' | -eth→strip'eth'   (3rd person)
 //               -iest→y | -est→strip'st' | -est→strip'est'   (2nd person)
-//               -edst→strip'st' | -edst→strip'edst'          (2nd past)
+//               -edst→strip'edst' | strip'dst' | strip'st'   (2nd past;
+//               base candidates FIRST — DATC-2: the past form wins G1
+//               first-match but can never attest G2 siblings)
 //   orthography curated (shew→show, saviour→savior, …)
 //   irregulars  curated (spake→spoke, sware→swore, …)
 //
@@ -134,8 +136,14 @@ async function main() {
 				cands = [w.slice(0, -4) + 'y', w.slice(0, -2), w.slice(0, -3)];
 				cls = 'est';
 			} else if (w.length > 5 && w.endsWith('edst')) {
-				cands = [w.slice(0, -2), w.slice(0, -4)];
-				cls = 'est';
+				// DATC-2: base candidates FIRST. The past form (slice(0,-2),
+				// 'delivered') is always attested so it won G1 first-match, but
+				// its G2 siblings ('deliveredeth', …) can never attest — the
+				// whole class shipped 0 of 429. Base forms: strip 'edst'
+				// (deliveredst→deliver) or strip 'dst' for e-final stems
+				// (desiredst→desire); past form kept as a last resort.
+				cands = [w.slice(0, -4), w.slice(0, -3), w.slice(0, -2)];
+				cls = 'edst';
 			} else if (w.length > 4 && w.endsWith('est')) {
 				cands = [w.slice(0, -2), w.slice(0, -3)];
 				cls = 'est';
@@ -221,6 +229,16 @@ async function main() {
 		}
 		console.log(JSON.stringify({ event: 'kjv_variants_eval', classes: byClass, total: Object.keys(final).length, rejected, g5_dropped: dropped.length }));
 		console.log(JSON.stringify({ event: 'kjv_variants_g5_drops', drops: dropped.slice(0, 40) }));
+		// DATC-2: per-class floors (set just under the 2026-07-21 live counts) —
+		// a silently dead class must fail the gate, not vanish into the histogram.
+		const CLASS_FLOORS = { eth: 300, est: 60, edst: 5, orthographic: 22, irregular: 15 };
+		let classFail = 0;
+		for (const [cls, min] of Object.entries(CLASS_FLOORS)) {
+			const got = byClass[cls] ?? 0;
+			const pass = got >= min;
+			if (!pass) classFail++;
+			console.log(JSON.stringify({ event: 'class_floor_check', cls, min, got, pass }));
+		}
 		// Spot-check pins the harness also asserts (H16).
 		const pins = { believeth: 'believe', spake: 'spoke', loveth: 'love', crieth: 'cry', sware: 'swore', goeth: 'go', shew: 'show' };
 		let pinFail = 0;
@@ -238,7 +256,7 @@ async function main() {
 			console.log(JSON.stringify({ event: 'kjv_variants_written', path: 'data/kjv-variants.json', count: Object.keys(sorted).length }));
 		}
 		await sql.end();
-		process.exit(pinFail > 0 ? 2 : 0);
+		process.exit(pinFail > 0 || classFail > 0 ? 2 : 0);
 	} catch (err) {
 		console.error('FATAL:', scrubSecrets(err.message));
 		await sql.end();

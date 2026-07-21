@@ -66,6 +66,11 @@ export interface SearchOptions {
 
 export interface SearchResult {
 	type: ResultType;
+	/**
+	 * Durable for verse/entity/episode/artwork/strongs. MOMENT ids are
+	 * RESPONSE-SCOPED (re-keyed on every M3 re-window) — never persist, cache,
+	 * or deep-link one; deep-link via payload episode_id + t_start_s (APIC-6).
+	 */
 	id: string;
 	title: string;
 	/** Plain text with ⟪⟫ highlight markers — never HTML (API-1). */
@@ -92,7 +97,10 @@ export interface SearchReference {
 }
 
 export interface SearchGroupMeta {
-	ms: number;
+	/** Wall-clock leg ms. Only measurable in fallback mode (one statement per
+	 * group); in combined mode a single statement serves every group, so this
+	 * is null and meta.totalMs is the authoritative latency (PER-5/OBS-4). */
+	ms: number | null;
 	hits: number;
 	error?: string;
 }
@@ -101,6 +109,9 @@ export interface SearchMeta {
 	perGroup: Record<string, SearchGroupMeta>;
 	totalMs: number;
 	mode: 'combined' | 'fallback' | 'none';
+	/** Why the combined statement failed, when mode === 'fallback' — without it
+	 * a combined-only failure class degrades every request silently (OBS-2). */
+	combinedError?: string;
 }
 
 export interface SearchResponse {
@@ -113,6 +124,13 @@ export interface SearchResponse {
 const HEADLINE_OPTS = 'StartSel=⟪, StopSel=⟫, MaxFragments=1, MaxWords=18';
 const WEIGHTS = '{0.1,0.2,0.4,1.0}';
 const TRGM_MIN = 0.45;
+/** Name-match arms (prefix ILIKE + trgm) are skipped for q longer than this:
+ * a 100+ char q cannot exact/prefix-match any entity name (max 80 live) or
+ * fuzzy-clear TRGM_MIN, but its ~2x-per-char trigram set makes the GIN arms
+ * scan-heavy (measured ~400ms/leg at 178 chars — PER p95 guard). The planner
+ * const-folds char_length(q) per statement, so short queries keep BitmapOr.
+ * FTS still serves long queries in full. */
+const NAME_ARM_Q_MAX = 100;
 
 /** Literal semantics for user text inside ILIKE patterns (SEC-5/kedrec). */
 export function escapeLike(s: string): string {
@@ -199,15 +217,38 @@ type Leg = { key: GroupKey; query: ReturnType<typeof sql> };
 const META = sql`CASE WHEN jsonb_typeof(e.metadata) = 'string'
 	THEN (e.metadata #>> '{}')::jsonb ELSE coalesce(e.metadata, '{}'::jsonb) END`;
 
+/** FTS input is token-capped: an OR-of-common-words query at the 200-char q
+ * limit rank-scans ~50k verse rows (measured 2.5x the 500ms p95 budget); terms
+ * past this bound only widen the rank set. Tier-1/2 name matching and the
+ * strongs ref_id arm still see the full q. */
+const TSQ_MAX_TOKENS = 12;
+
+function tsqInput(q: string): string {
+	const tokens = q.split(/\s+/);
+	return tokens.length <= TSQ_MAX_TOKENS ? q : tokens.slice(0, TSQ_MAX_TOKENS).join(' ');
+}
+
 function tsq(q: string) {
-	return sql`websearch_to_tsquery('english', ${q})`;
+	return sql`websearch_to_tsquery('english', ${tsqInput(q)})`;
+}
+
+/** Headline tsquery for the scripture leg: verses matched only via kjv_delta
+ * (believe→believeth, the Gap-1 class) must still carry ⟪⟫ markers, so OR in
+ * the archaic variants whose modern form the query reaches. Uncorrelated
+ * scalar subquery — the planner evaluates it once per statement. */
+function scriptureHeadlineTsq(q: string) {
+	return sql`(SELECT coalesce(
+	    ${tsq(q)} || to_tsquery('english', string_agg(kv.variant, ' | ')),
+	    ${tsq(q)})
+	  FROM lumen.kjv_variants kv
+	  WHERE to_tsvector('english', kv.modern) @@ ${tsq(q)})`;
 }
 
 function scriptureLeg(q: string, visible: string[], limit: number): ReturnType<typeof sql> {
 	return sql`
 	SELECT 'scripture' AS grp, s.type, s.id, s.title,
 	  CASE WHEN s.snip_src = '' THEN NULL
-	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
+	       ELSE ts_headline('english', s.snip_src, ${scriptureHeadlineTsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
 	  s.tier, s.score, s.payload
 	FROM (
 	  SELECT * FROM (
@@ -252,16 +293,19 @@ function entityLeg(
 	      WHEN 'chapter_summary' THEN 'summary'
 	      ELSE e.entity_type END AS type,
 	    e.id, e.name AS title, coalesce(e.description, '') AS snip_src,
-	    CASE WHEN lower(e.name) = lower(${q}) THEN 1
-	         WHEN e.name ILIKE ${prefix} ESCAPE '\\'
-	           OR (${q} OPERATOR(extensions.%) e.name
-	               AND extensions.word_similarity(${q}, e.name) >= ${TRGM_MIN}) THEN 2
+	    CASE WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	           AND lower(e.name) = lower(${q}) THEN 1
+	         WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	           AND (e.name ILIKE ${prefix} ESCAPE '\\'
+	             OR (${q} OPERATOR(extensions.%) e.name
+	                 AND extensions.word_similarity(${q}, e.name) >= ${TRGM_MIN})) THEN 2
 	         ELSE 3 END AS tier,
 	    0 AS sub,
 	    ((1 + ln(1 + coalesce(d.degree, 0)))
 	      * GREATEST(
 	          ts_rank(${WEIGHTS}::float4[], e.search_vector, ${tsq(q)}, 1),
-	          CASE WHEN ${q} OPERATOR(extensions.%) e.name
+	          CASE WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	                 AND ${q} OPERATOR(extensions.%) e.name
 	               THEN extensions.word_similarity(${q}, e.name) ELSE 0 END
 	        ))::float8 AS score,
 	    CASE WHEN e.entity_type = 'chapter_summary'
@@ -273,10 +317,13 @@ function entityLeg(
 	  LEFT JOIN lumen.entity_degree d ON d.entity_id = e.id
 	  WHERE e.entity_type = ANY(${anyOf(types)})
 	    AND e.collection_id = ANY(${anyOf(visible)})
-	    AND (lower(e.name) = lower(${q})
-	      OR e.name ILIKE ${prefix} ESCAPE '\\'
-	      OR (${q} OPERATOR(extensions.%) e.name
-	          AND extensions.word_similarity(${q}, e.name) >= ${TRGM_MIN})
+	    /* No lower(name)= arm here: the escaped prefix-ILIKE subsumes it, and a
+	       non-indexable arm blocks BitmapOr — the A1 GIN prefilter (PER). The
+	       tier CASE above still ranks exact matches first. */
+	    AND ((char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	        AND (e.name ILIKE ${prefix} ESCAPE '\\'
+	          OR (${q} OPERATOR(extensions.%) e.name
+	              AND extensions.word_similarity(${q}, e.name) >= ${TRGM_MIN})))
 	      OR e.search_vector @@ ${tsq(q)})
 	  ORDER BY tier, sub, score DESC, id
 	  LIMIT ${limit}
@@ -295,22 +342,30 @@ function episodesLeg(q: string, visible: string[], limit: number): ReturnType<ty
 	    CASE WHEN si.kind = 'moment' THEN coalesce(si.payload ->> 'text', '') ELSE si.title END AS snip_src,
 	    CASE WHEN si.kind = 'episode' AND lower(si.title) = lower(${q}) THEN 1
 	         WHEN si.kind = 'episode' AND (si.title ILIKE ${prefix} ESCAPE '\\'
-	           OR (${q} OPERATOR(extensions.%) si.title
+	           OR (char_length(${q}) <= ${NAME_ARM_Q_MAX}
 	               AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN})) THEN 2
 	         ELSE 3 END AS tier,
 	    CASE WHEN si.kind = 'episode' THEN 0 ELSE 1 END AS sub,
 	    GREATEST(
 	      ts_rank(${WEIGHTS}::float4[], si.tsv, ${tsq(q)}, 1),
-	      CASE WHEN si.kind = 'episode' AND ${q} OPERATOR(extensions.%) si.title
+	      CASE WHEN si.kind = 'episode' AND char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	             AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}
 	           THEN extensions.word_similarity(${q}, si.title) ELSE 0 END
 	    )::float8 AS score,
 	    (si.payload - 'text' - 'seq_start' - 'seq_end') AS payload
 	  FROM lumen.search_index si
 	  WHERE si.kind IN ('episode', 'moment')
 	    AND si.collection_id = ANY(${anyOf(visible)})
+	    /* Fuzzy titles use bare word_similarity, NOT the % operator: episode
+	       titles are long, so full-string % similarity can never clear its
+	       threshold (dead-predicate class — CORC-3). Safe without the trgm
+	       index: the arm is anchored to kind='episode', which the pkey bitmap
+	       arm serves (rows = episode count, EXPLAIN-verified BitmapOr). */
 	    AND (si.tsv @@ ${tsq(q)}
 	      OR (si.kind = 'episode' AND (lower(si.title) = lower(${q})
-	        OR si.title ILIKE ${prefix} ESCAPE '\\')))
+	        OR si.title ILIKE ${prefix} ESCAPE '\\'
+	        OR (char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	            AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}))))
 	  ORDER BY tier, sub, score DESC, id
 	  LIMIT ${limit}
 	) s`;
@@ -324,19 +379,34 @@ function artLeg(q: string, visible: string[], limit: number): ReturnType<typeof 
 	  s.tier, s.score, s.payload
 	FROM (
 	  SELECT 'artwork' AS type, si.ref_id AS id, si.title,
-	    CASE WHEN lower(si.title) = lower(${q}) THEN 1
-	         WHEN si.title ILIKE ${prefix} ESCAPE '\\' THEN 2
+	    CASE WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	           AND lower(si.title) = lower(${q}) THEN 1
+	         WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	           AND (si.title ILIKE ${prefix} ESCAPE '\\'
+	             OR (${q} OPERATOR(extensions.%) si.title
+	                 AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN})) THEN 2
 	         ELSE 3 END AS tier,
 	    0 AS sub,
 	    ((1 + coalesce((si.payload ->> 'fame')::float8, 0) / 100)
-	      * ts_rank(${WEIGHTS}::float4[], si.tsv, ${tsq(q)}, 1))::float8 AS score,
-	    (si.payload - 'fame') AS payload
+	      * GREATEST(
+	          ts_rank(${WEIGHTS}::float4[], si.tsv, ${tsq(q)}, 1),
+	          CASE WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	                 AND ${q} OPERATOR(extensions.%) si.title
+	               THEN extensions.word_similarity(${q}, si.title) ELSE 0 END
+	        ))::float8 AS score,
+	    jsonb_build_object('refs', si.payload -> 'refs',
+	      'thumbnail_url', si.payload -> 'thumbnail_url') AS payload
 	  FROM lumen.search_index si
 	  WHERE si.kind = 'artwork'
 	    AND si.collection_id = ANY(${anyOf(visible)})
+	    /* No lower(title)= arm (prefix-ILIKE subsumes it; keeps BitmapOr — PER);
+	       art titles are name-like, so the A1 %+word_similarity trgm form
+	       applies, served by idx_search_title_trgm (CORC-3). */
 	    AND (si.tsv @@ ${tsq(q)}
-	      OR lower(si.title) = lower(${q})
-	      OR si.title ILIKE ${prefix} ESCAPE '\\')
+	      OR (char_length(${q}) <= ${NAME_ARM_Q_MAX}
+	        AND (si.title ILIKE ${prefix} ESCAPE '\\'
+	          OR (${q} OPERATOR(extensions.%) si.title
+	              AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}))))
 	  ORDER BY tier, sub, score DESC, id
 	  LIMIT ${limit}
 	) s`;
@@ -356,7 +426,7 @@ function wordsLeg(q: string, visible: string[], limit: number): ReturnType<typeo
 	         THEN 1 ELSE 3 END AS tier,
 	    0 AS sub,
 	    ts_rank(${WEIGHTS}::float4[], si.tsv, ${tsq(q)}, 1)::float8 AS score,
-	    si.payload AS payload
+	    jsonb_build_object('strongs_no', si.payload -> 'strongs_no') AS payload
 	  FROM lumen.search_index si
 	  WHERE si.kind = 'strongs'
 	    AND si.collection_id = ANY(${anyOf(visible)})
@@ -420,6 +490,17 @@ function coerceRow(r: RawRow): SearchResult {
 	};
 }
 
+/** Rejection wrapper so a failed leg still reports real elapsed ms — degraded
+ * timeouts must be distinguishable from instant failures (OBS-5). */
+class LegFailure extends Error {
+	constructor(
+		message: string,
+		readonly ms: number,
+	) {
+		super(message);
+	}
+}
+
 /** Deterministic within-group order: tier, jst-after-canon, score desc, id (COR-4/REL-5). */
 function sortResults(results: SearchResult[]): SearchResult[] {
 	return results.sort((a, b) => {
@@ -460,33 +541,55 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 	const legs = buildLegs(scope, q, visible, limit);
 
 	// Primary: one combined statement, one round trip (PER-3).
+	let combinedRows: RawRow[] | null = null;
 	try {
 		let combined = sql`SELECT * FROM ((${legs[0].query})`;
 		for (let i = 1; i < legs.length; i++) {
 			combined = sql`${combined} UNION ALL (${legs[i].query})`;
 		}
 		combined = sql`${combined}) AS federated`;
-		const rows = (await db.execute(combined)) as RawRow[];
-		const ms = Date.now() - t0;
-		for (const row of rows) {
-			byKey.get(row.grp as GroupKey)?.results.push(coerceRow(row));
-		}
+		combinedRows = (await db.execute(combined)) as RawRow[];
+	} catch (err) {
+		// Fall through to isolated per-group execution (COR-1/H17), keeping the
+		// reason: a combined-only failure class would otherwise double-execute
+		// every request with the cause recorded nowhere (OBS-2).
+		meta.combinedError = err instanceof Error ? err.message : String(err);
+	}
+
+	if (combinedRows !== null) {
+		const rawByKey = new Map<GroupKey, RawRow[]>();
+		for (const g of groups) rawByKey.set(g.key, []);
+		for (const row of combinedRows) rawByKey.get(row.grp as GroupKey)?.push(row);
 		for (const g of groups) {
-			sortResults(g.results);
-			meta.perGroup[g.key] = { ms, hits: g.results.length };
+			try {
+				g.results = sortResults(rawByKey.get(g.key)!.map(coerceRow));
+				meta.perGroup[g.key] = { ms: null, hits: g.results.length };
+			} catch (err) {
+				// One poisoned row degrades its own group, never the search (decision 7).
+				g.results = [];
+				meta.perGroup[g.key] = {
+					ms: null,
+					hits: 0,
+					error: err instanceof Error ? err.message : String(err),
+				};
+			}
 		}
 		meta.mode = 'combined';
-		meta.totalMs = ms;
+		meta.totalMs = Date.now() - t0;
 		return { query: q, reference, groups, meta };
-	} catch {
-		// Fall through to isolated per-group execution (COR-1/H17).
 	}
 
 	const settled = await Promise.allSettled(
 		legs.map(async (leg) => {
 			const s = Date.now();
-			const rows = (await db.execute(leg.query)) as RawRow[];
-			return { key: leg.key, rows, ms: Date.now() - s };
+			try {
+				// Coercion inside the guard: a poisoned row degrades its own
+				// group (decision 7), not the whole search.
+				const rows = (await db.execute(leg.query)) as RawRow[];
+				return { results: sortResults(rows.map(coerceRow)), ms: Date.now() - s };
+			} catch (err) {
+				throw new LegFailure(err instanceof Error ? err.message : String(err), Date.now() - s);
+			}
 		}),
 	);
 	for (let i = 0; i < settled.length; i++) {
@@ -494,13 +597,14 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 		const g = byKey.get(key)!;
 		const outcome = settled[i];
 		if (outcome.status === 'fulfilled') {
-			g.results = sortResults(outcome.value.rows.map(coerceRow));
+			g.results = outcome.value.results;
 			meta.perGroup[key] = { ms: outcome.value.ms, hits: g.results.length };
 		} else {
+			const reason: unknown = outcome.reason;
 			meta.perGroup[key] = {
-				ms: 0,
+				ms: reason instanceof LegFailure ? reason.ms : 0,
 				hits: 0,
-				error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+				error: reason instanceof Error ? reason.message : String(reason),
 			};
 		}
 	}

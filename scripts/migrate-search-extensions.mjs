@@ -33,8 +33,10 @@ GRANT EXECUTE ON FUNCTION
 TO lumen_read;
 `;
 
-// PER-1: these serve the OPERATOR(extensions.<%) tier-2/4 predicates. The bare
-// word_similarity() function form cannot use them — never write it in queries.
+// PER-1/A1: these serve the OPERATOR(extensions.%) index prefilter (default
+// threshold 0.3); `extensions.word_similarity(q, name) >= 0.45` refines on the
+// prefiltered rows. Never write the bare function form WITHOUT the `%`
+// prefilter in queries — it cannot use these indexes.
 export const TRGM_INDEX_DDL = `
 CREATE INDEX IF NOT EXISTS idx_entities_name_trgm
   ON lumen.entities USING gin (name extensions.gin_trgm_ops);
@@ -166,11 +168,14 @@ async function main() {
 				loadDsn(ROOT, 'apps/web/.env', 'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE'),
 				{ prepare: false, max: 1 },
 			);
-			const probe = await appSql.begin(async (tx) => {
-				await tx`SELECT set_config('pg_trgm.word_similarity_threshold', '0.45', true)`;
-				return tx`SELECT ('melchisedek' OPERATOR(extensions.<%) 'melchizedek') AS hit,
-				          extensions.unaccent('agapē') AS plain`;
-			});
+			// A1 production predicate form, arg order exactly as search.ts
+			// issues it (DATC-6): `%` prefilter + word_similarity refine — the
+			// pre-A1 form (set_config GUC + `<%`) proved a privilege path the
+			// deployed Worker never exercises.
+			const probe = await appSql`
+				SELECT ('melchisedek' OPERATOR(extensions.%) 'melchizedek'
+				        AND extensions.word_similarity('melchisedek', 'melchizedek') >= 0.45) AS hit,
+				       extensions.unaccent('agapē') AS plain`;
 			const pass = probe[0]?.hit === true && probe[0]?.plain === 'agape';
 			console.log(JSON.stringify({ event: 'invariant_check', name: 'app_role_functional_probe', pass }));
 			if (!pass) failures += 1;

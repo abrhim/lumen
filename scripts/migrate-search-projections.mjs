@@ -124,11 +124,9 @@ const INVARIANTS = [
 		name: 'lumen_read_can_select_degree',
 		sql: `SELECT has_table_privilege('lumen_read', 'lumen.entity_degree', 'SELECT') AS pass`,
 	},
-	{
-		name: 'moments_and_episodes_untouched',
-		sql: `SELECT (SELECT count(*) FROM lumen.search_index WHERE kind = 'moment') = 3940
-	      AND (SELECT count(*) FROM lumen.search_index WHERE kind = 'episode') = 10 AS pass`,
-	},
+	// moments_and_episodes_untouched is checked dynamically in main() against a
+	// pre-tx baseline (DATC-1/CORC-6): literal counts false-fail on the
+	// mandated post-ingest re-run, which changes those kinds by design.
 ];
 
 async function main() {
@@ -139,6 +137,7 @@ async function main() {
 	const url = readFileSync(join(ROOT, '.env'), 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
 	const sql = postgres(url, { prepare: false, max: 1 });
 
+	let baseline = [];
 	try {
 		// Prechecks: M1 unaccent + M2 artifacts exist (DAT-8 ordering).
 		const pre = await sql`
@@ -149,6 +148,12 @@ async function main() {
 			await sql.end();
 			process.exit(2);
 		}
+
+		// Ownership baseline (BLA-3, mirrors M3's other_kinds_untouched): the
+		// kinds this script does NOT own must be byte-identical in count after.
+		baseline = await sql`
+			SELECT kind, count(*)::int AS n FROM lumen.search_index
+			WHERE kind NOT IN ('artwork', 'strongs') GROUP BY kind ORDER BY kind`;
 
 		await sql.begin(async (tx) => {
 			await tx.unsafe(DEGREE_DDL);
@@ -169,18 +174,22 @@ async function main() {
 	} catch (err) {
 		if (err.message === 'DRY_RUN_ROLLBACK') {
 			console.log(JSON.stringify({ event: 'migration_dry_run_ok', commit: false }));
+		} else {
+			console.error('FATAL:', scrubSecrets(err.message));
 			await sql.end();
-			console.log(JSON.stringify({ event: 'migration_done', commit: false, invariant_failures: 0 }));
-			return;
+			process.exit(1);
 		}
-		console.error('FATAL:', scrubSecrets(err.message));
-		await sql.end();
-		process.exit(1);
 	}
 
-	await sql.unsafe(`VACUUM ANALYZE lumen.search_index`);
-	await sql.unsafe(`VACUUM ANALYZE lumen.entity_degree`);
+	if (commit) {
+		await sql.unsafe(`VACUUM ANALYZE lumen.search_index`);
+		await sql.unsafe(`VACUUM ANALYZE lumen.entity_degree`);
+	}
 
+	// Invariants run outside the tx (read-only) in BOTH modes (OBSC-8,
+	// migrate-media-collections convention): post-commit they verify reality;
+	// after a dry-run they report against the untouched database — report,
+	// don't judge.
 	let failures = 0;
 	for (const inv of INVARIANTS) {
 		try {
@@ -193,9 +202,26 @@ async function main() {
 			failures += 1;
 		}
 	}
+
+	// DATC-1/CORC-6: non-owned kinds compared against the pre-tx baseline —
+	// count-shape agnostic, so post-ingest re-runs cannot false-fail.
+	try {
+		const after = await sql`
+			SELECT kind, count(*)::int AS n FROM lumen.search_index
+			WHERE kind NOT IN ('artwork', 'strongs') GROUP BY kind ORDER BY kind`;
+		const beforeMap = Object.fromEntries(baseline.map((r) => [r.kind, r.n]));
+		const afterMap = Object.fromEntries(after.map((r) => [r.kind, r.n]));
+		const pass = JSON.stringify(beforeMap) === JSON.stringify(afterMap);
+		console.log(JSON.stringify({ event: 'invariant_check', name: 'moments_and_episodes_untouched', pass, before: beforeMap, after: afterMap }));
+		if (!pass) failures += 1;
+	} catch (err) {
+		console.log(JSON.stringify({ event: 'invariant_check', name: 'moments_and_episodes_untouched', pass: false, error: scrubSecrets(err.message) }));
+		failures += 1;
+	}
+
 	await sql.end();
-	if (failures > 0) process.exit(2);
-	console.log(JSON.stringify({ event: 'migration_done', commit: true, invariant_failures: 0 }));
+	if (commit && failures > 0) process.exit(2);
+	console.log(JSON.stringify({ event: 'migration_done', commit, invariant_failures: failures }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -15,6 +15,12 @@
 // backward. Windows chain exactly over existing seqs (H15); contiguity of
 // source seqs is an ASSERTED PRECONDITION (COR-7), exit 2 if violated.
 //
+// MOMENT ID STABILITY (decision 5, APIC-6): moment ids
+// (ref_id = episode_id||'#'||seq_start) are RESPONSE-SCOPED, NOT durable —
+// every re-run re-windows and re-keys them. Never persist, cache, or
+// deep-link a moment id; deep-link via payload episode_id + t_start_s.
+// All other search ids (verse/entity/episode/artwork/strongs) are durable.
+//
 //   node --import tsx scripts/build-search-moments.mjs            # dry-run
 //   COMMIT=1 node --import tsx scripts/build-search-moments.mjs   # apply
 // Exit 0 success/clean, 1 fatal, 2 invariant/precondition failure.
@@ -32,21 +38,31 @@ const GAP_S = 2.0;
 
 // Pure, exported for tests: captions [{seq,t_start_s,t_end_s,text}] (numbers
 // already coerced) → windows [{seq_start,seq_end,t_start_s,t_end_s,text}].
+// HARD_MAX (DATC-4/CORC-7): flush BEFORE an append would overshoot, so only a
+// single caption longer than HARD_MAX itself can produce a >HARD_MAX window
+// (captions are never split — the chain invariant owns seq granularity).
+// Trade-off: when the cap forces an early flush or blocks the tail merge, the
+// MIN_TAIL floor yields to the cap.
 export function windowCaptions(captions) {
 	const windows = [];
 	let cur = null;
 	for (let i = 0; i < captions.length; i++) {
 		const c = captions[i];
 		const next = captions[i + 1];
+		const text = c.text.trim();
+		if (cur && cur.text.length + 1 + text.length > HARD_MAX) {
+			windows.push(cur);
+			cur = null;
+		}
 		if (!cur) {
-			cur = { seq_start: c.seq, seq_end: c.seq, t_start_s: c.t_start_s, t_end_s: c.t_end_s, text: c.text.trim() };
+			cur = { seq_start: c.seq, seq_end: c.seq, t_start_s: c.t_start_s, t_end_s: c.t_end_s, text };
 		} else {
 			cur.seq_end = c.seq;
 			cur.t_end_s = c.t_end_s ?? cur.t_end_s;
-			cur.text = (cur.text + ' ' + c.text.trim()).trim();
+			cur.text = (cur.text + ' ' + text).trim();
 		}
 		const gap = next ? Math.max(0, (next.t_start_s ?? 0) - (c.t_end_s ?? next.t_start_s ?? 0)) : 0;
-		const sentenceEnd = /[.!?]["')\]]?$/.test(c.text.trim());
+		const sentenceEnd = /[.!?]["')\]]?$/.test(text);
 		const shouldFlush =
 			!next ||
 			cur.text.length >= HARD_MAX ||
@@ -56,13 +72,17 @@ export function windowCaptions(captions) {
 			cur = null;
 		}
 	}
-	// Tail merge backward (COR: min window size).
+	// Tail merge backward (COR: min window size) — skipped when the merge
+	// would breach HARD_MAX (cap wins over the floor, see above).
 	if (windows.length >= 2 && windows[windows.length - 1].text.length < MIN_TAIL) {
-		const tail = windows.pop();
-		const prev = windows[windows.length - 1];
-		prev.seq_end = tail.seq_end;
-		prev.t_end_s = tail.t_end_s ?? prev.t_end_s;
-		prev.text = prev.text + ' ' + tail.text;
+		const prev = windows[windows.length - 2];
+		const tail = windows[windows.length - 1];
+		if (prev.text.length + 1 + tail.text.length <= HARD_MAX) {
+			windows.pop();
+			prev.seq_end = tail.seq_end;
+			prev.t_end_s = tail.t_end_s ?? prev.t_end_s;
+			prev.text = prev.text + ' ' + tail.text;
+		}
 	}
 	return windows;
 }
@@ -95,6 +115,24 @@ async function main() {
 			WHERE EXISTS (SELECT 1 FROM lumen.transcripts t WHERE t.episode_id = e.id)
 			ORDER BY e.id`;
 		console.log(JSON.stringify({ event: 'episodes_found', n: episodes.length }));
+
+		// DAT-6/DATC-3: episode deletion cascades transcripts but not moments —
+		// the per-episode loop below only sees episodes that still HAVE
+		// transcripts, so orphaned (still publicly searchable) moments must be
+		// reaped by their absence from lumen.transcripts. Kind-scoped, keyed
+		// payload episode_id per the BLA-3 ownership rule.
+		const orphans = await sql`
+			SELECT count(*)::int AS n FROM lumen.search_index m
+			WHERE m.kind = 'moment' AND NOT EXISTS (
+			  SELECT 1 FROM lumen.transcripts t WHERE t.episode_id = m.payload->>'episode_id')`;
+		console.log(JSON.stringify({ event: 'orphan_moments_found', n: orphans[0].n, commit }));
+		if (commit && orphans[0].n > 0) {
+			const deleted = await sql`
+				DELETE FROM lumen.search_index m
+				WHERE m.kind = 'moment' AND NOT EXISTS (
+				  SELECT 1 FROM lumen.transcripts t WHERE t.episode_id = m.payload->>'episode_id')`;
+			console.log(JSON.stringify({ event: 'orphan_moments_deleted', n: deleted.count }));
+		}
 
 		// COR-7 precondition: seq contiguous & 0-based per episode.
 		const contig = await sql`
@@ -183,6 +221,22 @@ async function main() {
 					name: 'episode_payloads_are_objects',
 					sql: `SELECT count(*) = 0 AS pass FROM lumen.search_index
 					  WHERE kind = 'episode' AND (jsonb_typeof(payload) <> 'object' OR NOT payload ? 'episode_id')`,
+				},
+				{
+					// DATC-3: mirrors M4's artwork_orphan_free — no moment may
+					// outlive its episode's transcripts.
+					name: 'moment_orphan_free',
+					sql: `SELECT count(*) = 0 AS pass FROM lumen.search_index m
+					  WHERE m.kind = 'moment' AND NOT EXISTS (
+					    SELECT 1 FROM lumen.transcripts t WHERE t.episode_id = m.payload->>'episode_id')`,
+				},
+				{
+					// DATC-4: only a single unsplittable caption may exceed
+					// HARD_MAX; multi-caption windows must respect the cap.
+					name: 'moment_length_bounds',
+					sql: `SELECT count(*) = 0 AS pass FROM lumen.search_index
+					  WHERE kind = 'moment' AND length(payload->>'text') > ${HARD_MAX}
+					    AND (payload->>'seq_start')::int <> (payload->>'seq_end')::int`,
 				},
 				{
 					name: 'moment_coverage_matches_captions',
