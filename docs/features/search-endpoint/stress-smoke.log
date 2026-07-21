@@ -1,0 +1,33 @@
+=== search-endpoint post-ship verification + first stress test — 2026-07-21 ~16:10 ===
+Context: run from main session after code-panel + code-adversarial completed; dev server
+(react-router dev, worktree apps/web) against LIVE prod DB via local Hyperdrive string.
+
+-- Fresh harness re-runs (post-ship, unmodified code at 180bb67) --
+packages/scripture search-harness.test.ts : 18/18 green (10.2s, H12 latency 245ms)
+apps/web api-search.test.ts               : 22/22 green
+
+-- Endpoint-level contract probes (HTTP, dev server) --
+q=            -> 400 {"error":"q is required","code":"q_required"}          cache-control: private, no-store
+q=a           -> 400 {"code":"q_length"}                                    cache-control: private, no-store
+q=%%%         -> 200 all-empty groups (wildcards literal, no throw)         cache-control: private, no-store
+scope=bogus   -> 400 {"code":"scope_unknown"}                               cache-control: private, no-store
+q=300 chars   -> 400 {"code":"q_length"}                                    cache-control: private, no-store
+
+-- Combined-mode verification (TESC-1 empirical check) --
+search_executed events during all probes + stress: 158 total
+  mode:"combined" = 146   mode:"none" (reference short-circuit) = 12
+  search_group_degraded = 0   search_failed = 0
+Single-query server-side elapsedMs: 238-254ms (combined), 129-182ms (reference short-circuit)
+
+-- Stress test (first ever for this feature) --
+150 requests, concurrency 5, 15-query mixed workload (common words incl. worst-case 'lord',
+multi-leg 'melchizedek', fuzzy 'melchisedek', reference '1 nephi 3:7', phrases, hostile 'z%_\')
+  150/150 HTTP 200, 0 errors, 0 invalid JSON, 0 degraded groups
+  wall 18.9s = 8.0 req/s sustained
+  client-observed latency (laptop -> dev server -> Supabase pooler):
+    p50 617ms  p90 674ms  p95 699ms  p99 896ms  max 900ms (q='lord', 56 hits)
+  no session-pool exhaustion (concurrency 5 well under cap 15)
+
+NOT yet proven: prod Cloudflare Workers runtime + Hyperdrive path (feature unmerged/undeployed),
+sustained load > 8 rps, concurrency > 5, cold-start behavior, PERC-3 worst-case (200-char
+tsquery measured 1,266ms server-side by the performance reviewer — open bug).
