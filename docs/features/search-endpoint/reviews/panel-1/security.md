@@ -1,0 +1,31 @@
+# Panel-1 — security
+
+| ID | Severity | Where | Problem (≤25 words) | Fix (≤30 words) |
+|----|----------|-------|---------------------|-----------------|
+| SEC-1 | high | plan H8/decision 6 vs live lumen.collections; search-harness.test.ts:53-55 | Live prod has unshaken.public=true, so the endpoint's getPublicCollectionIds() exposes unshaken to anonymous users; harness assumes public=false and never pins it. | Coordinate with unshaken-surfaces: flip public=false before M5, and add a live harness pin that getPublicCollectionIds() excludes unshaken — otherwise H8's hand-built lists test a vacuous gate. |
+| SEC-2 | high | plan M1 / scripts/migrate-search-extensions.mjs vs live pg_namespace + pg_default_acl | No grant step for pg_trgm: lumen_read lacks USAGE on extensions schema, and public-schema function default-ACL omits it — tier-2 fails permission-denied, masked by degrade-to-empty-group. | CREATE EXTENSION ... SCHEMA extensions; GRANT USAGE ON SCHEMA extensions TO lumen_read; invariant-check has_function_privilege as lumen_read; schema-qualify word_similarity calls (role search_path lacks extensions). |
+| SEC-3 | high | plan decisions 1/6 + failure-mode 8; search-harness.test.ts:184-189 | Scripture group folds 31,262 jst_reading entities (collection 'jst') yet is exempt from the collection WHERE clause, and H8's fail-closed loop skips kind==='scripture' — a gate bypass path. | Gate JST rows on 'jst' ∈ visibleCollections; H8 must assert the scripture group contains zero variant:'jst' results when visibleCollections=[] (plan's own words: only canon verses). |
+| SEC-4 | med | plan decision 5 / apps/web/app/routes/api.search.tsx (not yet written) | Response varies by session (ADMIN_COLLECTIONS sees hidden collections) but plan specifies no Cache-Control; house precedent SECURITY-3 (scripture.tsx:366) requires no-store on session-derived responses. | Set Cache-Control: private, no-store on every /api/search response and pin the header in api-search.test.ts, including the entitled-admin path. |
+| SEC-5 | med | plan decision 2 escaping invariant; H9 in both harness files | The % _ \ escaping invariant has shape-only assertions; unescaped ILIKE wildcards still return contract-shaped 200s, so H9 stays green on the exact bug it targets. | Add value pins: exact/prefix tier with q containing % or _ must match zero names (literal semantics), not merely not-throw. |
+| SEC-6 | med | search-harness.test.ts loadDsn (lines 21-36) | Fallback to root .env DATABASE_URL runs the read-only harness as admin (postgres.*) when apps/web/.env is absent, masking exactly the SEC-2 grant-failure class and dropping the SELECT-only write backstop. | Assert current_user is lumen_read in beforeAll and fail loudly; drop the admin-DSN fallback. |
+| SEC-7 | med | plan M3/M4 vs live search_index.collection_id (nullable) | collection_id is nullable and the plan omits NULL semantics; strongs_lexicon has no collection column, so un-stamped projection rows silently vanish — or invite a fail-open OR-IS-NULL clause. | Plan pins NULL=invisible; migration invariant asserts zero NULL collection_id for kinds moment/artwork/strongs; SET NOT NULL after backfill. |
+| SEC-8 | med | live search_index kind='episode' payloads vs plan decision 5 / H13 | The 10 existing episode payloads are double-encoded JSON strings (jsonb scalar), so returning payload verbatim breaks the payload-object contract; the same insert bug threatens build-search-moments.mjs. | Repair episode rows during M3; insert payloads as jsonb objects (::jsonb / sql.json); extend H13's typeof pins to episode-kind payloads. |
+| SEC-9 | low | plan decisions 5 and 9 (moment payload.text) | Endpoint returns full ≤800-char window text inside payload although decision 5 defines payload as deep-link makings — a bulk transcript-export channel beyond the bounded snippet. | Strip text from the API-facing payload in searchAll/route; keep the ts_headline snippet as the only content excerpt. |
+
+## Evidence
+
+All probes run read-only against prod via .env DATABASE_URL (admin DSN, user=postgres.dsoekevnjqjfdntxhdhd); app DSN confirmed as user=lumen_read.dsoekevnjqjfdntxhdhd (apps/web/.env).
+
+[SEC-1] SELECT id, public FROM lumen.collections → ... 'unshaken' | public: true  (harness comment line 53-54 claims "unshaken (which is public=false + the H8 probe)"). getPublicCollectionIds() = WHERE public = true → includes unshaken today.
+
+[SEC-2] pg_namespace ACLs: extensions = '{postgres=UC/postgres,anon=U/postgres,authenticated=U/postgres,service_role=U/postgres,dashboard_user=UC/postgres}' — no lumen_read, no PUBLIC USAGE. pg_default_acl (postgres, public, 'f') = '{postgres=X,anon=X,authenticated=X,service_role=X}' — replaces built-in PUBLIC-EXECUTE default, lumen_read absent. lumen_read rolconfig = null (search_path defaults to "$user", public — no extensions). pg_extension: pg_trgm/unaccent not installed (installed_version null), so M1 will create them into one of these two denied-either-way schemas. Mitigating fact also verified: pg_default_acl (postgres, lumen, 'r') = '{lumen_read=r/postgres}', so NEW TABLES (kjv_variants, entity_degree) auto-grant SELECT, and lumen-schema functions fall back to built-in PUBLIC EXECUTE (normalize_kjv OK) — the gap is specifically extension schema USAGE/EXECUTE.
+
+[SEC-3] SELECT collection_id, entity_type, count(*) FROM lumen.entities → 'jst' | 'jst_reading' | 31262. Harness H8 fail-closed loop: `if (g.kind !== 'scripture')` — scripture group wholly exempt.
+
+[SEC-7] information_schema.columns for lumen.search_index → collection_id | text | is_nullable: YES. lumen.strongs_lexicon exists as standalone table (no collection column among search-relevant sources).
+
+[SEC-8] SELECT ref_id, jsonb_typeof(payload), left(payload::text,90) FROM lumen.search_index WHERE kind='episode' → jsonb_typeof = 'string', sample '"{\"episode\":\"unshaken-25hrVBU3Vz8\"}"' (double-encoded); jsonb_object_keys(payload) errors: "cannot call jsonb_object_keys on a scalar".
+
+[SEC-6] Root .env DATABASE_URL user = postgres.dsoekevnjqjfdntxhdhd (full-privilege admin); loadDsn() falls back to it when apps/web/.env is missing.
+
+_Source: workflow run wf_7edb2724-d13 (structured return); file written by orchestrator._

@@ -1,0 +1,103 @@
+=== search-endpoint harness initial run (red baseline) — 2026-07-21 12:38 ===
+
+--- packages/scripture: search-harness.test.ts ---
+    157| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  src/__tests__/search-harness.test.ts > M4 — projections > H7: strongs projection — agape (unaccented) → G26; H3068 present
+AssertionError: expected [] to include 'G26'
+ ❯ src/__tests__/search-harness.test.ts:162:39
+    160|    SELECT ref_id FROM lumen.search_index
+    161|    WHERE kind = 'strongs' AND tsv @@ websearch_to_tsquery('english', '…
+    162|   expect(g.map((x: any) => x.ref_id)).toContain('G26');
+       |                                       ^
+    163|   const h = await rows(
+    164|    sql`SELECT ref_id FROM lumen.search_index WHERE kind = 'strongs' AN…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H8: visibility is a hard filter and fails closed
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs return contract shapes, never throw
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H10: exact name outranks mentions — melchizedek puts the person and the topic first
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H11: reference short-circuit — explicit verse skips FTS; bare book name runs both
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H12: federated search inside latency budget (laptop→pooler < 1500ms)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H13: moment payload timestamps are numbers at the API boundary (postgres.js string trap)
+Error: Cannot find module '../search' imported from '/Users/abram/code/lumen/.claude/worktrees/search-endpoint/packages/scripture/src/__tests__/search-harness.test.ts'
+ ❯ src/__tests__/search-harness.test.ts:174:25
+    172| 
+    173|  it('H8: visibility is a hard filter and fails closed', async () => {
+    174|   const { searchAll } = await loadSearch();
+       |                         ^
+    175|   const hidden = await searchAll(db, { q: 'Halverson', visibleCollecti…
+    176|   const episodesHidden = hidden.groups.find((g: any) => g.kind === 'ep…
+
+Caused by: Error: Failed to load url ../search (resolved id: ../search) in /Users/abram/code/lumen/.claude/worktrees/search-endpoint/packages/scripture/src/__tests__/search-harness.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  14 failed | 1 passed (15)
+   Start at  12:38:57
+   Duration  2.02s (transform 21ms, setup 0ms, collect 170ms, tests 1.70s, environment 0ms, prepare 31ms)
+
+undefined
+/Users/abram/code/lumen/.claude/worktrees/search-endpoint/packages/scripture:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/__tests__/search-harness.test.ts
+EXIT(package): 1
+
+--- apps/web: api-search.test.ts ---
+       | ^
+     31| 
+     32| const EMPTY_RESPONSE = { query: "q", reference: null, groups: [] };
+
+Caused by: Error: Failed to load url ../api.search (resolved id: ../api.search) in /Users/abram/code/lumen/.claude/worktrees/search-endpoint/apps/web/app/routes/__tests__/api-search.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  12:38:59
+   Duration  157ms (transform 18ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 31ms)
+
+undefined
+/Users/abram/code/lumen/.claude/worktrees/search-endpoint/apps/web:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run app/routes/__tests__/api-search.test.ts
+EXIT(web): 1
+
+=== POST-SYNTHESIS AMENDED HARNESS red run — 2026-07-21 13:22 (harness-revision at step 6; see plan.md ## Decisions) ===
+--- packages/scripture ---
+   ✓ M2 — KJV delta-index (verses + entities) > H2: superset floors — verses AND entities keep pre-change match sets (Ring-2)  334ms
+   ✓ M4 — projections > H7b: projection rows are always collection-stamped (SEC-7 fail-closed) 75ms
+⎯⎯⎯⎯⎯⎯ Failed Tests 16 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/__tests__/search-harness.test.ts > M2 — KJV delta-index (verses + entities) > H1: modern query matches archaic verse — believe → John 3:16 (believeth)
+ FAIL  src/__tests__/search-harness.test.ts > M2 — KJV delta-index (verses + entities) > H3: irregular + orthographic classes — spoke→spake verse; show reaches shew verses
+ FAIL  src/__tests__/search-harness.test.ts > M2 — KJV delta-index (verses + entities) > H16: kjv_delta is empty on modern text; pinned pairs map to intended lexemes
+ FAIL  src/__tests__/search-harness.test.ts > M1 — trgm fuzzy tier (production predicate form, PER-1/PER-8) > H5: typo melchisedek finds Melchizedek via the <% operator at threshold 0.45
+ FAIL  src/__tests__/search-harness.test.ts > M3 — transcript moments in search_index > H4: phrase spanning a caption boundary matches a moment (seq 100/101 of 4pSrikfJ5Yw)
+ FAIL  src/__tests__/search-harness.test.ts > M3 — transcript moments in search_index > H15: windows form an exact chain over each episode caption sequence (COR-7)
+ FAIL  src/__tests__/search-harness.test.ts > M3 — transcript moments in search_index > H15b: episode payloads repaired — objects with episode_id key, never double-encoded (SEC-8)
+ FAIL  src/__tests__/search-harness.test.ts > M4 — projections > H6: artwork searchable by scene keywords — pentecost → met-471845
+ FAIL  src/__tests__/search-harness.test.ts > M4 — projections > H7: strongs projection — agape (unaccented at projection time) → G26; H3068 present
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H8: visibility is a hard filter, fails closed, and gates the JST leg (SEC-3)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H10: exact name outranks mentions; duplicate-name pages are deterministic (COR-4)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H11: short-circuit only on RESOLVABLE refs; unresolvable falls through (COR-6)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H12: federated search latency smoke (laptop→pooler < 1500ms; prod p95 is log-measured)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H13: payloads are objects and numerics are numbers across ALL kinds (API-6/SEC-8)
+ FAIL  src/__tests__/search-harness.test.ts > M5 — searchAll contract > H17: a failing group degrades to empty results + meta.error — never a throw (COR-1)
+ Test Files  1 failed (1)
+      Tests  16 failed | 2 passed (18)
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/__tests__/search-harness.test.ts
+EXIT(package): 1
+--- apps/web ---
+ FAIL  app/routes/__tests__/api-search.test.ts [ app/routes/__tests__/api-search.test.ts ]
+Error: Cannot find module '../api.search' imported from '/Users/abram/code/lumen/.claude/worktrees/search-endpoint/apps/web/app/routes/__tests__/api-search.test.ts'
+ Test Files  1 failed (1)
+      Tests  no tests
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run app/routes/__tests__/api-search.test.ts
+EXIT(web): 1
