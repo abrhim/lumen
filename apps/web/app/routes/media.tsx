@@ -3,6 +3,12 @@ import { Link, data, isRouteErrorResponse, useSearchParams } from "react-router"
 import { sql } from "drizzle-orm";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
+import {
+	Accordion,
+	AccordionContent,
+	AccordionItem,
+	AccordionTrigger,
+} from "~/components/ui/accordion";
 import { RefRow } from "~/components/RefRow";
 import { getSessionUser } from "~/lib/auth.server";
 import { canViewCollection, getCollectionAccess } from "~/lib/collection-access.server";
@@ -390,6 +396,29 @@ function MobileVideoBar({
 
 /** Option B rows: the whole row applies the lens (filtering is the episode-
  * native action); the node page is reached from the lens bar's "About X →". */
+function IndexList({
+	items,
+	lensHref,
+}: {
+	items: { id: string; name: string; type: string; count: number }[];
+	lensHref: (id: string) => string;
+}) {
+	return (
+		<ul className="list-none">
+			{items.map((it) => (
+				<li key={it.id}>
+					<RefRow to={lensHref(it.id)} ariaLabel={`Show the ${it.count} passages about ${it.name}`}>
+						<span className="font-reading text-[15px] text-ink">{it.name}</span>
+						<span className="font-ui text-xs tabular-nums text-faint">{it.count}</span>
+					</RefRow>
+				</li>
+			))}
+		</ul>
+	);
+}
+
+/** Flat variant for the mobile sheet (the sheet is already an opt-in layer;
+ * accordions inside it would be friction on friction). */
 function IndexRows({
 	heading,
 	items,
@@ -402,20 +431,38 @@ function IndexRows({
 	return (
 		<section className="min-w-0 flex-1">
 			<h3 className="font-reading text-sm italic text-faint">{heading}</h3>
-			<ul className="mt-2 list-none">
-				{items.map((it) => (
-					<li key={it.id}>
-						<RefRow
-							to={lensHref(it.id)}
-							ariaLabel={`Show the ${it.count} passages about ${it.name}`}
-						>
-							<span className="font-reading text-[15px] text-ink">{it.name}</span>
-							<span className="font-ui text-xs tabular-nums text-faint">{it.count}</span>
-						</RefRow>
-					</li>
-				))}
-			</ul>
+			<div className="mt-2">
+				<IndexList items={items} lensHref={lensHref} />
+			</div>
 		</section>
+	);
+}
+
+/** Desktop rail: each reference KIND is an accordion section. */
+function IndexAccordionItem({
+	value,
+	heading,
+	items,
+	lensHref,
+}: {
+	value: string;
+	heading: string;
+	items: { id: string; name: string; type: string; count: number }[];
+	lensHref: (id: string) => string;
+}) {
+	if (items.length === 0) return null;
+	return (
+		<AccordionItem value={value} className="border-rule">
+			<AccordionTrigger className="py-2.5 hover:no-underline">
+				<span className="flex items-baseline gap-2 font-reading text-sm italic text-faint">
+					{heading}
+					<span className="font-ui text-xs not-italic tabular-nums">{items.length}</span>
+				</span>
+			</AccordionTrigger>
+			<AccordionContent className="pb-3">
+				<IndexList items={items} lensHref={lensHref} />
+			</AccordionContent>
+		</AccordionItem>
 	);
 }
 
@@ -684,7 +731,8 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 			)}
 			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)_14rem]">
 				<nav aria-label="Chapters" className="hidden lg:block">
-					<div className="sticky top-8">
+					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
+					<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
 						{!isMobile && hasVideo && (
 							<VideoAccordion
 								videoId={videoId}
@@ -726,12 +774,23 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 					/>
 				</div>
 				<aside className="mt-12 hidden lg:mt-0 lg:block">
-					<div className="sticky top-8">
+					{/* The rail scrolls independently of the reading column. */}
+					<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
 						<h2 className="font-display text-lg font-medium tracking-tight text-ink">References</h2>
-						<div className="mt-4 space-y-8">
-							<IndexRows heading="People & places" items={people} lensHref={lensHref} />
-							<IndexRows heading="Principles" items={principles} lensHref={lensHref} />
-						</div>
+						<Accordion type="multiple" defaultValue={["people", "principles"]} className="mt-2">
+							<IndexAccordionItem
+								value="people"
+								heading="People & places"
+								items={people}
+								lensHref={lensHref}
+							/>
+							<IndexAccordionItem
+								value="principles"
+								heading="Principles"
+								items={principles}
+								lensHref={lensHref}
+							/>
+						</Accordion>
 					</div>
 				</aside>
 			</div>
