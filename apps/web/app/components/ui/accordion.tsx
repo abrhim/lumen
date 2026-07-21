@@ -61,10 +61,12 @@ function AccordionContent({
   return (
     <AccordionPrimitive.Content
       data-slot="accordion-content"
-      // -mx-2 px-2: overflow clips at the PADDING edge, so this gives rows
-      // that overhang the text column (RefRow's -mx-2 hover box) 8px of
-      // visible room without shifting content — layout is pixel-identical.
-      className="-mx-2 overflow-hidden px-2 text-sm data-open:animate-accordion-down data-closed:animate-accordion-up"
+      // -mx-3 px-3: overflow clips at the PADDING edge, so this gives rows that
+      // overhang the text column (RefRow's -mx-2 hover box) visible room
+      // without shifting content. Padding must EXCEED the overhang (12 > 8):
+      // an exact match puts the row edge knife-edge on the clip line, and
+      // fractional browser zoom then shaves a side (Abram repro, left edge).
+      className="-mx-3 overflow-hidden px-3 text-sm data-open:animate-accordion-down data-closed:animate-accordion-up"
       {...props}
     >
       <div
