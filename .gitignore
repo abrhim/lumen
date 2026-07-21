@@ -18,3 +18,6 @@ data/podcasts/*
 data/podcasts/*/*
 !data/podcasts/*/episodes.json
 *.tfplan
+
+# whisper-vs-deepgram eval: raw whisper outputs (large JSON), keep out of git
+docs/ops/whisper-vs-deepgram/out/
