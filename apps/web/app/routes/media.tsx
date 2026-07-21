@@ -732,7 +732,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)_14rem]">
 				<nav aria-label="Chapters" className="hidden lg:block">
 					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
-					<div className="sticky top-8 -mx-2 max-h-[calc(100vh-4rem)] overflow-y-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						{!isMobile && hasVideo && (
 							<VideoAccordion
 								videoId={videoId}
@@ -775,7 +775,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 				</div>
 				<aside className="mt-12 hidden lg:mt-0 lg:block">
 					{/* The rail scrolls independently of the reading column. */}
-					<div className="sticky top-8 -mx-2 max-h-[calc(100vh-4rem)] overflow-y-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						<h2 className="font-display text-lg font-medium tracking-tight text-ink">References</h2>
 						<Accordion type="multiple" className="mt-2">
 							<IndexAccordionItem
