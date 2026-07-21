@@ -12,6 +12,7 @@ build
 coverage
 .DS_Store
 data/*
+!data/kjv-variants.json
 !data/podcasts/
 data/podcasts/*
 !data/podcasts/*/
