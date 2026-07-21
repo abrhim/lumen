@@ -12,4 +12,8 @@ export default [
 	route("auth/confirm", "routes/auth.confirm.tsx"),
 	route("logout", "routes/logout.tsx"),
 	route("admin/users", "routes/admin.users.tsx"),
+	// Typed node pages — the type is the slug (/people/:id, /principles/:id…).
+	// LAST on purpose: static routes above always win; the loader 404s any
+	// :type outside the known slug set (fail-closed).
+	route(":type/:id", "routes/node.tsx"),
 ] satisfies RouteConfig;

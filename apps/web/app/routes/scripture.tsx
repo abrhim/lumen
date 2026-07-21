@@ -8,6 +8,7 @@ import {
 	useNavigationType,
 } from "react-router";
 import { ArrowLeftIcon, WaypointsIcon, XIcon } from "lucide-react";
+import { sql } from "drizzle-orm";
 import {
 	parseReference,
 	buildVerseId,
@@ -31,6 +32,7 @@ import {
 	type VerseEntityRef,
 } from "@lumen/scripture";
 import { Skeleton } from "~/components/ui/skeleton";
+import { RefRow } from "~/components/RefRow";
 import {
 	Accordion,
 	AccordionItem,
@@ -178,6 +180,142 @@ async function loadCrossRefs(
 		});
 		return { degraded: true, cards: [], totals: { outgoing: 0, incoming: 0 }, curated };
 	}
+}
+
+/** Media (podcast) moments that discuss the selected verse — the collection
+ * flowing back into the reader. Degradation is a value, never throws. */
+interface MediaMoment {
+	episodeId: string;
+	episodeName: string;
+	t: number;
+}
+interface MediaRefsPanel {
+	degraded: boolean;
+	moments: MediaMoment[];
+}
+
+/** Gated at the loader (showUnshaken): results only reach the client when the
+ * collection is public or in local dev — the public flip stays the deliberate
+ * reveal. Query placement (shared queries.ts vs web-local) revisits when a
+ * second show lands; web-local until then. */
+async function loadMediaRefs(
+	db: Route.LoaderArgs["context"]["db"],
+	bookId: string,
+	chapter: number,
+	verse: number,
+): Promise<MediaRefsPanel> {
+	const verseId = buildVerseId(bookId, chapter, verse);
+	const startedAt = Date.now();
+	try {
+		const rows = (await db.execute(sql`
+			SELECT g.from_id AS episode_id, ep.name, g.metadata
+			FROM lumen.edges g
+			JOIN lumen.entities ep ON ep.id = g.from_id
+			WHERE g.to_id = ${verseId}
+				AND g.rel_type = 'DISCUSSES'
+				AND g.source = 'unshaken-extraction'`)) as {
+			episode_id: string;
+			name: string;
+			metadata: unknown;
+		}[];
+		const moments: MediaMoment[] = [];
+		for (const r of rows) {
+			// postgres.js trap: jsonb can arrive as a string, numerics as strings
+			const meta =
+				typeof r.metadata === "string"
+					? (JSON.parse(r.metadata) as { mentions?: { t: number }[] })
+					: (r.metadata as { mentions?: { t: number }[] });
+			for (const m of meta?.mentions ?? []) {
+				moments.push({
+					episodeId: String(r.episode_id),
+					episodeName: String(r.name),
+					t: Number(m.t),
+				});
+			}
+		}
+		moments.sort((a, b) => a.t - b.t);
+		return { degraded: false, moments };
+	} catch (error) {
+		logEvent("mediarefs_degraded", {
+			name: error instanceof Error ? error.name : "unknown",
+			message: error instanceof Error ? error.message : String(error),
+			book: bookId,
+			chapter,
+			verse,
+			elapsedMs: Date.now() - startedAt,
+		});
+		return { degraded: true, moments: [] };
+	}
+}
+
+/** Per-verse depth signals for the margin dots: which KINDS of reference
+ * exist behind each verse (not the data itself). Spike (dots experiment) —
+ * degradation is null, the chapter renders dotless. */
+type VerseSignals = Record<
+	number,
+	{ principles?: boolean; people?: boolean; xrefs?: boolean; media?: boolean }
+>;
+
+async function loadVerseSignals(
+	db: Route.LoaderArgs["context"]["db"],
+	bookId: string,
+	chapter: number,
+): Promise<VerseSignals | null> {
+	// Over-generate candidate ids (longest chapter in the canon is Psalm 119's
+	// 176 verses) so this query needs no dependency on the verses fetch and
+	// stays inside the loader's parallel window.
+	const ids = Array.from({ length: 176 }, (_, i) => buildVerseId(bookId, chapter, i + 1));
+	try {
+		const rows = (await db.execute(sql`
+			SELECT 'entity' AS kind, from_id AS vid, rel_type FROM lumen.edges
+				WHERE from_id IN ${ids} AND source = 'anthropic-batch'
+					AND rel_type IN ('MENTIONS','TEACHES')
+				GROUP BY 2, 3
+			UNION ALL
+			SELECT 'media', to_id, rel_type FROM lumen.edges
+				WHERE to_id IN ${ids} AND source = 'unshaken-extraction'
+				GROUP BY 2, 3
+			UNION ALL
+			SELECT 'xref', from_id, 'CROSS_REF' FROM lumen.edges
+				WHERE from_id IN ${ids} AND rel_type = 'CROSS_REF' GROUP BY 2
+			UNION ALL
+			SELECT 'xref', to_id, 'CROSS_REF' FROM lumen.edges
+				WHERE to_id IN ${ids} AND rel_type = 'CROSS_REF' GROUP BY 2`)) as {
+			kind: string;
+			vid: string;
+			rel_type: string;
+		}[];
+		const signals: VerseSignals = {};
+		for (const r of rows) {
+			const n = Number(r.vid.match(/-(\d+)$/)?.[1]);
+			if (!Number.isFinite(n)) continue;
+			const s = (signals[n] ??= {});
+			if (r.kind === "entity") {
+				if (r.rel_type === "TEACHES") s.principles = true;
+				else s.people = true;
+			} else if (r.kind === "media") s.media = true;
+			else s.xrefs = true;
+		}
+		return signals;
+	} catch (error) {
+		logEvent("verse_signals_degraded", {
+			name: error instanceof Error ? error.name : "unknown",
+			message: error instanceof Error ? error.message : String(error),
+			book: bookId,
+			chapter,
+		});
+		return null;
+	}
+}
+
+/** seconds → "1:23:45" / "8:58" for media moment rows */
+function fmtTimestamp(s: number) {
+	const h = Math.floor(s / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	const ss = Math.floor(s % 60);
+	return h > 0
+		? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+		: `${m}:${String(ss).padStart(2, "0")}`;
 }
 
 /** One owner for the ?word grammar (1-based word position within the selected verse). */
@@ -387,12 +525,12 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
-		graphIdValid
-			? (getPublicCollectionIds(context.db) as Promise<string[]>).catch(() => undefined)
-			: Promise.resolve(undefined),
+		// always fetched now (cheap, 8 rows): the graph filter AND the media-
+		// surface gates (Unshaken refs section + media dots) read from it
+		(getPublicCollectionIds(context.db) as Promise<string[]>).catch(() => undefined),
 		// art is an enhancement — its failure must never break the chapter,
 		// but it must not vanish silently either (CUO-3)
 		(getChapterArt(context.db, bookId, chapter) as Promise<ArtworkRow[]>).catch(
@@ -423,6 +561,13 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		requestedVerse !== null && BIBLE_BOOK_IDS.has(bookId)
 			? loadWordTags(context.db, bookId, chapter, requestedVerse)
 			: Promise.resolve(null),
+		// media (podcast) moments discussing the verse; same critical-path rule
+		// as cross-refs (COR-2), never throws; 8th query → one more queued RT
+		requestedVerse !== null
+			? loadMediaRefs(context.db, bookId, chapter, requestedVerse)
+			: Promise.resolve(null),
+		// per-verse margin-dot signals (dots experiment); never throws
+		loadVerseSignals(context.db, bookId, chapter),
 	]);
 
 	if (verses.length === 0) {
@@ -438,6 +583,15 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const connections = selectedVerse !== null ? pendingConnections : null;
 	const crossRefs = selectedVerse !== null ? crossRefsRaw : null;
 	const wordTags = selectedVerse !== null ? wordTagsRaw : null;
+	// Media surfaces are fail-closed on collection visibility: hidden until the
+	// deliberate public flip (or local dev). The reader stays session-free on
+	// its hot path, so no admin-preview here — preview lives on /media and
+	// /collections, which do check the entitlement.
+	const showUnshaken = import.meta.env.DEV || (publicCollections ?? []).includes("unshaken");
+	const mediaRefs = selectedVerse !== null && showUnshaken ? mediaRefsRaw : null;
+	if (!showUnshaken && verseSignals) {
+		for (const s of Object.values(verseSignals)) delete s.media;
+	}
 	const selectedWord = selectedVerse !== null ? parseWordParam(url.search) : null;
 
 	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
@@ -472,6 +626,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		connections,
 		crossRefs,
 		wordTags,
+		mediaRefs,
+		verseSignals,
 		graphId,
 		graphDepth,
 		graph,
@@ -485,7 +641,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
 	const unit = chapterUnit(bookId);
 	const navigation = useNavigation();
@@ -634,9 +790,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			isPending={isPending}
 			connections={connections}
 			crossRefs={crossRefs}
+			mediaRefs={mediaRefs}
 			art={verseArt}
 			onCrossRefNavigate={onCrossRefNavigate}
-			onOpenGraph={openGraph}
 		/>
 	);
 
@@ -779,6 +935,24 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											{verse.verse_number}
 										</span>
 										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
+										{/* Margin dots (spike): one per KIND of reference behind the
+										    verse — stable order, first text line, outside the prose.
+										    Hinting, not data: no counts, no labels. */}
+										{(() => {
+											const s = verseSignals?.[verse.verse_number];
+											if (!s) return null;
+											return (
+												<span
+													aria-hidden
+													className="absolute -right-7 top-[1.15rem] hidden items-center gap-[5px] lg:flex"
+												>
+													{s.principles && <span className="size-[5px] rounded-full bg-selbar/60" />}
+													{s.people && <span className="size-[5px] rounded-full bg-people/60" />}
+													{s.xrefs && <span className="size-[5px] rounded-full bg-faint/45" />}
+													{s.media && <span className="size-[5px] rounded-full bg-primary/70" />}
+												</span>
+											);
+										})()}
 									</Link>
 									{showWordCard && (
 										<InlineWordCard
@@ -968,17 +1142,17 @@ function PanelBody({
 	isPending,
 	connections,
 	crossRefs,
+	mediaRefs,
 	art,
 	onCrossRefNavigate,
-	onOpenGraph,
 }: {
 	verseText: string;
 	isPending: boolean;
 	connections: Promise<VersePanelData> | null;
 	crossRefs: CrossRefsPanel | null;
+	mediaRefs: MediaRefsPanel | null;
 	art: ArtItem[];
 	onCrossRefNavigate: (verse: number) => void;
-	onOpenGraph: (entityId: string) => void;
 }) {
 	return (
 		<>
@@ -1027,9 +1201,33 @@ function PanelBody({
 					    (server streamTimeout) and navigations cancelling in-flight deferred
 					    data. Without it those rejections would take down the whole page. */}
 					<Await resolve={connections} errorElement={<DegradedNotice />}>
-						{(panel) => <Connections panel={panel} onOpenGraph={onOpenGraph} />}
+						{(panel) => <Connections panel={panel} />}
 					</Await>
 				</Suspense>
+			)}
+			{/* Media moments after the entity rows, before citations (panel-order
+			    amendment: "who teaches this verse" reads with the entities). */}
+			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
+				<div className="mt-5">
+					<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+						Unshaken · {mediaRefs.moments.length}
+					</h3>
+					<ul className="mt-1 list-none">
+						{mediaRefs.moments.map((m) => (
+							<li key={`${m.episodeId}-${m.t}`}>
+								<RefRow
+									to={`/media/${m.episodeId}?t=${Math.floor(m.t)}`}
+									ariaLabel={`Play ${m.episodeName} from ${fmtTimestamp(m.t)}`}
+								>
+									<span className="min-w-0 truncate font-reading text-sm text-ink">
+										{m.episodeName.replace(/^Come Follow Me - /, "")}
+									</span>
+									<span className="font-ui text-xs tabular-nums text-faint">{fmtTimestamp(m.t)}</span>
+								</RefRow>
+							</li>
+						))}
+					</ul>
+				</div>
 			)}
 			{isPending || crossRefs === null ? (
 				<CrossRefsSkeleton />
@@ -1321,13 +1519,7 @@ function CrossRefsSection({
 	);
 }
 
-function Connections({
-	panel,
-	onOpenGraph,
-}: {
-	panel: VersePanelData;
-	onOpenGraph: (entityId: string) => void;
-}) {
+function Connections({ panel }: { panel: VersePanelData }) {
 	if (panel.degraded) return <DegradedNotice />;
 	if (panel.principles.length === 0 && panel.people.length === 0) return null;
 
@@ -1338,8 +1530,8 @@ function Connections({
 			aria-live="polite"
 			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
 		>
-			<EntityChips title="Principles" accent="text-selbar" edge="border-l-selbar" chips={panel.principles} onSelect={onOpenGraph} />
-			<EntityChips title="People" accent="text-people" edge="border-l-people" chips={panel.people} onSelect={onOpenGraph} />
+			<EntityChips title="Principles" accent="text-selbar" chips={panel.principles} nodeType="principles" />
+			<EntityChips title="People" accent="text-people" chips={panel.people} nodeType="people" />
 		</div>
 	);
 }
@@ -1347,15 +1539,15 @@ function Connections({
 function EntityChips({
 	title,
 	accent,
-	edge,
 	chips,
-	onSelect,
+	nodeType,
 }: {
 	title: string;
 	accent: string;
-	edge: string;
 	chips: VerseEntityRef[];
-	onSelect: (entityId: string) => void;
+	/** Typed node-page slug (the type is the slug); rows navigate to the node
+	 * page — the graph is an opt-in view THERE, not the row's destination. */
+	nodeType: "principles" | "people";
 }) {
 	if (chips.length === 0) return null;
 	return (
@@ -1363,17 +1555,17 @@ function EntityChips({
 			<h3 className={`font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
 				{title} · {chips.length}
 			</h3>
-			<ul className="mt-2 flex flex-wrap gap-1.5">
+			<ul className="mt-1 flex flex-wrap gap-y-0.5">
 				{chips.map((c) => (
 					<li key={c.id}>
-						<button
-							type="button"
-							onClick={() => onSelect(c.id)}
-							title={`Open the local graph for ${c.name}`}
-							className={`rounded-md border border-rule2 border-l-[3px] ${edge} bg-surface px-2.5 py-1 font-ui text-xs font-semibold text-ink transition-colors duration-150 hover:bg-sel`}
+						<RefRow
+							to={`/${nodeType}/${encodeURIComponent(c.id)}`}
+							ariaLabel={`About ${c.name}`}
+							fit
+							arrow={false}
 						>
-							{c.name}
-						</button>
+							<span className="font-reading text-sm text-ink">{c.name}</span>
+						</RefRow>
 					</li>
 				))}
 			</ul>
