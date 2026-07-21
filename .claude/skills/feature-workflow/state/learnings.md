@@ -144,3 +144,22 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
   external. When re-verification is free, verify after every change.
 - **Coverage-first finders + adversarial verifiers**: 78 found, 9% killed.
   The layering works; don't ask finders to self-filter.
+
+## search-endpoint (2026-07-21)
+
+- **Persist per-agent artifacts incrementally.** A session kill destroyed a
+  completed 8-reviewer panel (614k tokens) because results lived only in the
+  workflow return value; one reviewer was salvaged from its subagent
+  transcript, seven re-ran. Reviewers should write their own files on
+  completion.
+- **`tsc -b` false-greens on stale incremental cache.** A suite agent
+  certified a typecheck that `--force` proved red. Verification contexts
+  must use `tsc -b --force`.
+- **File-exclusive parallel fix clusters need an integration stage.** Both
+  sides of a `number|null` contract change were individually correct and
+  jointly broken at the seam only a whole-graph typecheck could see.
+- **Panel dissent 0.19 on the code stage** — evidence-required tagging
+  (probe-or-file:line to refute) keeps specialists honest enough that most
+  findings survive. Keep the refutation burden on the tagger.
+- **Version-bump ops commits must update their test pins** (graph:v2 /
+  vconn:v3 shipped source-only; both pins were red on main for two weeks).

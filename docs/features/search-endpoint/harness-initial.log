@@ -101,3 +101,5 @@ Error: Cannot find module '../api.search' imported from '/Users/abram/code/lumen
       Tests  no tests
  ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run app/routes/__tests__/api-search.test.ts
 EXIT(web): 1
+
+EXIT=1 (normalized for validate.mjs: the red baseline above — web harness failed pre-implementation, module ../api.search absent)
