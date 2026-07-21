@@ -1,0 +1,27 @@
+{
+ "sync_run": "spine-2026-07-21T18-38-34-764Z",
+ "phase": "post",
+ "at": "2026-07-21T18:38:43.780Z",
+ "volumes": {
+  "pgp": {
+   "pgVerses": 635,
+   "graphVerses": 635,
+   "graphVersesSyncStamped": 635,
+   "containsRels": 635,
+   "pgNotInGraph": 0,
+   "graphNotInPg": 0,
+   "pgNotInGraphSample": [],
+   "graphNotInPgSample": []
+  },
+  "dc": {
+   "pgVerses": 3654,
+   "graphVerses": 3654,
+   "graphVersesSyncStamped": 3360,
+   "containsRels": 3654,
+   "pgNotInGraph": 0,
+   "graphNotInPg": 0,
+   "pgNotInGraphSample": [],
+   "graphNotInPgSample": []
+  }
+ }
+}

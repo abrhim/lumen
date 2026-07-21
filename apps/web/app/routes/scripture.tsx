@@ -371,7 +371,10 @@ async function loadGraph(
 ): Promise<GraphPanelData> {
 	const startedAt = Date.now();
 	const collKey = (collections ?? []).slice().sort().join(",");
-	const cacheKey = `graph:v1:${entityId}:${depth}:${collKey}`;
+	// v2: D&C+PGP spine sync landed 2026-07-21 (3,995 verses + edges) — version
+	// bump invalidates entries cached against the truncated graph (API-6:
+	// orphaned v1 entries self-evict via TTL, no purge step).
+	const cacheKey = `graph:v2:${entityId}:${depth}:${collKey}`;
 	try {
 		if (context.cache) {
 			try {
@@ -444,10 +447,12 @@ async function loadConnections(
 	const verseId = buildVerseId(bookId, chapter, verse);
 	try {
 		// v2: payload shape changed when cross-references moved to Postgres.
-		// Orphaned v1 entries self-evict via the TTL — no purge step (API-6).
+		// v3: D&C+PGP spine sync landed 2026-07-21 — entries cached against the
+		// truncated graph must not serve for 7 more days. Orphaned older
+		// entries self-evict via the TTL — no purge step (API-6).
 		const result = await cachedJson<VerseConnectionsResult>(
 			context.cache,
-			`vconn:v2:${verseId}`,
+			`vconn:v3:${verseId}`,
 			CONNECTIONS_TTL_SECONDS,
 			() => getVerseConnections(context.neo4j, verseId),
 		);
