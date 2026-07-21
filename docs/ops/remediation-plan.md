@@ -351,6 +351,46 @@ bennett entity, 1 of 1 `a-` prefix) · id↔name scan (311/5,904 first-token;
 30-row sample triaged, 4 unexplained pairs queued — see item 7) ·
 isolated-entity triage (legit, verse-citing descriptions).
 
+## Execution log (2026-07-21) — actuals
+
+- **Ratified**: D1–D4 as recommended (Abram, 2026-07-21). Two-checkpoint
+  delegation in force.
+- **Item 2 sweep**: LIVE (`npm run stress:sweep`). New probes proven against
+  prod; every pin below flipped exactly as designed.
+- **Item 7 rename**: APPLIED. Dry-run matched (1 entry, 0 edges, target
+  unoccupied) → COMMIT. `metadata.neo4j_id` back-pointer stamped. Pin moved
+  311→310, confirmed live. Escrow: data/escrow/entity-rename-*.json.
+- **Item 4 JST**: APPLIED. Exactly 427 stamped `beyond_canon_end` +
+  `anchor_verse_id`; all in-tx invariants zero-violation. I11 flipped to a
+  HARD PASS (unanchored=0, additions pinned 427). Escrow on disk.
+- **Item 1 graph sync**: APPLIED (sync_run spine-2026-07-21T18-38-34-764Z,
+  Abram's go). PGP canary 635 created, all acceptance green → auto-proceed →
+  D&C 3,360 created / 294 matched untouched / moses-ch-1 created once /
+  7,015 CONTAINS (canon-stamped, documented divergence from phase-b legacy).
+  All 17 acceptance checks pass; per-volume directional parity 0/0 both
+  ways; **two-hop dc-76-22: 0 → 120 paths** (the user-facing symptom).
+  Pre/post snapshots: docs/ops/spine-sync/. KV bumped graph:v2 / vconn:v3 —
+  **deploy rides the next release** (push currently blocked, see N1).
+  FINDING recorded against D3's expectation: the phase-b edge slice incident
+  to the missing verses was verifiably EMPTY (0 PG rows — the export mirrors
+  the truncated graph), so the sync is structure-only; semantic edges for
+  these verses await future enrichment (graph-membership).
+- **Item 3 dedupe**: APPLIED (Abram's go). Pre-flight anatomy confirmed on
+  population (1,578 × 2, all CROSS_REF, all ai+curated, no sources-key
+  poisoning) → 3,156 rows escrowed → 1,578 merged + 1,578 deleted →
+  `idx_edges_phaseb_unique` created in-tx; post-invariants: 0 dup groups,
+  index present, 1,578 survivors stamped, unshaken index untouched.
+  **OPEN**: the rolled-back live-tx writer pin awaits `data/neo4j-export/`
+  (absent on this machine); until then the index + the writer's fail-closed
+  startup assert are the enforcement, plus 41 unit tests on the merge path.
+- **N1 backup push**: BLOCKED — git/gh credentials lack the `workflow`
+  scope and unpushed commits touch .github/workflows/deploy.yml. Needs
+  `gh auth refresh -h github.com -s workflow`, then push both refs.
+- **Item 5 CROSS_REF read-path**: not yet built (app-layer, normal code
+  review track) — the only v2 execution item still unstarted.
+- **Closing full stress test (all phases)**: run 2026-07-21 post-writes —
+  results in stress-2026-07-18/results.json (phase-merged).
+
 ## Review log
 
 - 2026-07-19: two-agent adversarial review of v1 (fix-correctness +
