@@ -1,6 +1,7 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { getPublicCollectionIds } from "@lumen/scripture";
-import { ADMIN_COLLECTIONS, getEntitlements } from "./entitlements.server";
+import { ADMIN_COLLECTIONS } from "./entitlements-keys";
+import { getEntitlements } from "./entitlements.server";
 
 /**
  * Collection visibility (Phase B gate): a collection's surfaces are visible
