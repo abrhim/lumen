@@ -319,8 +319,45 @@
    "dim": "I12",
    "name": "drizzle_schema_drift",
    "status": "baseline-debt",
-   "note": "schema.ts stale vs prod (words.surface vs surface_form; verses chapter_id; 8/15 tables absent) — tracked as debt, checks driven from information_schema",
-   "words_live_cols": "id,verse_id,position,surface,normalized,char_start,char_end"
+   "tables_only_live": [
+    "app_users",
+    "books",
+    "chapters",
+    "migration_state",
+    "nodes",
+    "roles",
+    "strongs_lexicon",
+    "user_roles",
+    "volumes",
+    "word_tags"
+   ],
+   "tables_only_drizzle": [],
+   "column_mismatches": [
+    {
+     "table": "verses",
+     "only_live": [
+      "chapter_id"
+     ],
+     "only_drizzle": [
+      "book_id",
+      "chapter_number",
+      "volume_id"
+     ]
+    },
+    {
+     "table": "words",
+     "only_live": [
+      "char_end",
+      "char_start",
+      "surface"
+     ],
+     "only_drizzle": [
+      "created_at",
+      "surface_form"
+     ]
+    }
+   ],
+   "note": "known drift, tracked as debt — full schema.ts regen rides the next schema-touching feature (v2 item 6); harness checks stay driven from information_schema"
   },
   {
    "dim": "I1",
@@ -425,6 +462,43 @@
    "hits": 269
   },
   {
+   "dim": "I3",
+   "name": "phaseb_dedupe_enforced",
+   "status": "baseline-debt",
+   "dup_tuples": 1578,
+   "index_present": false,
+   "pinned_baseline": {
+    "dup_tuples": 1578,
+    "index_present": false
+   },
+   "note": "flips to pass when item 3 ships (merge → 0 dups + idx_edges_phaseb_unique created in the same tx); any other combination is drift"
+  },
+  {
+   "dim": "I15",
+   "name": "phaseb_id_name_first_token_inventory",
+   "status": "baseline-debt",
+   "scanned": 5904,
+   "first_token_missing": 311,
+   "pinned_baseline": 311,
+   "note": "untriaged INVENTORY value (drift detection), not verified-benign — item 7 executes the full 311-row triage and moves the pin to 310 with the bennett rename"
+  },
+  {
+   "dim": "I14",
+   "name": "self_loop_identity_pin",
+   "status": "baseline-debt",
+   "rows": [
+    {
+     "from_id": "dc",
+     "to_id": "dc",
+     "rel_type": "IN_VOLUME",
+     "collection_id": "phase-b",
+     "from_label": "LM_Book",
+     "to_label": "LM_Volume"
+    }
+   ],
+   "note": "D4: exactly the dc→dc IN_VOLUME phase-b row (shared-id flattening artifact; metadata labels disambiguate) is tolerated — anything else, including its disappearance, fails"
+  },
+  {
    "dim": "I9",
    "name": "neo4j_label_counts",
    "status": "fail",
@@ -482,6 +556,38 @@
    "name": "neo4j_known_missing_classes",
    "status": "baseline-debt",
    "note": "A2 extraction edges + art collection are documented KNOWN-MISSING from the graph (graph-membership feature)"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_per_volume_verse_parity",
+   "status": "fail",
+   "pg_not_in_graph_by_volume": {
+    "ot": 0,
+    "nt": 0,
+    "bom": 0,
+    "pgp": 635,
+    "dc": 3360
+   },
+   "graph_not_in_pg_by_volume": {
+    "ot": 0,
+    "nt": 0,
+    "bom": 0,
+    "pgp": 0,
+    "dc": 0
+   },
+   "pg_ids_unmatched_to_book": 0,
+   "graph_ids_unmatched_to_book": 0,
+   "pg_verses": 41995,
+   "graph_verses": 38000,
+   "note": "directional per-volume counts, NEVER netted — expected fail until item 1 (D&C 3,360 + PGP 635 re-sync) ships; flips to hard pass at parity"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_consumer_two_hop_dc_76_22",
+   "status": "baseline-debt",
+   "paths": 0,
+   "pinned_baseline": 0,
+   "note": "pre-sync pinned state: dc-76-22 absent → 0 two-hop paths. Synced comparator dc-4-2 measured 399 paths 2026-07-20."
   }
  ],
  "load": {
@@ -1087,6 +1193,6 @@
   ],
   "aborted": false
  },
- "startedAt": "2026-07-18T17:11:38.218Z",
- "finishedAt": "2026-07-18T17:16:37.041Z"
+ "startedAt": "2026-07-21T17:17:26.834Z",
+ "finishedAt": "2026-07-21T17:17:50.993Z"
 }

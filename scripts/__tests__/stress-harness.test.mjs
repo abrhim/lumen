@@ -10,6 +10,22 @@ import {
 	META_TABLES_SQL,
 	JST_DANGLING_SPLIT_SQL,
 	STRONGS_NO_PATTERN,
+	GRAPH_VERSE_PAGE,
+	graphVersePageCypher,
+	mapVerseIdsToVolumes,
+	diffIdSets,
+	TWO_HOP_DC_76_22_CYPHER,
+	PHASEB_DUP_PIN,
+	PHASEB_DUP_GROUPS_SQL,
+	PHASEB_INDEX_PRESENT_SQL,
+	classifyPhasebDedupe,
+	ID_NAME_MISMATCH_PIN,
+	ID_NAME_MISMATCH_SQL,
+	classifyIdNameInventory,
+	SELF_LOOP_ROWS_SQL,
+	classifySelfLoopRows,
+	drizzleTableMap,
+	diffSchema,
 } from '../stress-test-data.mjs';
 import { pct, classifyError, RUNGS, POOLER_SESSION_CAP } from '../stress-test-load.mjs';
 
@@ -109,6 +125,116 @@ test('pct: empty → null; single-sample; index selection', () => {
 	assert.equal(pct(s, 50), 51);
 	assert.equal(pct(s, 95), 96);
 	assert.equal(pct(s, 99), 100);
+});
+
+// ── remediation-v2 sweep pins (2026-07-21) — v2 items 2/N2 · 1 · 3 · 6 · 7 ·
+// D4. Behavior tests, not string pins (both reviewers flagged regex pins). ──
+
+test('graph verse paging: stable ORDER BY id, integer-guarded, read-only', () => {
+	const c = graphVersePageCypher(2 * GRAPH_VERSE_PAGE);
+	assert.match(c, /ORDER BY id SKIP 20000 LIMIT 10000/);
+	assert.equal(assertReadOnly(c), c);
+	for (const bad of [['20000'], [1.5], [-1], [0, 0], [0, '10']]) {
+		assert.throws(() => graphVersePageCypher(...bad), /invalid paging/, JSON.stringify(bad));
+	}
+});
+
+test('mapVerseIdsToVolumes: longest book prefix wins, volumes seeded, unknown collected', () => {
+	const books = [
+		{ id: 'moses', volume_id: 'pgp' },
+		{ id: 'moses-extra', volume_id: 'other' }, // prefix-nested sibling
+		{ id: 'dc', volume_id: 'dc' },
+		{ id: 'gen', volume_id: 'ot' },
+	];
+	const { byVolume, unknown } = mapVerseIdsToVolumes(
+		['moses-1-1', 'moses-extra-2-3', 'dc-76-22', 'dc-4-2', 'mystery-1-1', 'dc'],
+		books,
+	);
+	// 'moses-extra-2-3' must land on the LONGER prefix, not bleed into pgp
+	assert.deepEqual(byVolume, { pgp: 1, other: 1, dc: 2, ot: 0 }); // ot seeded at 0
+	assert.deepEqual(unknown, ['mystery-1-1', 'dc']); // bare book id is not a verse
+});
+
+test('verse parity is directional — equal-sized diffs never net to parity', () => {
+	const { pgOnly, graphOnly } = diffIdSets(
+		['gen-1-1', 'dc-4-2', 'dc-76-22'],
+		['gen-1-1', 'dc-4-2', 'ghost-1-1'],
+	);
+	assert.deepEqual(pgOnly, ['dc-76-22']); // PG-not-in-graph
+	assert.deepEqual(graphOnly, ['ghost-1-1']); // graph-not-in-PG
+	// identical sets are true parity
+	const clean = diffIdSets(['a-1-1'], ['a-1-1']);
+	assert.deepEqual(clean, { pgOnly: [], graphOnly: [] });
+});
+
+test('phaseb dedupe classifier: only the pinned debt state and the enforced state are non-fail', () => {
+	assert.equal(classifyPhasebDedupe(PHASEB_DUP_PIN, false), 'baseline-debt'); // today
+	assert.equal(classifyPhasebDedupe(0, true), 'pass'); // item 3 shipped
+	assert.equal(classifyPhasebDedupe(0, false), 'fail'); // dups gone, no index = half-applied
+	assert.equal(classifyPhasebDedupe(PHASEB_DUP_PIN, true), 'fail'); // index without merge
+	assert.equal(classifyPhasebDedupe(1577, false), 'fail'); // pin drift
+	assert.equal(classifyPhasebDedupe(3, true), 'fail'); // new dups past the index
+});
+
+test('id-name inventory pin: exactly 311 is debt, ANY other value fails', () => {
+	assert.equal(classifyIdNameInventory(ID_NAME_MISMATCH_PIN), 'baseline-debt');
+	assert.equal(ID_NAME_MISMATCH_PIN, 311);
+	for (const drift of [310, 312, 0]) assert.equal(classifyIdNameInventory(drift), 'fail', String(drift));
+});
+
+const D4_ROW = {
+	from_id: 'dc', to_id: 'dc', rel_type: 'IN_VOLUME', collection_id: 'phase-b',
+	metadata: { from_label: 'LM_Book', to_label: 'LM_Volume' },
+};
+
+test('self-loop identity pin: exactly the D4 row is debt; anything else fails', () => {
+	assert.equal(classifySelfLoopRows([D4_ROW]), 'baseline-debt');
+	// metadata arriving as a JSON string still classifies
+	assert.equal(classifySelfLoopRows([{ ...D4_ROW, metadata: JSON.stringify(D4_ROW.metadata) }]), 'baseline-debt');
+	assert.equal(classifySelfLoopRows([]), 'fail'); // disappearance is drift too
+	assert.equal(classifySelfLoopRows([D4_ROW, D4_ROW]), 'fail'); // a second loop
+	assert.equal(classifySelfLoopRows([{ ...D4_ROW, rel_type: 'CROSS_REF' }]), 'fail');
+	assert.equal(classifySelfLoopRows([{ ...D4_ROW, collection_id: 'unshaken' }]), 'fail');
+	assert.equal(classifySelfLoopRows([{ ...D4_ROW, metadata: { from_label: 'LM_Volume', to_label: 'LM_Book' } }]), 'fail');
+	assert.equal(classifySelfLoopRows([{ ...D4_ROW, metadata: null }]), 'fail');
+});
+
+test('diffSchema reports both table directions and column drift, quiet on identity', () => {
+	const live = { verses: ['id', 'text', 'chapter_id'], words: ['id', 'surface'], roles: ['slug'] };
+	const driz = { verses: ['id', 'text', 'chapter_number'], words: ['id', 'surface'], search_index: ['kind'] };
+	const d = diffSchema(live, driz);
+	assert.deepEqual(d.tables_only_live, ['roles']);
+	assert.deepEqual(d.tables_only_drizzle, ['search_index']);
+	assert.deepEqual(d.column_mismatches, [
+		{ table: 'verses', only_live: ['chapter_id'], only_drizzle: ['chapter_number'] },
+	]); // words identical → absent
+});
+
+test('drizzleTableMap extracts the REAL schema defs (live diff gets real input)', () => {
+	const map = drizzleTableMap();
+	for (const t of ['verses', 'words', 'collections', 'entities', 'edges', 'transcripts', 'search_index']) {
+		assert.ok(map[t]?.length, t);
+	}
+	assert.ok(!('lumen' in map), 'the pgSchema export is not a table');
+	assert.ok(map.words.includes('surface_form'), 'known drift marker (live column is surface)');
+	assert.ok(map.verses.includes('volume_id'));
+	for (const cols of Object.values(map)) assert.deepEqual(cols, [...cols].sort());
+});
+
+test('sweep pin SQL/Cypher stays read-only and matches the session probes', () => {
+	for (const text of [
+		PHASEB_DUP_GROUPS_SQL, PHASEB_INDEX_PRESENT_SQL, ID_NAME_MISMATCH_SQL,
+		SELF_LOOP_ROWS_SQL, TWO_HOP_DC_76_22_CYPHER,
+	]) {
+		assert.equal(assertReadOnly(text), text);
+	}
+	assert.match(ID_NAME_MISMATCH_SQL, /split_part\(slug, '-', 1\)/); // exact probe semantics
+	assert.match(ID_NAME_MISMATCH_SQL, /'phase-b'/);
+	assert.match(ID_NAME_MISMATCH_SQL, /'person','place'/);
+	assert.match(TWO_HOP_DC_76_22_CYPHER, /dc-76-22/);
+	assert.match(SELF_LOOP_ROWS_SQL, /from_id = to_id/);
+	assert.match(PHASEB_INDEX_PRESENT_SQL, /idx_edges_phaseb_unique/);
+	assert.match(PHASEB_DUP_GROUPS_SQL, /collection_id = 'phase-b'/);
 });
 
 // ── run-4 fix: phase-scoped rerun clobbered the other phase's results ───────

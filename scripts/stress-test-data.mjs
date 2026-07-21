@@ -13,10 +13,18 @@ import {
 	ENTITY_TYPES,
 	PG_REL_TYPES,
 } from '../packages/scripture/src/vocab.ts';
+import * as drizzleSchema from '../packages/scripture/src/schema.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'docs', 'ops', 'stress-2026-07-18');
 const KNOWN_SOURCES = ['unshaken-youtube', 'unshaken-extraction'];
+
+// drizzle-orm lives in packages/scripture's dependency tree (pnpm: not hoisted
+// to the root) — resolve the same copy schema.ts uses. Its table helpers are
+// Symbol.for-keyed, so the CJS build interoperates with tsx's ESM load.
+const scriptureRequire = createRequire(join(ROOT, 'packages/scripture/package.json'));
+const { getTableName, getTableColumns, is: isDrizzleTable, Table: DrizzleTable } =
+	scriptureRequire('drizzle-orm');
 
 // ── read-only discipline ────────────────────────────────────────────────────
 
@@ -82,6 +90,146 @@ FROM parsed p LEFT JOIN chapmax cm ON cm.chapter_id = p.chap`;
 // Run-3 fix: Strong's numbers legitimately carry disambiguation suffixes —
 // probed depth reaches F (H5526F), not just A/B (1,164 + 22 rows total).
 export const STRONGS_NO_PATTERN = '^[HG][0-9]+[A-F]?$';
+
+// ── scheduled-sweep probes (remediation v2 items 2/N2 · 1-pins · 3-pin · 6 ·
+// 7 · D4, 2026-07-21). All read-only; pins for not-yet-run fixes land as
+// baseline-debt and flip to hard passes as each fix ships. ──────────────────
+
+// v2 item 1 pin: per-volume DIRECTIONAL verse parity (today's I9 checks
+// global label totals only — post-sync those could flip green while
+// per-volume parity went unverified). Graph LM_Verse ids page via the stable
+// ORDER BY id SKIP/LIMIT pattern; volume attribution happens LOCALLY from PG
+// books (verse id prefix = book id — longest match wins, so
+// 'joseph-smith-history-…' can never land on a shorter sibling prefix).
+export const GRAPH_VERSE_PAGE = 10000;
+export function graphVersePageCypher(skip, limit = GRAPH_VERSE_PAGE) {
+	if (!Number.isInteger(skip) || skip < 0 || !Number.isInteger(limit) || limit <= 0) {
+		throw new Error(`invalid paging: skip=${skip} limit=${limit}`);
+	}
+	return `MATCH (v:LM_Verse) RETURN v.id AS id ORDER BY id SKIP ${skip} LIMIT ${limit}`;
+}
+
+/** Map verse ids to volumes via PG books ({id, volume_id}); every volume is
+ * seeded at 0 so per-volume detail always shows the full picture. Ids that
+ * match no `${book.id}-` prefix land in `unknown` (a bare book id is NOT a
+ * verse). Pure — pinned in the harness tests. */
+export function mapVerseIdsToVolumes(ids, books) {
+	const prefixes = books
+		.map((b) => ({ prefix: `${b.id}-`, volume: b.volume_id }))
+		.sort((a, b) => b.prefix.length - a.prefix.length);
+	const byVolume = {};
+	for (const b of books) byVolume[b.volume_id] ??= 0;
+	const unknown = [];
+	for (const id of ids) {
+		const hit = prefixes.find((p) => id.startsWith(p.prefix));
+		if (hit) byVolume[hit.volume] += 1;
+		else unknown.push(id);
+	}
+	return { byVolume, unknown };
+}
+
+/** Directional set difference — BOTH directions reported, never netted
+ * (equal counts of missing and extra must not read as parity). */
+export function diffIdSets(pgIds, graphIds) {
+	const pgSet = new Set(pgIds);
+	const graphSet = new Set(graphIds);
+	return {
+		pgOnly: [...pgSet].filter((id) => !graphSet.has(id)),
+		graphOnly: [...graphSet].filter((id) => !pgSet.has(id)),
+	};
+}
+
+// v2 item 1 pin: consumer two-hop path count from dc-76-22 (exact Cypher from
+// the 2026-07-20 probe round). Pre-sync pinned state: node absent, 0 paths.
+export const TWO_HOP_DC_76_22_CYPHER = `MATCH (v:LM_Verse {id: 'dc-76-22'})-[r1]-(x)-[r2]-(y)
+    RETURN count(*) AS paths`;
+
+// v2 item 3 pin: dedupe ENFORCEMENT = dups merged to 0 AND the partial unique
+// index present — item 3 lands both in ONE transaction, so any other
+// combination is drift and fails.
+export const PHASEB_DUP_PIN = 1578;
+export const PHASEB_DUP_GROUPS_SQL = `
+SELECT count(*)::int n FROM (
+  SELECT from_id, to_id, rel_type FROM lumen.edges
+  WHERE collection_id = 'phase-b'
+  GROUP BY 1,2,3 HAVING count(*) > 1) d`;
+export const PHASEB_INDEX_PRESENT_SQL = `
+SELECT count(*)::int n FROM pg_indexes
+WHERE schemaname = 'lumen' AND indexname = 'idx_edges_phaseb_unique'`;
+export function classifyPhasebDedupe(dupGroups, indexPresent) {
+	if (dupGroups === 0 && indexPresent) return 'pass';
+	if (dupGroups === PHASEB_DUP_PIN && !indexPresent) return 'baseline-debt';
+	return 'fail';
+}
+
+// v2 item 7 pin: id↔name first-token mismatch inventory over phase-b
+// person/place — the EXACT SQL from the 2026-07-20 probe round (311/5,904).
+// UNTRIAGED INVENTORY value (drift detection), not a verified-benign set.
+export const ID_NAME_MISMATCH_PIN = 311;
+export const ID_NAME_MISMATCH_SQL = `
+WITH p AS (
+  SELECT id, name, regexp_replace(regexp_replace(id, '^a-', ''), '-[0-9]+$', '') slug
+  FROM lumen.entities
+  WHERE collection_id = 'phase-b' AND entity_type IN ('person','place'))
+SELECT count(*)::int scanned,
+  count(*) FILTER (WHERE position(split_part(slug, '-', 1) IN lower(name)) = 0)::int first_token_missing
+FROM p`;
+export function classifyIdNameInventory(firstTokenMissing) {
+	return firstTokenMissing === ID_NAME_MISMATCH_PIN ? 'baseline-debt' : 'fail';
+}
+
+// D4: self-loop IDENTITY pin — tolerate EXACTLY the dc→dc IN_VOLUME phase-b
+// row (shared-id flattening artifact; metadata labels disambiguate). Anything
+// else — extra loops, a mutated row, or the row VANISHING — fails.
+export const SELF_LOOP_ROWS_SQL = `
+SELECT from_id, to_id, rel_type, collection_id, source, metadata
+FROM lumen.edges WHERE from_id = to_id`;
+/** jsonb may arrive as a parsed object or a JSON string depending on the
+ * driver path — normalize once, used by classifier AND detail mapping. */
+export function parseMeta(metadata) {
+	if (typeof metadata !== 'string') return metadata ?? null;
+	try { return JSON.parse(metadata); } catch { return null; }
+}
+export function classifySelfLoopRows(rows) {
+	if (rows.length !== 1) return 'fail';
+	const r = rows[0];
+	const meta = parseMeta(r.metadata);
+	const isPinnedRow =
+		r.from_id === 'dc' && r.to_id === 'dc' && r.rel_type === 'IN_VOLUME'
+		&& r.collection_id === 'phase-b'
+		&& meta?.from_label === 'LM_Book' && meta?.to_label === 'LM_Volume';
+	return isPinnedRow ? 'baseline-debt' : 'fail';
+}
+
+// v2 item 6: LIVE schema diff — the Drizzle defs vs information_schema,
+// computed fresh every sweep (a committed snapshot can't catch prod-vs-repo
+// drift from standalone migrations).
+export function drizzleTableMap(schemaModule = drizzleSchema) {
+	const map = {};
+	for (const v of Object.values(schemaModule)) {
+		if (isDrizzleTable(v, DrizzleTable)) {
+			map[getTableName(v)] = Object.values(getTableColumns(v)).map((c) => c.name).sort();
+		}
+	}
+	return map;
+}
+/** Diff {table: [colNames]} maps. Pure — pinned in the harness tests. */
+export function diffSchema(liveMap, drizzleMap) {
+	const tables_only_live = Object.keys(liveMap).filter((t) => !(t in drizzleMap)).sort();
+	const tables_only_drizzle = Object.keys(drizzleMap).filter((t) => !(t in liveMap)).sort();
+	const column_mismatches = [];
+	for (const t of Object.keys(drizzleMap).sort()) {
+		if (!(t in liveMap)) continue;
+		const live = new Set(liveMap[t]);
+		const driz = new Set(drizzleMap[t]);
+		const only_live = [...live].filter((c) => !driz.has(c)).sort();
+		const only_drizzle = [...driz].filter((c) => !live.has(c)).sort();
+		if (only_live.length || only_drizzle.length) {
+			column_mismatches.push({ table: t, only_live, only_drizzle });
+		}
+	}
+	return { tables_only_live, tables_only_drizzle, column_mismatches };
+}
 
 // ── result collection ───────────────────────────────────────────────────────
 
@@ -333,15 +481,17 @@ async function runIntegrityExtended(sql) {
 		note: 'naves topics carry no verse/edge linkage AT ALL — product gap, not corruption; surfaced for the roadmap',
 	});
 
-	// I12 drizzle-schema drift (coverage F2: schema.ts aims at ghosts)
+	// I12 drizzle-schema drift (coverage F2) — UPGRADED to a LIVE diff
+	// (remediation v2 item 6): drizzle defs vs information_schema every sweep.
 	const liveCols = await q(sql, `
 		SELECT table_name, string_agg(column_name, ',' ORDER BY ordinal_position) cols
 		FROM information_schema.columns WHERE table_schema = 'lumen'
 		GROUP BY table_name`);
-	const wordsCols = liveCols.find((r) => r.table_name === 'words')?.cols ?? '';
+	const liveMap = Object.fromEntries(liveCols.map((r) => [r.table_name, r.cols.split(',')]));
+	const drift = diffSchema(liveMap, drizzleTableMap());
 	record('I12', 'drizzle_schema_drift', 'baseline-debt', {
-		note: 'schema.ts stale vs prod (words.surface vs surface_form; verses chapter_id; 8/15 tables absent) — tracked as debt, checks driven from information_schema',
-		words_live_cols: wordsCols,
+		...drift,
+		note: 'known drift, tracked as debt — full schema.ts regen rides the next schema-touching feature (v2 item 6); harness checks stay driven from information_schema',
 	});
 
 	// I1 extension: words offsets + substring agreement (coverage F5)
@@ -449,6 +599,42 @@ async function runIntegrityExtended(sql) {
 	record('I10', 'verses_fts_canary', Number(vFts.n) > 100 ? 'pass' : 'fail', { hits: Number(vFts.n) });
 	const [eFts] = await q(sql, `SELECT count(*)::int n FROM lumen.entities WHERE search_vector @@ websearch_to_tsquery('english', 'Hezekiah')`);
 	record('I10', 'entities_fts_canary', Number(eFts.n) > 0 ? 'pass' : 'fail', { hits: Number(eFts.n) });
+
+	// ── remediation-v2 sweep pins (2026-07-21) ──────────────────────────────
+	// I3 extension (v2 item 3): dedupe ENFORCEMENT — dup groups AND the
+	// partial unique index, classified together (they land in one tx).
+	const [dupGroups] = await q(sql, PHASEB_DUP_GROUPS_SQL);
+	const [idx] = await q(sql, PHASEB_INDEX_PRESENT_SQL);
+	const indexPresent = Number(idx.n) > 0;
+	record('I3', 'phaseb_dedupe_enforced', classifyPhasebDedupe(Number(dupGroups.n), indexPresent), {
+		dup_tuples: Number(dupGroups.n),
+		index_present: indexPresent,
+		pinned_baseline: { dup_tuples: PHASEB_DUP_PIN, index_present: false },
+		note: 'flips to pass when item 3 ships (merge → 0 dups + idx_edges_phaseb_unique created in the same tx); any other combination is drift',
+	});
+
+	// I15 (v2 item 7): id↔name first-token UNTRIAGED inventory pin.
+	const [idName] = await q(sql, ID_NAME_MISMATCH_SQL);
+	record('I15', 'phaseb_id_name_first_token_inventory', classifyIdNameInventory(Number(idName.first_token_missing)), {
+		scanned: Number(idName.scanned),
+		first_token_missing: Number(idName.first_token_missing),
+		pinned_baseline: ID_NAME_MISMATCH_PIN,
+		note: 'untriaged INVENTORY value (drift detection), not verified-benign — item 7 executes the full 311-row triage and moves the pin to 310 with the bennett rename',
+	});
+
+	// I14 extension (D4): self-loop IDENTITY pin — the count check above
+	// stays; this pins WHICH row the one tolerated loop is.
+	const selfLoopRows = await q(sql, SELF_LOOP_ROWS_SQL);
+	record('I14', 'self_loop_identity_pin', classifySelfLoopRows(selfLoopRows), {
+		rows: selfLoopRows.map((r) => {
+			const m = parseMeta(r.metadata);
+			return {
+				from_id: r.from_id, to_id: r.to_id, rel_type: r.rel_type, collection_id: r.collection_id,
+				from_label: m?.from_label, to_label: m?.to_label,
+			};
+		}),
+		note: 'D4: exactly the dc→dc IN_VOLUME phase-b row (shared-id flattening artifact; metadata labels disambiguate) is tolerated — anything else, including its disappearance, fails',
+	});
 }
 
 // I9 Neo4j parity — the house pattern (backfill-neo4j-collections.mjs):
@@ -472,7 +658,8 @@ async function runNeo4jParity(sql) {
 		const res = await fetch(endpoint, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', Authorization: auth },
-			body: JSON.stringify({ statement, parameters: {} }),
+			// the PG write-verb rail covers Cypher's too (MERGE/CREATE/DELETE)
+			body: JSON.stringify({ statement: assertReadOnly(statement), parameters: {} }),
 		});
 		const body = await res.json();
 		if (!res.ok || body.errors?.length) {
@@ -515,6 +702,49 @@ async function runNeo4jParity(sql) {
 		record('I9', 'neo4j_no_orphan_lm_relationships', Number(orphan.n) === 0 ? 'pass' : 'fail', { orphan_rels: Number(orphan.n) });
 		record('I9', 'neo4j_known_missing_classes', 'baseline-debt', {
 			note: 'A2 extraction edges + art collection are documented KNOWN-MISSING from the graph (graph-membership feature)',
+		});
+
+		// ── remediation-v2 item 1 pins (2026-07-21) ─────────────────────────
+		// Per-volume DIRECTIONAL verse parity — graph ids paged stably, volume
+		// attribution local from PG books, both directions reported raw.
+		const graphIds = [];
+		for (let skip = 0; ; skip += GRAPH_VERSE_PAGE) {
+			if (skip > 1_000_000) {
+				// a graph exploding past 1M verse ids is a DETECTED ANOMALY, not a
+				// transient — record a hard fail (exit-code-visible) before bailing;
+				// real fetch errors still fall through to the section's skipped path
+				record('I9', 'neo4j_per_volume_verse_parity', 'fail', {
+					note: 'paging runaway: >1M LM_Verse ids — graph anomaly, parity not computable',
+				});
+				throw new Error('LM_Verse paging runaway (>1M ids)');
+			}
+			const page = await cypher(graphVersePageCypher(skip));
+			for (const r of page) graphIds.push(r.id);
+			if (page.length < GRAPH_VERSE_PAGE) break;
+		}
+		const pgVerseRows = await q(sql, `SELECT id FROM lumen.verses ORDER BY id`);
+		const books = await q(sql, `SELECT id, volume_id FROM lumen.books ORDER BY id`);
+		const { pgOnly, graphOnly } = diffIdSets(pgVerseRows.map((r) => r.id), graphIds);
+		const pgNotInGraph = mapVerseIdsToVolumes(pgOnly, books);
+		const graphNotInPg = mapVerseIdsToVolumes(graphOnly, books);
+		record('I9', 'neo4j_per_volume_verse_parity', pgOnly.length === 0 && graphOnly.length === 0 ? 'pass' : 'fail', {
+			pg_not_in_graph_by_volume: pgNotInGraph.byVolume,
+			graph_not_in_pg_by_volume: graphNotInPg.byVolume,
+			pg_ids_unmatched_to_book: pgNotInGraph.unknown.length,
+			graph_ids_unmatched_to_book: graphNotInPg.unknown.length,
+			...(graphNotInPg.unknown.length ? { graph_unmatched_sample: graphNotInPg.unknown.slice(0, 5) } : {}),
+			pg_verses: pgVerseRows.length,
+			graph_verses: graphIds.length,
+			note: 'directional per-volume counts, NEVER netted — expected fail until item 1 (D&C 3,360 + PGP 635 re-sync) ships; flips to hard pass at parity',
+		});
+
+		// Consumer two-hop pin — flips baseline-debt → pass when item 1 ships.
+		const [twoHop] = await cypher(TWO_HOP_DC_76_22_CYPHER);
+		const paths = Number(twoHop?.paths ?? 0);
+		record('I9', 'neo4j_consumer_two_hop_dc_76_22', paths > 0 ? 'pass' : 'baseline-debt', {
+			paths,
+			pinned_baseline: 0,
+			note: 'pre-sync pinned state: dc-76-22 absent → 0 two-hop paths. Synced comparator dc-4-2 measured 399 paths 2026-07-20.',
 		});
 	} catch (err) {
 		record('I9', 'neo4j_parity', 'skipped', { reason: scrubSecrets(err.message).slice(0, 120) });

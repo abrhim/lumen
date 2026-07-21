@@ -10,7 +10,8 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "stress:sweep": "node --import tsx scripts/stress-test-data.mjs --phase=integrity"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
