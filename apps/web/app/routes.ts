@@ -10,4 +10,5 @@ export default [
 	route("auth/confirm", "routes/auth.confirm.tsx"),
 	route("logout", "routes/logout.tsx"),
 	route("admin/users", "routes/admin.users.tsx"),
+	route("api/search", "routes/api.search.tsx"),
 ] satisfies RouteConfig;

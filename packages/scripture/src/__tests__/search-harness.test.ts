@@ -112,16 +112,16 @@ describe('M2 — KJV delta-index (verses + entities)', () => {
 });
 
 describe('M1 — trgm fuzzy tier (production predicate form, PER-1/PER-8)', () => {
-	it('H5: typo melchisedek finds Melchizedek via the <% operator at threshold 0.45', async () => {
-		// Production form: SET LOCAL threshold + index-servable operator, schema-qualified
-		// (lumen_read search_path lacks the extensions schema).
-		const r = await client.begin(async (tx) => {
-			await tx`SELECT set_config('pg_trgm.word_similarity_threshold', '0.45', true)`;
-			return tx`
-				SELECT id FROM lumen.entities
-				WHERE entity_type = 'person' AND 'melchisedek' OPERATOR(extensions.<%) name
-				ORDER BY extensions.word_similarity('melchisedek', name) DESC, id LIMIT 3`;
-		});
+	it('H5: typo melchisedek finds Melchizedek via the production % + word_similarity predicate', async () => {
+		// Production form (plan amendment 1): the % operator is index-served at
+		// its default threshold; extensions.word_similarity >= 0.45 refines.
+		// (SET LOCAL is unusable through Db.execute — single-statement autocommit.)
+		const r = await rows(sql`
+			SELECT id FROM lumen.entities
+			WHERE entity_type = 'person'
+			  AND 'melchisedek' OPERATOR(extensions.%) name
+			  AND extensions.word_similarity('melchisedek', name) >= 0.45
+			ORDER BY extensions.word_similarity('melchisedek', name) DESC, id LIMIT 3`);
 		expect(r.map((x: any) => x.id)).toContain('melchizedek-1');
 	});
 });
@@ -246,11 +246,12 @@ describe('M5 — searchAll contract', () => {
 			expect(res, `q=${q.slice(0, 20)}`).toHaveProperty('groups');
 			expect(Array.isArray(res.groups)).toBe(true);
 		}
-		// Value pin: '%'/'_' must be literal — 'mel%' has no exact/prefix hit
-		// (tier 1–2); only fuzzy tiers may return anything.
-		const esc = await searchAll(db, { q: 'mel%', visibleCollections: ALL_PUBLIC });
+		// Value pin (amended): 'z%' isolates ILIKE-injection — trgm similarity
+		// can't reach any name from 'z', FTS has no 'z' lexeme, so ONLY an
+		// unescaped ILIKE 'z%' prefix could return the many Z-names.
+		const esc = await searchAll(db, { q: 'z%', visibleCollections: ALL_PUBLIC });
 		const people = esc.groups.find((g: any) => g.key === 'people');
-		expect((people?.results ?? []).every((r: any) => r.tier > 2)).toBe(true);
+		expect(people?.results ?? []).toHaveLength(0);
 	});
 
 	it('H10: exact name outranks mentions; duplicate-name pages are deterministic (COR-4)', async () => {
@@ -271,7 +272,7 @@ describe('M5 — searchAll contract', () => {
 		const { searchAll } = await loadSearch();
 		const verse = await searchAll(db, { q: 'alma 32:21', visibleCollections: ALL_PUBLIC });
 		expect(verse.reference).not.toBeNull();
-		expect(verse.reference.found).toBe(true);
+		expect(verse.reference?.found).toBe(true);
 		expect(verse.groups.every((g: any) => g.results.length === 0)).toBe(true);
 
 		const bogus = await searchAll(db, { q: 'john 99', visibleCollections: ALL_PUBLIC });

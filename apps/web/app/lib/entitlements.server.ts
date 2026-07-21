@@ -12,7 +12,7 @@ import { type Entitlement, isKnownEntitlement } from "./entitlements-keys";
  * validate grants against the same list.
  */
 
-export { ENTITLEMENTS, ADMIN_USERS, isKnownEntitlement } from "./entitlements-keys";
+export { ENTITLEMENTS, ADMIN_USERS, ADMIN_COLLECTIONS, isKnownEntitlement } from "./entitlements-keys";
 export type { Entitlement } from "./entitlements-keys";
 
 /**

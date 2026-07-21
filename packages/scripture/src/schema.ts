@@ -171,3 +171,19 @@ export const searchIndex = lumen.table(
 		index("idx_search_coll").on(t.collectionId),
 	],
 );
+
+// ─── Search support tables (search-endpoint M2/M4) ──
+// DDL applied by scripts/migrate-search-kjv.mjs / migrate-search-projections.mjs.
+// kjv_variants backs lumen.kjv_delta(text) (delta-index: vectors index original
+// text PLUS modern forms of matched archaic words — match-set superset, no TF
+// doubling). entity_degree is the script-refreshed boost table (1 + ln(1+degree)).
+
+export const kjvVariants = lumen.table("kjv_variants", {
+	variant: text("variant").primaryKey(),
+	modern: text("modern").notNull(),
+});
+
+export const entityDegree = lumen.table("entity_degree", {
+	entityId: text("entity_id").primaryKey(),
+	degree: integer("degree").notNull(),
+});

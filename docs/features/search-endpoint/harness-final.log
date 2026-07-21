@@ -1,0 +1,21 @@
+=== search-endpoint harness FINAL run (green) — 2026-07-21 15:25 ===
+--- packages/scripture: search-harness.test.ts ---
+H12 latency: 260ms
+ ✓ src/__tests__/search-harness.test.ts (18 tests) 11637ms
+   ✓ M2 — KJV delta-index (verses + entities) > H16: kjv_delta is empty on modern text; pinned pairs map to intended lexemes  1139ms
+   ✓ M3 — transcript moments in search_index > H15: windows form an exact chain over each episode caption sequence (COR-7)  1586ms
+   ✓ M5 — searchAll contract > H8: visibility is a hard filter, fails closed, and gates the JST leg (SEC-3)  1107ms
+   ✓ M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)  2717ms
+   ✓ M5 — searchAll contract > H10: exact name outranks mentions; duplicate-name pages are deterministic (COR-4)  740ms
+   ✓ M5 — searchAll contract > H11: short-circuit only on RESOLVABLE refs; unresolvable falls through (COR-6)  797ms
+   ✓ M5 — searchAll contract > H12: federated search latency smoke (laptop→pooler < 1500ms; prod p95 is log-measured)  483ms
+   ✓ M5 — searchAll contract > H17: a failing group degrades to empty results + meta.error — never a throw (COR-1)  691ms
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+EXIT(package): 0
+--- apps/web: api-search.test.ts ---
+ Test Files  1 passed (1)
+      Tests  22 passed (22)
+EXIT(web): 0
+--- full suites ---
+scripture: 105 passed, web: all passed, typecheck both: clean (see step-8 log)

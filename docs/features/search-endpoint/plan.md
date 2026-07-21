@@ -85,5 +85,13 @@ Panel-2 dissent rate: 0.27 (54 material / 16 noise / 3 risky / 1 out-of-scope of
 Q1 groups/taxonomy → amended default (summaries in topics) · Q2 windowing params → default · Q3 degree boost → `1+ln(1+degree)` table · Q4 KJV mapping → fail-safe curation + strengthened gate · Q5 short-circuit → resolvable-only · Q6 strongs group → yes · Q7 caching → none; prod p95 via logs · Q8 JST → in scripture, sort-key demotion. Unshaken visibility → public, deliberate.
 
 ## Drift baseline (step 6)
-- plan-hash: 989303de4d634e60 (sha256/16, plan.md at commit of this baseline)
-- harness-hash: 086bec1061e9c6d5 (sha256/16 over search-harness.test.ts + api-search.test.ts)
+- plan-hash: 5046e22719f311cd (sha256/16; restamped after step-8 amendments A1–A5)
+- harness-hash: 6299d4272e86860d (sha256/16; restamped after amendments — both suites green)
+
+## Plan amendments (step 8, implementation-verified — restamped below)
+
+- **A1 (decision 2): trgm predicate is `%` + `word_similarity ≥ 0.45`, not `<%` + SET LOCAL.** `SET LOCAL` is unusable through the `Db.execute` contract (single-statement autocommit; a session GUC through Hyperdrive pooling is also unsafe). The `%` operator is GIN-served at its own default threshold (0.3) as the index prefilter; `extensions.word_similarity(q, name) >= 0.45` refines. The separate tier-4 fallback is subsumed by this predicate. H5 exercises the production form (PER-8).
+- **A2 (decision 3): fuzzy-tier scoring uses `GREATEST(ts_rank, word_similarity)`.** ts_rank is 0 for misspelled queries, which tied all tier-2 hits at zero and broke to id order (live-caught: `melchi-1` outranked closer names for q=melchisedek). Similarity now ranks fuzzy hits; exact/FTS hits still rank by weighted ts_rank × boost.
+- **A3 (H9 value pin corrected): wildcard-injection pin moved from `mel%`/tier>2 to `z%`→empty.** The original pin encoded a wrong expectation — trgm ignoring `%` as trigram noise IS literal semantics, not injection. `z%` isolates the injection channel: only an unescaped ILIKE could return Z-names.
+- **A4 (mechanism): drizzle expands JS array params into tuples — all set-membership predicates use `= ANY(string_to_array(NULLIF($1,''), ','))` (ids are comma-free; empty set → NULL → fail-closed, which H8's closed-visibility leg pins).
+- **A5 (typo-adjacent finding, no code change): q=melchisedek now tops `melchisedec-1` — the KJV NT spelling exists as its own phase-b entity alongside `melchizedek-1`. Correct search behavior; the entity-level duplicate is phase-b data debt, recorded for the retro.

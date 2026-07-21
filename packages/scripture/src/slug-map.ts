@@ -144,11 +144,16 @@ export function parseReference(input: string): ParsedReference {
     const chapter = parseInt(humanMatch[2], 10);
     const verse = humanMatch[3] ? parseInt(humanMatch[3], 10) : undefined;
     const bookId = BOOK_SLUGS[bookName];
-    if (bookId) {
+    // COR-6 (search-endpoint): mirror the slug path's > 0 guards — "john 0"
+    // must not parse as a chapter/verse reference.
+    if (bookId && chapter > 0) {
       if (verse !== undefined) {
-        return { level: 'verse', bookId, chapter, verse, raw };
+        if (verse > 0) {
+          return { level: 'verse', bookId, chapter, verse, raw };
+        }
+      } else {
+        return { level: 'chapter', bookId, chapter, raw };
       }
-      return { level: 'chapter', bookId, chapter, raw };
     }
   }
 
