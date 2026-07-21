@@ -280,10 +280,12 @@ front of it.
   "The City"), but **four pairs are unexplained** — abdon-1→"Hanoch",
   enoch-2→"Enosh" (provably distinct Gen 5 patriarchs), aha-1→"Agee",
   ephron-1→"Ephrath" — the same id/name-conflict class as gilbert/bennett.
-  The sweep pins 310 as an UNTRIAGED INVENTORY value (drift detection),
-  not a verified-benign set; item 7's execution includes the full 311-row
-  triage, with the four named pairs first in the queue; any real strays
-  found become follow-up renames under this item's protocol.
+  The sweep pins **311 now — moving to 310 when this item's rename lands**
+  (the pin moves with the fix, same protocol as every flip) — as an
+  UNTRIAGED INVENTORY value (drift detection), not a verified-benign set;
+  item 7's execution includes the full 311-row triage, with the four named
+  pairs first in the queue; any real strays found become follow-up renames
+  under this item's protocol.
 
 ### 8. Edge-isolated relational entities (141 persons / 91 places / 165 eras)
 - **Triage verdict (2026-07-20 sample)**: legit under-enriched content, not
@@ -312,10 +314,13 @@ COMMIT → pins re-run.
 
 1. **N1 backup push** (Abram's go) → 2. **Item 2 sweep + new probes**
 (enforcement live first) → 3. **Item 1 graph re-sync** (PGP canary →
-auto-proceed to D&C only on full canary acceptance) → 4. **Item 3 dedupe
-merge + index + writer** → 5. **Item 4 JST stamping** → 6. **Item 7 entity
-rename + 311 triage** → 7. **Item 5 CROSS_REF read-path** (normal code
-review) → 8. Items 8–13 as recorded.
+auto-proceed to D&C only on full canary acceptance) → 4. **Item 7 entity
+rename + 311 triage** (moved ahead of item 3: the rewritten writer's
+renames ledger converges old ids, so item 3's rolled-back live-tx pin
+requires the rename to be applied first — reviewer-flagged sequencing
+dependency) → 5. **Item 3 dedupe merge + index + writer** → 6. **Item 4
+JST stamping** → 7. **Item 5 CROSS_REF read-path** (normal code review) →
+8. Items 8–13 as recorded.
 
 Under two-checkpoint delegation (Abram 2026-07-20): **zero-blast-radius
 escrowed commits** (item 4: jsonb metadata stamps on 427 verses; item 7:
