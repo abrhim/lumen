@@ -73,17 +73,21 @@ WHERE table_schema = 'lumen' AND column_name = 'metadata'`;
 // real corruption and fails.
 export const JST_DANGLING_SPLIT_SQL = `
 WITH dangling AS (
-  SELECT e.metadata->>'verse_id' vid FROM lumen.entities e
+  SELECT e.metadata->>'verse_id' vid,
+         (e.metadata ? 'anchor_verse_id'
+          AND e.metadata->>'placement' = 'beyond_canon_end') AS anchored
+  FROM lumen.entities e
   LEFT JOIN lumen.verses v ON v.id = e.metadata->>'verse_id'
   WHERE e.collection_id = 'jst' AND v.id IS NULL),
 parsed AS (
-  SELECT vid, regexp_replace(vid, '-[0-9]+$', '') chap,
+  SELECT vid, anchored, regexp_replace(vid, '-[0-9]+$', '') chap,
          (regexp_match(vid, '-([0-9]+)$'))[1]::int vnum FROM dangling),
 chapmax AS (
   SELECT chapter_id, max((regexp_match(id, '-([0-9]+)$'))[1]::int) mx
   FROM lumen.verses GROUP BY 1)
 SELECT count(*)::int total,
        count(*) FILTER (WHERE cm.mx IS NOT NULL AND p.vnum > cm.mx)::int additions,
+       count(*) FILTER (WHERE cm.mx IS NOT NULL AND p.vnum > cm.mx AND NOT p.anchored)::int unanchored,
        count(*) FILTER (WHERE cm.mx IS NULL OR p.vnum <= cm.mx)::int corrupt
 FROM parsed p LEFT JOIN chapmax cm ON cm.chapter_id = p.chap`;
 
@@ -163,9 +167,10 @@ export function classifyPhasebDedupe(dupGroups, indexPresent) {
 }
 
 // v2 item 7 pin: id↔name first-token mismatch inventory over phase-b
-// person/place — the EXACT SQL from the 2026-07-20 probe round (311/5,904).
+// person/place — the EXACT SQL from the 2026-07-20 probe round (was 311/5,904;
+// 310 since the 2026-07-21 bennett rename landed — pin moves with the fix).
 // UNTRIAGED INVENTORY value (drift detection), not a verified-benign set.
-export const ID_NAME_MISMATCH_PIN = 311;
+export const ID_NAME_MISMATCH_PIN = 310;
 export const ID_NAME_MISMATCH_SQL = `
 WITH p AS (
   SELECT id, name, regexp_replace(regexp_replace(id, '^a-', ''), '-[0-9]+$', '') slug
@@ -457,9 +462,11 @@ async function runIntegrityExtended(sql) {
 	record('I11', 'jst_verse_id_links_resolve', Number(jst.corrupt) === 0 ? 'pass' : 'fail', {
 		corrupt_dangling: Number(jst.corrupt),
 	});
-	record('I11', 'jst_addition_verses_unanchored', Number(jst.additions) === 427 ? 'baseline-debt' : 'fail', {
-		additions: Number(jst.additions), pinned_baseline: 427,
-		note: 'JST-added verses (beyond canonical chapter end) have no anchoring convention — roadmap: anchor to preceding canonical verse or flag as addition',
+	// v2 item 4 shipped 2026-07-21: the 427 beyond-canon-end readings carry
+	// placement+anchor stamps — the pin is a HARD ZERO on unanchored now
+	record('I11', 'jst_addition_verses_unanchored', Number(jst.unanchored) === 0 && Number(jst.additions) === 427 ? 'pass' : 'fail', {
+		additions: Number(jst.additions), unanchored: Number(jst.unanchored), pinned_additions: 427,
+		note: 'beyond-canon-end readings stamped placement=beyond_canon_end + anchor_verse_id (v2 item 4, 2026-07-21) — unanchored must stay 0, additions pinned at 427',
 	});
 	const [strongsLink] = await q(sql, `
 		SELECT count(*) FILTER (WHERE sl.strongs_no IS NULL)::int dangling,

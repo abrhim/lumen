@@ -289,10 +289,11 @@
   {
    "dim": "I11",
    "name": "jst_addition_verses_unanchored",
-   "status": "baseline-debt",
+   "status": "pass",
    "additions": 427,
-   "pinned_baseline": 427,
-   "note": "JST-added verses (beyond canonical chapter end) have no anchoring convention — roadmap: anchor to preceding canonical verse or flag as addition"
+   "unanchored": 0,
+   "pinned_additions": 427,
+   "note": "beyond-canon-end readings stamped placement=beyond_canon_end + anchor_verse_id (v2 item 4, 2026-07-21) — unanchored must stay 0, additions pinned at 427"
   },
   {
    "dim": "I11",
@@ -478,8 +479,8 @@
    "name": "phaseb_id_name_first_token_inventory",
    "status": "baseline-debt",
    "scanned": 5904,
-   "first_token_missing": 311,
-   "pinned_baseline": 311,
+   "first_token_missing": 310,
+   "pinned_baseline": 310,
    "note": "untriaged INVENTORY value (drift detection), not verified-benign — item 7 executes the full 311-row triage and moves the pin to 310 with the bennett rename"
   },
   {
@@ -1193,6 +1194,6 @@
   ],
   "aborted": false
  },
- "startedAt": "2026-07-21T17:17:26.834Z",
- "finishedAt": "2026-07-21T17:17:50.993Z"
+ "startedAt": "2026-07-21T18:34:24.264Z",
+ "finishedAt": "2026-07-21T18:34:55.316Z"
 }

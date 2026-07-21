@@ -176,10 +176,10 @@ test('phaseb dedupe classifier: only the pinned debt state and the enforced stat
 	assert.equal(classifyPhasebDedupe(3, true), 'fail'); // new dups past the index
 });
 
-test('id-name inventory pin: exactly 311 is debt, ANY other value fails', () => {
+test('id-name inventory pin: exactly 310 is debt, ANY other value fails', () => {
 	assert.equal(classifyIdNameInventory(ID_NAME_MISMATCH_PIN), 'baseline-debt');
-	assert.equal(ID_NAME_MISMATCH_PIN, 311);
-	for (const drift of [310, 312, 0]) assert.equal(classifyIdNameInventory(drift), 'fail', String(drift));
+	assert.equal(ID_NAME_MISMATCH_PIN, 310); // 311 − the 2026-07-21 bennett rename
+	for (const drift of [311, 309, 0]) assert.equal(classifyIdNameInventory(drift), 'fail', String(drift));
 });
 
 const D4_ROW = {
