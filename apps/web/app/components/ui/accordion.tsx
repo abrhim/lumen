@@ -61,7 +61,10 @@ function AccordionContent({
   return (
     <AccordionPrimitive.Content
       data-slot="accordion-content"
-      className="overflow-hidden text-sm data-open:animate-accordion-down data-closed:animate-accordion-up"
+      // -mx-2 px-2: overflow clips at the PADDING edge, so this gives rows
+      // that overhang the text column (RefRow's -mx-2 hover box) 8px of
+      // visible room without shifting content — layout is pixel-identical.
+      className="-mx-2 overflow-hidden px-2 text-sm data-open:animate-accordion-down data-closed:animate-accordion-up"
       {...props}
     >
       <div

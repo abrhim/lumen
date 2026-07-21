@@ -1,0 +1,49 @@
+{
+ "sync_run": "spine-2026-07-21T18-38-34-764Z",
+ "phase": "pre",
+ "at": "2026-07-21T18:38:38.421Z",
+ "volumes": {
+  "pgp": {
+   "pgVerses": 635,
+   "graphVerses": 0,
+   "graphVersesSyncStamped": 0,
+   "containsRels": 0,
+   "pgNotInGraph": 635,
+   "graphNotInPg": 0,
+   "pgNotInGraphSample": [
+    "a-of-f-1-1",
+    "a-of-f-1-2",
+    "a-of-f-1-3",
+    "a-of-f-1-4",
+    "a-of-f-1-5",
+    "a-of-f-1-6",
+    "a-of-f-1-7",
+    "a-of-f-1-8",
+    "a-of-f-1-9",
+    "a-of-f-1-10"
+   ],
+   "graphNotInPgSample": []
+  },
+  "dc": {
+   "pgVerses": 3654,
+   "graphVerses": 294,
+   "graphVersesSyncStamped": 0,
+   "containsRels": 294,
+   "pgNotInGraph": 3360,
+   "graphNotInPg": 0,
+   "pgNotInGraphSample": [
+    "dc-14-10",
+    "dc-14-11",
+    "dc-15-1",
+    "dc-15-2",
+    "dc-15-3",
+    "dc-15-4",
+    "dc-15-5",
+    "dc-15-6",
+    "dc-16-1",
+    "dc-16-2"
+   ],
+   "graphNotInPgSample": []
+  }
+ }
+}

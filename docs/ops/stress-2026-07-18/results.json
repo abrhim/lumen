@@ -1,0 +1,1199 @@
+{
+ "integrity": [
+  {
+   "dim": "I1",
+   "name": "books_have_volumes",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "chapters_have_books",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "verses_have_chapters",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "verse_id_shape_matches_chapter",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "words_have_verses",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "word_tags_have_words",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "word_tags_have_lexicon",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "words_position_contiguous",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "verse_numbering_contiguous_unique",
+   "status": "pass",
+   "chapters_with_gaps": 0
+  },
+  {
+   "dim": "I2",
+   "name": "transcripts_episode_resolves",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I2",
+   "name": "entities_collection_resolves",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I2",
+   "name": "edges_collection_resolves",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I2",
+   "name": "user_roles_resolve",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I2",
+   "name": "search_index_collection_resolves",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I2",
+   "name": "edge_from_resolves_somewhere",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I2",
+   "name": "edge_to_resolves_somewhere",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I3",
+   "name": "tables_have_primary_keys",
+   "status": "pass",
+   "no_pk": [
+    "edges"
+   ],
+   "note": "edges + migration_state known PK-less (baseline)"
+  },
+  {
+   "dim": "I3",
+   "name": "dup_edge_tuples",
+   "status": "pass"
+  },
+  {
+   "dim": "I4",
+   "name": "entity_types_in_vocab",
+   "status": "pass",
+   "violations": 0,
+   "bad": null
+  },
+  {
+   "dim": "I4",
+   "name": "rel_types_in_vocab",
+   "status": "pass",
+   "violations": 0,
+   "bad": null
+  },
+  {
+   "dim": "I4",
+   "name": "entities_metadata_object_typed",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I4",
+   "name": "edges_metadata_object_typed",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I4",
+   "name": "unshaken_edge_sources_known",
+   "status": "pass",
+   "violations": 0,
+   "other": null
+  },
+  {
+   "dim": "I5",
+   "name": "mention_schema_and_bounds",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I5",
+   "name": "mention_seqs_exist_in_transcripts",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I5",
+   "name": "mention_t_within_duration",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I5",
+   "name": "no_trap_fields_in_stored_metadata",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I5",
+   "name": "title_edges_confidence_1",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I6",
+   "name": "transcript_seq_contiguous",
+   "status": "pass",
+   "episodes_with_gaps": 0
+  },
+  {
+   "dim": "I6",
+   "name": "transcript_t_monotonic",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I6",
+   "name": "transcript_t_end_after_start",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I6",
+   "name": "transcript_no_empty_text",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I6",
+   "name": "transcript_coverage_within_tolerance",
+   "status": "pass",
+   "episodes_undercovered": 0
+  },
+  {
+   "dim": "I7",
+   "name": "verses_text_encoding",
+   "status": "pass",
+   "replacement": 0,
+   "double_encoded": 0,
+   "huge": 0,
+   "note": "NUL probe removed — PG text forbids NUL by construction"
+  },
+  {
+   "dim": "I7",
+   "name": "transcripts_text_encoding",
+   "status": "pass",
+   "replacement": 0,
+   "double_encoded": 0,
+   "huge": 0,
+   "note": "NUL probe removed — PG text forbids NUL by construction"
+  },
+  {
+   "dim": "I7",
+   "name": "entities_name_encoding",
+   "status": "pass",
+   "replacement": 0,
+   "double_encoded": 0,
+   "huge": 0,
+   "note": "NUL probe removed — PG text forbids NUL by construction"
+  },
+  {
+   "dim": "I7",
+   "name": "entities_description_encoding",
+   "status": "pass",
+   "replacement": 0,
+   "double_encoded": 0,
+   "huge": 0,
+   "note": "NUL probe removed — PG text forbids NUL by construction"
+  },
+  {
+   "dim": "I7",
+   "name": "strongs_lexicon_definition_encoding",
+   "status": "pass",
+   "replacement": 0,
+   "double_encoded": 0,
+   "huge": 0,
+   "note": "NUL probe removed — PG text forbids NUL by construction"
+  },
+  {
+   "dim": "I8",
+   "name": "transcripts_t_start_s_finite_nonneg",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I8",
+   "name": "transcripts_t_end_s_finite_nonneg",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I8",
+   "name": "edge_confidence_finite",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I10",
+   "name": "search_tsv_nonnull",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I10",
+   "name": "search_content_canary",
+   "status": "pass",
+   "hits": 4
+  },
+  {
+   "dim": "I11",
+   "name": "jst_verse_id_links_resolve",
+   "status": "pass",
+   "corrupt_dangling": 0
+  },
+  {
+   "dim": "I11",
+   "name": "jst_addition_verses_unanchored",
+   "status": "pass",
+   "additions": 427,
+   "unanchored": 0,
+   "pinned_additions": 427,
+   "note": "beyond-canon-end readings stamped placement=beyond_canon_end + anchor_verse_id (v2 item 4, 2026-07-21) — unanchored must stay 0, additions pinned at 427"
+  },
+  {
+   "dim": "I11",
+   "name": "strongs_entities_resolve_to_lexicon",
+   "status": "pass",
+   "dangling": 0,
+   "entities": 14197,
+   "lexicon_rows": 20734,
+   "note": "entity<lexicon asymmetry (14k vs 21k) = lexicon rows without word entities, expected"
+  },
+  {
+   "dim": "I11",
+   "name": "naves_topics_well_formed",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I11",
+   "name": "naves_has_no_canon_linkage",
+   "status": "baseline-debt",
+   "note": "naves topics carry no verse/edge linkage AT ALL — product gap, not corruption; surfaced for the roadmap"
+  },
+  {
+   "dim": "I12",
+   "name": "drizzle_schema_drift",
+   "status": "baseline-debt",
+   "tables_only_live": [
+    "app_users",
+    "books",
+    "chapters",
+    "migration_state",
+    "nodes",
+    "roles",
+    "strongs_lexicon",
+    "user_roles",
+    "volumes",
+    "word_tags"
+   ],
+   "tables_only_drizzle": [],
+   "column_mismatches": [
+    {
+     "table": "verses",
+     "only_live": [
+      "chapter_id"
+     ],
+     "only_drizzle": [
+      "book_id",
+      "chapter_number",
+      "volume_id"
+     ]
+    },
+    {
+     "table": "words",
+     "only_live": [
+      "char_end",
+      "char_start",
+      "surface"
+     ],
+     "only_drizzle": [
+      "created_at",
+      "surface_form"
+     ]
+    }
+   ],
+   "note": "known drift, tracked as debt — full schema.ts regen rides the next schema-touching feature (v2 item 6); harness checks stay driven from information_schema"
+  },
+  {
+   "dim": "I1",
+   "name": "word_char_offsets_within_verse",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I1",
+   "name": "word_surface_matches_verse_substring_sampled",
+   "status": "pass",
+   "mismatches_in_2000": 0
+  },
+  {
+   "dim": "I13",
+   "name": "openbible_votes_numeric",
+   "status": "pass",
+   "violations": 0
+  },
+  {
+   "dim": "I13",
+   "name": "openbible_phaseb_semantic_overlap",
+   "status": "baseline-debt",
+   "overlapping_pairs": 42470,
+   "note": "cross-collection semantic duplicates — inventory for the collections cleanup, not corruption"
+  },
+  {
+   "dim": "I14",
+   "name": "rel_type_collection_matrix",
+   "status": "pass",
+   "violations": [],
+   "matrix_size": 32
+  },
+  {
+   "dim": "I14",
+   "name": "self_loop_edges",
+   "status": "baseline-debt",
+   "self_loops": 1,
+   "note": "1 known live self-loop = pinned baseline"
+  },
+  {
+   "dim": "I14",
+   "name": "edge_isolated_relational_entities",
+   "status": "baseline-debt",
+   "by_type": {
+    "era": 165,
+    "person": 141,
+    "artwork": 98,
+    "place": 91,
+    "event": 72,
+    "symbol": 36,
+    "principle": 14,
+    "chapter_summary": 2,
+    "chapter": 1
+   },
+   "note": "expected-isolated collections exempted; counts inventoried for graph-membership feature"
+  },
+  {
+   "dim": "I16",
+   "name": "strongs_lexicon_domains",
+   "status": "pass",
+   "bad_strongs_no": 0,
+   "bad_lang": 0,
+   "empty_gloss_and_definition": 0
+  },
+  {
+   "dim": "I16",
+   "name": "strongs_tag_coverage_vs_baseline",
+   "status": "pass",
+   "coverage": 0.6179,
+   "note": "ingest baseline 0.9353 was OT+NT-scoped; whole-spine coverage is lower by construction — floor set at 0.55"
+  },
+  {
+   "dim": "I17",
+   "name": "collection_tier_category_domains",
+   "status": "pass",
+   "bad_tier": 0,
+   "bad_category": 2
+  },
+  {
+   "dim": "I17",
+   "name": "roles_have_entitlements",
+   "status": "pass",
+   "empty": 0
+  },
+  {
+   "dim": "I18",
+   "name": "verses_tsvector_fresh_sampled",
+   "status": "pass",
+   "stale_in_1000": 0
+  },
+  {
+   "dim": "I10",
+   "name": "verses_fts_canary",
+   "status": "pass",
+   "hits": 810
+  },
+  {
+   "dim": "I10",
+   "name": "entities_fts_canary",
+   "status": "pass",
+   "hits": 269
+  },
+  {
+   "dim": "I3",
+   "name": "phaseb_dedupe_enforced",
+   "status": "pass",
+   "dup_tuples": 0,
+   "index_present": true,
+   "pinned_baseline": {
+    "dup_tuples": 1578,
+    "index_present": false
+   },
+   "note": "flips to pass when item 3 ships (merge → 0 dups + idx_edges_phaseb_unique created in the same tx); any other combination is drift"
+  },
+  {
+   "dim": "I15",
+   "name": "phaseb_id_name_first_token_inventory",
+   "status": "baseline-debt",
+   "scanned": 5904,
+   "first_token_missing": 310,
+   "pinned_baseline": 310,
+   "note": "untriaged INVENTORY value (drift detection), not verified-benign — item 7 executes the full 311-row triage and moves the pin to 310 with the bennett rename"
+  },
+  {
+   "dim": "I14",
+   "name": "self_loop_identity_pin",
+   "status": "baseline-debt",
+   "rows": [
+    {
+     "from_id": "dc",
+     "to_id": "dc",
+     "rel_type": "IN_VOLUME",
+     "collection_id": "phase-b",
+     "from_label": "LM_Book",
+     "to_label": "LM_Volume"
+    }
+   ],
+   "note": "D4: exactly the dc→dc IN_VOLUME phase-b row (shared-id flattening artifact; metadata labels disambiguate) is tolerated — anything else, including its disappearance, fails"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_label_counts",
+   "status": "pass",
+   "parity": {
+    "LM_Verse": [
+     41995,
+     41995
+    ],
+    "LM_Chapter": [
+     1582,
+     1582
+    ],
+    "LM_Book": [
+     87,
+     87
+    ]
+   },
+   "all_labels": {
+    "LM_Verse": 41995,
+    "LM_Principle": 262,
+    "LM_Person": 3870,
+    "LM_Place": 2035,
+    "LM_Chapter": 1582,
+    "LM_Book": 87,
+    "LM_Volume": 5,
+    "LM_StrongsWord": 0,
+    "LM_JstReading": 0,
+    "LM_ChapterSummary": 1582,
+    "LM_NaveTopic": 0,
+    "LM_Era": 165,
+    "LM_Event": 572,
+    "LM_Symbol": 480
+   },
+   "note": "localized 2026-07-18: D&C holds 294/3,654 graph verses — backfill predates/truncated the D&C load; graph-membership feature owns the re-sync"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_never_synced_labels",
+   "status": "baseline-debt",
+   "zero_labels": [
+    "LM_StrongsWord",
+    "LM_JstReading",
+    "LM_NaveTopic"
+   ],
+   "note": "labels defined in the backfill but never populated (strongs/jst/naves) — documented gap, joins extraction+art in the graph-membership backlog"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_no_orphan_lm_relationships",
+   "status": "pass",
+   "orphan_rels": 0
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_known_missing_classes",
+   "status": "baseline-debt",
+   "note": "A2 extraction edges + art collection are documented KNOWN-MISSING from the graph (graph-membership feature)"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_per_volume_verse_parity",
+   "status": "pass",
+   "pg_not_in_graph_by_volume": {
+    "ot": 0,
+    "nt": 0,
+    "bom": 0,
+    "pgp": 0,
+    "dc": 0
+   },
+   "graph_not_in_pg_by_volume": {
+    "ot": 0,
+    "nt": 0,
+    "bom": 0,
+    "pgp": 0,
+    "dc": 0
+   },
+   "pg_ids_unmatched_to_book": 0,
+   "graph_ids_unmatched_to_book": 0,
+   "pg_verses": 41995,
+   "graph_verses": 41995,
+   "note": "directional per-volume counts, NEVER netted — expected fail until item 1 (D&C 3,360 + PGP 635 re-sync) ships; flips to hard pass at parity"
+  },
+  {
+   "dim": "I9",
+   "name": "neo4j_consumer_two_hop_dc_76_22",
+   "status": "pass",
+   "paths": 119,
+   "pinned_baseline": 0,
+   "note": "pre-sync pinned state: dc-76-22 absent → 0 two-hop paths. Synced comparator dc-4-2 measured 399 paths 2026-07-20."
+  }
+ ],
+ "load": {
+  "rungs": [
+   {
+    "label": "baseline-1",
+    "clients": 1,
+    "seconds": 45,
+    "throughput_qps": 7,
+    "queries": 282,
+    "errors": 0,
+    "timeouts": 0,
+    "pool_cap_rejections": 0,
+    "error_samples": [],
+    "aborted": false,
+    "perClass": {
+     "chapter_page": {
+      "n": 24,
+      "p50": 142.6,
+      "p95": 207,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 211.8
+     },
+     "verse_lookup": {
+      "n": 31,
+      "p50": 131.7,
+      "p95": 135.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 150.8
+     },
+     "entity_page": {
+      "n": 29,
+      "p50": 132.3,
+      "p95": 217.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 231.1
+     },
+     "transcript_slice": {
+      "n": 37,
+      "p50": 135.4,
+      "p95": 208.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 211.6
+     },
+     "lens_query": {
+      "n": 31,
+      "p50": 135.8,
+      "p95": 140.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 141.6
+     },
+     "verse_fts": {
+      "n": 21,
+      "p50": 134.7,
+      "p95": 216.6,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 410.1
+     },
+     "entity_fts": {
+      "n": 29,
+      "p50": 135.9,
+      "p95": 243.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 251
+     },
+     "strongs_lookup": {
+      "n": 23,
+      "p50": 136.3,
+      "p95": 192,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 206.5
+     },
+     "episode_search": {
+      "n": 29,
+      "p50": 131.4,
+      "p95": 177.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 447.1
+     },
+     "two_hop": {
+      "n": 28,
+      "p50": 135,
+      "p95": 157.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 186.2
+     }
+    }
+   },
+   {
+    "label": "rung-2",
+    "clients": 2,
+    "seconds": 45,
+    "throughput_qps": 14,
+    "queries": 560,
+    "errors": 0,
+    "timeouts": 0,
+    "pool_cap_rejections": 0,
+    "error_samples": [],
+    "aborted": false,
+    "perClass": {
+     "chapter_page": {
+      "n": 57,
+      "p50": 139.3,
+      "p95": 218.6,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 368.2
+     },
+     "verse_lookup": {
+      "n": 63,
+      "p50": 131.6,
+      "p95": 174.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 202.6
+     },
+     "entity_page": {
+      "n": 52,
+      "p50": 132.6,
+      "p95": 174.8,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 332
+     },
+     "transcript_slice": {
+      "n": 54,
+      "p50": 134.5,
+      "p95": 142.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 404.4
+     },
+     "lens_query": {
+      "n": 50,
+      "p50": 134.8,
+      "p95": 165,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 176.2
+     },
+     "verse_fts": {
+      "n": 58,
+      "p50": 131.8,
+      "p95": 173.8,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 201.9
+     },
+     "entity_fts": {
+      "n": 56,
+      "p50": 134.6,
+      "p95": 151.6,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 181.2
+     },
+     "strongs_lookup": {
+      "n": 56,
+      "p50": 133.8,
+      "p95": 173.9,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 554.3
+     },
+     "episode_search": {
+      "n": 50,
+      "p50": 130.6,
+      "p95": 135.8,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 545.9
+     },
+     "two_hop": {
+      "n": 64,
+      "p50": 133.8,
+      "p95": 674.4,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 777.9
+     }
+    }
+   },
+   {
+    "label": "rung-4",
+    "clients": 4,
+    "seconds": 45,
+    "throughput_qps": 30.3,
+    "queries": 1210,
+    "errors": 0,
+    "timeouts": 0,
+    "pool_cap_rejections": 0,
+    "error_samples": [],
+    "aborted": false,
+    "perClass": {
+     "chapter_page": {
+      "n": 122,
+      "p50": 135.2,
+      "p95": 384.3,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 457.6
+     },
+     "verse_lookup": {
+      "n": 113,
+      "p50": 125.6,
+      "p95": 139.2,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 157.8
+     },
+     "entity_page": {
+      "n": 115,
+      "p50": 125.6,
+      "p95": 131.2,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 154.6
+     },
+     "transcript_slice": {
+      "n": 143,
+      "p50": 128.4,
+      "p95": 135.4,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 197.1
+     },
+     "lens_query": {
+      "n": 118,
+      "p50": 130.2,
+      "p95": 138.8,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 172.1
+     },
+     "verse_fts": {
+      "n": 126,
+      "p50": 126.1,
+      "p95": 133.4,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 179.7
+     },
+     "entity_fts": {
+      "n": 108,
+      "p50": 128.8,
+      "p95": 139.9,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 209.5
+     },
+     "strongs_lookup": {
+      "n": 108,
+      "p50": 128.2,
+      "p95": 143.7,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 172.9
+     },
+     "episode_search": {
+      "n": 136,
+      "p50": 125.6,
+      "p95": 132.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 183.2
+     },
+     "two_hop": {
+      "n": 121,
+      "p50": 129.4,
+      "p95": 143.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 325
+     }
+    }
+   },
+   {
+    "label": "rung-8",
+    "clients": 8,
+    "seconds": 45,
+    "throughput_qps": 55.9,
+    "queries": 2234,
+    "errors": 0,
+    "timeouts": 0,
+    "pool_cap_rejections": 0,
+    "error_samples": [],
+    "aborted": false,
+    "perClass": {
+     "chapter_page": {
+      "n": 226,
+      "p50": 142.8,
+      "p95": 402,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 1122.6
+     },
+     "verse_lookup": {
+      "n": 197,
+      "p50": 131,
+      "p95": 144.2,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 412
+     },
+     "entity_page": {
+      "n": 212,
+      "p50": 131.2,
+      "p95": 140.9,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 420.9
+     },
+     "transcript_slice": {
+      "n": 240,
+      "p50": 134.3,
+      "p95": 164.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 402.6
+     },
+     "lens_query": {
+      "n": 224,
+      "p50": 135,
+      "p95": 150.2,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 195.7
+     },
+     "verse_fts": {
+      "n": 232,
+      "p50": 131.5,
+      "p95": 141.7,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 416.8
+     },
+     "entity_fts": {
+      "n": 216,
+      "p50": 134,
+      "p95": 146.9,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 400.5
+     },
+     "strongs_lookup": {
+      "n": 220,
+      "p50": 132.1,
+      "p95": 154.6,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 432.9
+     },
+     "episode_search": {
+      "n": 225,
+      "p50": 130.9,
+      "p95": 141.2,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 394
+     },
+     "two_hop": {
+      "n": 242,
+      "p50": 134.1,
+      "p95": 146.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 796.3
+     }
+    }
+   },
+   {
+    "label": "rung-12",
+    "clients": 12,
+    "seconds": 45,
+    "throughput_qps": 78.7,
+    "queries": 3149,
+    "errors": 0,
+    "timeouts": 0,
+    "pool_cap_rejections": 0,
+    "error_samples": [],
+    "aborted": false,
+    "perClass": {
+     "chapter_page": {
+      "n": 313,
+      "p50": 153.4,
+      "p95": 429.3,
+      "p99": 821.3,
+      "max": 1595.8
+     },
+     "verse_lookup": {
+      "n": 303,
+      "p50": 126.3,
+      "p95": 256.1,
+      "p99": 394.3,
+      "max": 418.4
+     },
+     "entity_page": {
+      "n": 349,
+      "p50": 126.9,
+      "p95": 255.2,
+      "p99": 392.6,
+      "max": 402.3
+     },
+     "transcript_slice": {
+      "n": 283,
+      "p50": 131.3,
+      "p95": 293.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 609.7
+     },
+     "lens_query": {
+      "n": 302,
+      "p50": 130.7,
+      "p95": 261.9,
+      "p99": 346.2,
+      "max": 455.7
+     },
+     "verse_fts": {
+      "n": 319,
+      "p50": 128.7,
+      "p95": 283.9,
+      "p99": 394.1,
+      "max": 444.7
+     },
+     "entity_fts": {
+      "n": 308,
+      "p50": 131.7,
+      "p95": 272.3,
+      "p99": 391.8,
+      "max": 475.6
+     },
+     "strongs_lookup": {
+      "n": 315,
+      "p50": 128.1,
+      "p95": 243,
+      "p99": 346.3,
+      "max": 393
+     },
+     "episode_search": {
+      "n": 298,
+      "p50": 127.5,
+      "p95": 238.7,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 450.1
+     },
+     "two_hop": {
+      "n": 359,
+      "p50": 129,
+      "p95": 249.6,
+      "p99": 398.2,
+      "max": 415.2
+     }
+    }
+   },
+   {
+    "label": "rung-2-repeat",
+    "clients": 2,
+    "seconds": 45,
+    "throughput_qps": 12.7,
+    "queries": 506,
+    "errors": 0,
+    "timeouts": 0,
+    "pool_cap_rejections": 0,
+    "error_samples": [],
+    "aborted": false,
+    "perClass": {
+     "chapter_page": {
+      "n": 44,
+      "p50": 143.5,
+      "p95": 370.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 955.7
+     },
+     "verse_lookup": {
+      "n": 52,
+      "p50": 129.7,
+      "p95": 238.4,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 300.4
+     },
+     "entity_page": {
+      "n": 47,
+      "p50": 129.5,
+      "p95": 275.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 1348
+     },
+     "transcript_slice": {
+      "n": 42,
+      "p50": 135.4,
+      "p95": 289.5,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 333.6
+     },
+     "lens_query": {
+      "n": 61,
+      "p50": 132.3,
+      "p95": 227.3,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 313
+     },
+     "verse_fts": {
+      "n": 57,
+      "p50": 129.6,
+      "p95": 269.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 828.7
+     },
+     "entity_fts": {
+      "n": 43,
+      "p50": 133.3,
+      "p95": 331.1,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 381.1
+     },
+     "strongs_lookup": {
+      "n": 52,
+      "p50": 130.8,
+      "p95": 223.3,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 1703.5
+     },
+     "episode_search": {
+      "n": 42,
+      "p50": 129.7,
+      "p95": 215.8,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 1538.8
+     },
+     "two_hop": {
+      "n": 66,
+      "p50": 132.8,
+      "p95": 288.9,
+      "p99": null,
+      "p99_note": "n<300",
+      "max": 765.4
+     }
+    }
+   }
+  ],
+  "pathological": [
+   {
+    "name": "huge_search_string",
+    "status": "graceful",
+    "ms": 190,
+    "note": null
+   },
+   {
+    "name": "tsquery_specials",
+    "status": "graceful",
+    "ms": 217.9,
+    "note": null
+   },
+   {
+    "name": "unicode_dashes",
+    "status": "graceful",
+    "ms": 399,
+    "note": null
+   },
+   {
+    "name": "empty_string_search",
+    "status": "graceful",
+    "ms": 220.5,
+    "note": null
+   },
+   {
+    "name": "thousand_id_in_list",
+    "status": "graceful",
+    "ms": 412.6,
+    "note": null
+   },
+   {
+    "name": "deep_offset",
+    "status": "graceful",
+    "ms": 152.8,
+    "note": null
+   },
+   {
+    "name": "absent_jsonb_path",
+    "status": "graceful",
+    "ms": 171,
+    "note": null
+   }
+  ],
+  "aborted": false
+ },
+ "startedAt": "2026-07-21T18:39:54.317Z",
+ "finishedAt": "2026-07-21T18:44:57.482Z"
+}

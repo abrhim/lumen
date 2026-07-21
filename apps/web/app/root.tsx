@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
 import {
-	Form,
 	isRouteErrorResponse,
 	Links,
 	Meta,
@@ -8,26 +6,9 @@ import {
 	Scripts,
 	ScrollRestoration,
 	data,
-	useLocation,
-	useRouteLoaderData,
 } from "react-router";
-import { PaletteIcon } from "lucide-react";
 
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "~/components/ui/select";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuLabel,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
+import { AppMenu } from "~/components/AppMenu";
 import { getSessionUser } from "~/lib/auth.server";
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -50,48 +31,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	return data({ user }, { headers });
 }
 
-const THEMES = ["paper", "parchment", "linen", "ink"] as const;
-
 /** Applies the stored theme before first paint — no flash of wrong theme. */
 const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem("lumen-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
-
-function ThemeSelect() {
-	const [theme, setTheme] = useState<string>("paper");
-	useEffect(() => {
-		setTheme(document.documentElement.dataset.theme ?? "paper");
-	}, []);
-	return (
-		<Select
-			value={theme}
-			onValueChange={(next) => {
-				setTheme(next);
-				document.documentElement.dataset.theme = next;
-				try {
-					localStorage.setItem("lumen-theme", next);
-				} catch {
-					/* private mode */
-				}
-			}}
-		>
-			<SelectTrigger
-				aria-label="Theme"
-				size="sm"
-				// visual h-7 with a 44px hit box (after: overlay) — Emil touch rule
-				className="relative bg-surface font-ui text-xs font-semibold text-muted-foreground shadow-sm after:absolute after:-inset-2 after:content-['']"
-			>
-				<PaletteIcon className="size-3.5" aria-hidden="true" />
-				<SelectValue />
-			</SelectTrigger>
-			<SelectContent align="end" className="font-ui text-xs">
-				{THEMES.map((t) => (
-					<SelectItem key={t} value={t} className="capitalize">
-						{t}
-					</SelectItem>
-				))}
-			</SelectContent>
-		</Select>
-	);
-}
 
 export const links: Route.LinksFunction = () => [
 	{ rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -125,54 +66,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
 	);
 }
 
-/** Signed-in presence in the fixed chrome (plan D10): chip only — the
- * signed-out invitation lives on the home header, never over a chapter. */
-function AccountChip() {
-	const root = useRouteLoaderData<typeof loader>("root");
-	const location = useLocation();
-	const user = root?.user;
-	if (!user) return null;
-	const email = user.email ?? "Account";
-	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger
-				aria-label={`Account: ${email}`}
-				className="relative flex size-7 items-center justify-center rounded-full border border-rule2 bg-panel2 font-ui text-xs font-semibold uppercase text-ink shadow-sm outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 after:absolute after:-inset-2 after:content-['']"
-			>
-				{email.slice(0, 1)}
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end" className="font-ui text-xs">
-				<DropdownMenuLabel className="max-w-56 truncate font-normal text-muted-foreground">
-					{email}
-				</DropdownMenuLabel>
-				<DropdownMenuSeparator />
-				<Form method="post" action="/logout">
-					<input
-						type="hidden"
-						name="returnTo"
-						value={location.pathname + location.search}
-					/>
-					{/* preventDefault on the menu's OWN select event keeps the item's
-					    <Form> mounted long enough for the native submit to fire —
-					    otherwise Radix unmounts it synchronously (no exit anim = dead
-					    sign-out). The button click still submits. */}
-					<DropdownMenuItem asChild onSelect={(e) => e.preventDefault()}>
-						<button type="submit" className="w-full cursor-pointer">
-							Sign out
-						</button>
-					</DropdownMenuItem>
-				</Form>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	);
-}
+/** The universal menu replaces the former AccountChip + ThemeSelect cluster
+ * (proto/podcast-ui). Signed-in presence stays chip-only in the fixed chrome
+ * (plan D10); the signed-out invitation lives on the home header — the menu's
+ * Sign in item is user-summoned, not ambient. */
 
 export default function App() {
 	return (
 		<>
 			<div className="fixed right-4 top-4 z-40 flex items-center gap-2">
-				<AccountChip />
-				<ThemeSelect />
+				<AppMenu />
 			</div>
 			<Outlet />
 		</>
