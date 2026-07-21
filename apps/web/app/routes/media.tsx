@@ -454,7 +454,7 @@ function IndexAccordionItem({
 	return (
 		<AccordionItem value={value} className="border-rule">
 			<AccordionTrigger className="py-2.5 hover:no-underline">
-				<span className="flex items-baseline gap-2 font-reading text-sm italic text-faint">
+				<span className="flex items-baseline gap-2 font-reading text-base text-ink">
 					{heading}
 					<span className="font-ui text-xs not-italic tabular-nums">{items.length}</span>
 				</span>
@@ -732,7 +732,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)_14rem]">
 				<nav aria-label="Chapters" className="hidden lg:block">
 					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
-					<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
+					<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						{!isMobile && hasVideo && (
 							<VideoAccordion
 								videoId={videoId}
@@ -775,9 +775,9 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 				</div>
 				<aside className="mt-12 hidden lg:mt-0 lg:block">
 					{/* The rail scrolls independently of the reading column. */}
-					<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto pr-1 [scrollbar-width:thin]">
+					<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						<h2 className="font-display text-lg font-medium tracking-tight text-ink">References</h2>
-						<Accordion type="multiple" defaultValue={["people", "principles"]} className="mt-2">
+						<Accordion type="multiple" className="mt-2">
 							<IndexAccordionItem
 								value="people"
 								heading="People & places"
