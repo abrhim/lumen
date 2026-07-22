@@ -148,6 +148,18 @@ export async function getChapterSummary(db: Db, bookId: string, chapter: number)
   return rows[0] ?? null;
 }
 
+/** The resolveGraphId contract, DB side (DATA-1/DATA-2): collision-namespaced
+ * ids (`person:moses-1`) and renamed entities keep the id their graph mirror
+ * still carries in metadata.neo4j_id. Null = unknown entity or no pointer —
+ * the caller cannot distinguish, and must not need to. */
+export async function getGraphIdPointer(db: Db, entityId: string): Promise<string | null> {
+  const rows = (await db.execute(
+    sql`SELECT metadata->>'neo4j_id' AS neo4j_id FROM lumen.entities
+        WHERE id = ${entityId} LIMIT 1`,
+  )) as { neo4j_id: string | null }[];
+  return rows[0]?.neo4j_id ?? null;
+}
+
 export async function getChapterArt(db: Db, bookId: string, chapter: number, limit = 24, offset = 0) {
   return db.execute(
     sql`SELECT id, name, metadata FROM lumen.entities

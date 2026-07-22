@@ -19,6 +19,7 @@ import {
 	getPublicCollectionIds,
 	getChapterArt,
 	getChapterNumbers,
+	getGraphIdPointer,
 	chapterUnit,
 	getCrossReferences,
 	groupCrossRefs,
@@ -391,10 +392,21 @@ async function loadGraph(
 			}
 		}
 
-		const neighborhood = await getNeighborhood(context.neo4j, entityId, {
+		const queryOpts = {
 			depth,
 			collections: collections && collections.length > 0 ? collections : undefined,
-		});
+		};
+		let neighborhood = await getNeighborhood(context.neo4j, entityId, queryOpts);
+		if (!neighborhood.found) {
+			// resolveGraphId fallback (DATA-1/DATA-2): collision-namespaced ids
+			// (`person:moses-1`) and renamed entities carry the id their graph
+			// mirror still uses in metadata.neo4j_id. Only misses pay the PG
+			// lookup — the found path stays Neo4j+KV only.
+			const pointer = await getGraphIdPointer(context.db, entityId).catch(() => null);
+			if (pointer !== null && pointer !== entityId) {
+				neighborhood = await getNeighborhood(context.neo4j, pointer, queryOpts);
+			}
+		}
 		const elapsedMs = Date.now() - startedAt;
 
 		if (!neighborhood.found) {
