@@ -1,0 +1,52 @@
+# CODE-PANEL / performance — search-ui (implemented, deployed fd093ed4)
+
+Reviewed diff `f352bae..46d888d`. Lens: keyset EXPLAIN on the four non-scripture legs, SSR double-work, bundle/code-split, append re-render cost, debounce discipline, modal-in-root cost. Live prod + live DB (lumen_read) probed read-only 2026-07-21. Ratified ledger respected (PU-4/PU-5/PU-6 dropped items not re-litigated; findings below are outside their blessings).
+
+| ID | Sev | Where | Problem | Fix sketch |
+|----|-----|-------|---------|------------|
+| PC-1 | high | `apps/web/app/routes/search.tsx:595` (also :579-584, :749-757) | Single-scope append state (`extra`, its cursor) is only reset on navigation commit — live typing a NEW query keeps old-q appended rows under the new q's results, and `loadMoreRef` then fires `displayQ`(new) + `currentCursor`(old-q) → guaranteed 400 `cursor_mismatch` (live-verified); the `pageFetcher.data` effect dereferences `d.groups.find` with no shape guard, so the error body TypeErrors and the WHOLE page lands in the route ErrorBoundary. Same unguarded effect turns any transient /api/search 500 during "More" (pool-exhaustion incident class) into a full-page crash. | Reset `extra`/`pendingCursorRef` whenever `displayQ` changes (live path, not just `location.key`); guard `if (!Array.isArray(d.groups)) { pendingCursorRef.current = null; return; }` and surface a retryable inline error. |
+| PC-2 | high | `packages/scripture/src/search.ts:346` (with :363, :712, :719-730) | Keyset id tiebreak compares in DB collation (`en_US.UTF-8`) while `sortResults` + cursor minting use JS code units. Episodes moment ids are mixed-case (`ivzxaLpbZws` vs `O3SiM9Yi940`): 16/38 live score-tie groups for q='faith' order differently under the two collations, so a page cut inside a divergent tie mints a cursor from the JS-last row that is en_US-below the SQL-last row → the next page RE-RETURNS rows. Live-reproduced on prod: `unshaken-O3SiM9Yi940#0` served on both page 2 and page 3 (q=faith, scope=episodes, limit=2). Violates F1's no-dup invariant on the shipped API; the UI masks it only for moments via `dedupeMoments`. Gaps cannot occur (JS-last is always en_US-≤ SQL-last), dups only. | Pin the SQL side to code-unit order: `ORDER BY tier, sub, score DESC, id COLLATE "C"` in `paged()` and `id COLLATE "C" > ${c.id}` in `keysetAfter` (sorts are top-N heapsort per EXPLAIN — no index dependency, free). Extend the F15 harness's collation pin beyond scripture windows. |
+| PC-3 | med | `apps/web/app/routes/search.tsx:5` | `GROUP_KEYS`/types are imported from the `@lumen/scripture` barrel whose `search.ts` module carries `drizzle-orm`; the client build emits a 68.6 kB (18.46 kB gzip) chunk of pure drizzle column/SQL machinery (`search-CVqCAGVO.js`, 26 `drizzle` refs, zero app symbols) on /search's hydration path. Pre-existing mode (book/node/scripture/GraphOverlay chunks import it too — not introduced by this diff), but the new flagship page inherits ~18.5 kB gzip of dead code on cold entry. | Move `GROUP_KEYS`/`GroupKey`/result types to a db-free module (`search-types.ts`) re-exported by search.ts; client code imports the leaf. Fixes every route at once (fix the mode). |
+| PC-4 | low | `apps/web/app/routes/search.tsx:613-617` | Debounce timer has no unmount cleanup; only `commitNavigate` paths clear it. Type, then click a result row `<Link>` within 350 ms → timer fires after unmount → stray `liveFetcher.load` = one wasted /api/search round trip (session + access + searchAll server-side) per occurrence. | `useEffect(() => () => window.clearTimeout(debounceRef.current), [])`. |
+| PC-5 | low | `apps/web/app/routes/search.tsx:849` | B-U1 residual (same MODE, new instance): pointer-clicking a scope toggle commits a same-route navigation — the button's DOM node survives reconciliation and KEEPS FOCUS, so the user's next Space re-toggles the scope instead of scrolling. Exactly the Space-hijack class Abram caught on the orb; the "More" button mostly self-heals via its disabled cycle, scope toggles don't. | Apply the B-U1 treatment: blur on pointer-initiated activation (`e.detail > 0`) or move focus to the status region after commit. |
+| PC-6 | low | `apps/web/app/routes/search.tsx:520` (input state :564) | Controlled input lives in the same component as the result list and `ResultRow` is unmemoized: every keystroke (and every `busySlow`/fetcher-state flip) re-renders all rows — `parseMarks` + full JSX rebuild ×150+ rows at single-scope append depth. Adjacent to dropped PU-6 (deep-scroll DOM) but a distinct mode: typing cost, paid on every visit, one memo boundary away. | `React.memo(ResultRow)` (props are stable per row) or lift input+status into a sibling component. |
+| PC-7 | low | `apps/web/app/routes/search.tsx:936` | B-U2 residual (same MODE, narrower): the reference lead renders only in `reference`/`results` views — a found book/volume reference (q='moses') is suppressed again whenever the included groups yield zero rows (e.g. scope isolated to a thin group), leaving "Nothing in the library matches" above a hidden, valid reader door. | Include `view === "zero"` in the reference-lead condition. |
+
+Verified clean (lens items with no finding):
+- **Keyset EXPLAIN, all four unshown legs (live)**: entity/topics 21→26 ms, episodes 4.4→5.2 ms, art 16→23 ms, words 0.9→0.9 ms (page-1 → page-2-with-cursor). Every plan keeps its BitmapOr/BitmapAnd index arms driving; the keyset predicate lands as a pushed-down filter with the tier/score expressions substituted (entity leg: score part correctly evaluated above the `entity_degree` join). No seq scan, no plan regression — the `paged()` comment's claim holds beyond scripture.
+- **SSR double-work**: none. `liveFetcher.load` only fires from the debounce; `pageFetcher.load` only from `loadMoreRef`; first paint is loader-only (F6 holds), `.data` navigations run the loader once (live payload inspected).
+- **Debounce discipline**: trailing-only 350 ms, honored; no leading-edge fire; sub-Q_MIN and value==q issue no request; in-flight results discarded via `liveQRef` on both commit and reset paths (PC-4 is the only leak).
+- **Code-split**: /search route chunk is 23.4 kB raw / 7.97 kB gzip, loaded only on the search route; root chunk (14.9 kB raw / 5.1 kB gzip) does NOT import the scripture/drizzle chunk — SearchModal's literal `MODAL_Q_MIN = 2` kept the barrel out of root.
+- **Modal in root**: marginal cost ≈ nil beyond ratified PU-5 (AppMenu already shipped Sheet, which is Radix-Dialog-based; dialog chunk is 2.0 kB raw). Hotkey listener double-registration precluded (`onSearchPage` early return with correct dep-driven teardown).
+- **`headers: Headers` in loader data**: serializes as `["SingleFetchClassInstance", {}]` in the `.data` stream (live) — dead field, harmless; no crash on client navigations.
+- **B-U1/B-U2 fixes hold** at their original sites: pointer-aware `onCloseAutoFocus` present on BOTH Dialog and Sheet mounts; `isShortCircuitReference` gates loader state (:254), client view (:631) and the Enter hint (:955). PC-5/PC-7 are residuals of those modes, not regressions of the fixes.
+
+## Evidence
+
+**E1 — keyset EXPLAIN, four legs (live DB, lumen_read, 2026-07-21).** Full output: scratchpad `explain-out.txt`. Representative (episodes, page 2 with cursor):
+```
+Limit (actual rows=25) ← Sort top-N heapsort 67kB ← Bitmap Heap Scan on search_index
+  Recheck Cond: ((tsv @@ '''faith''') OR ((kind='episode') AND (kind = ANY('{episode,moment}'))))
+  Filter: (... keyset predicate with tier/sub/score CASE expressions substituted ...)
+  Rows Removed by Filter: 152
+  -> BitmapOr: idx_search_tsv (rows=339) + search_index_pkey (rows=10)
+Execution Time: 5.205 ms      (page 1 without cursor: 4.394 ms)
+```
+topics(entity) 21.1→25.9 ms (BitmapAnd of name_trgm/search GIN × idx_entities_type; score filter above the degree join); art 16.1→23.0 ms; words 0.897→0.905 ms. All index-driven, keyset cost flat — consistent with ratified PU-4's flat-per-page framing.
+
+**E2 — PC-2 live dup reproduction (prod API, GET only).**
+```
+page1 (q=faith&scope=episodes&limit=25) → nextCursor c1 (id=unshaken-8SvK7L87o1A#538)
+page2 (after=c1&limit=2) → ['unshaken-O3SiM9Yi940#0', 'unshaken-ivzxaLpbZws#1330']  ← JS order; en_US order is the reverse
+   c2 minted from JS-last 'unshaken-ivzxaLpbZws#1330' (en_US-BELOW the SQL-last row)
+page3 (after=c2&limit=2) → ['unshaken-O3SiM9Yi940#0', 'unshaken-RLirbnj-kGk#1446']  ← O3SiM9Yi940#0 SERVED TWICE
+```
+Collation probe (`probe-collation.js`): db collation `en_US.UTF-8`; episodes q='faith' — 38 score-tie groups, **16 diverge** between default and `COLLATE "C"` orderings (mixed-case video ids); words 2/0, art 15/0. The harness's collation note ("pin of intent, not a live divergence") is scripture-window-scoped and does not hold for episodes.
+
+**E3 — PC-1 chain.** `search.tsx:579` resets `extra` only on `[location.key, q]`; live typing goes through `setLive` (:588) leaving `extra` from the old q; `mergedSingle` (:749-750) concatenates old-q rows under new-q results; `currentCursor` (:751) = old-q cursor; `loadMoreRef` (:757) sends `q=displayQ`(new) with the old cursor. Live: replaying a scripture cursor with q=grace → `HTTP 400 {"code":"cursor_mismatch"}`. RR 7.9.6: server wraps returned 400s with `X-Remix-Response: yes` (chunk-G3INQAYP.mjs:903) so `fetchAndDecode` does NOT throw (chunk-4WY6JWTD.mjs:7897) → `fetcher.data` = error JSON → `d.groups.find` (search.tsx:595) TypeErrors → route ErrorBoundary.
+
+**E4 — PC-3 bundle.** `pnpm build`: `build/client/assets/search-CVqCAGVO.js` 68.61 kB / 18.46 kB gzip — begins `Symbol.for("drizzle:entityKind")`, 26 `drizzle` refs, zero occurrences of `GROUP_KEYS/SearchCursorError/parseReference` app symbols beyond the module itself; imported by `search-CkdOxRSQ.js` (route), `book`, `node`, `scripture`, `scripture.art`, `GraphOverlay` chunks. At base f352bae the same client importers of `@lumen/scripture` exist → pre-existing mode, inherited by the new route. Root chunk not an importer.
+
+**E5 — live latency + serialization.** `GET /search?q=faith` → 200, TTFB 0.48 s, 105 kB HTML; `GET /api/search?q=faith&scope=scripture&limit=25` → TTFB 0.26 s; `/search.data?q=faith` → 13.7 kB, `"headers",["SingleFetchClassInstance",433],{}` tail confirms the Headers field degrades to `{}`. searchAll `meta.totalMs` 204 ms combined mode.
+
+Probes: `probe-stats.js`, `probe-explain.js`, `probe-collation.js` in session scratchpad; all connections closed (single pg Client per run, pool cap respected).

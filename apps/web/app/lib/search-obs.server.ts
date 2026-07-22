@@ -12,6 +12,14 @@ export interface SearchLogContext {
 	q: string;
 	scope: GroupKey[] | undefined;
 	visibility: "public" | "admin";
+	/** Δ OU-6/B16: which surface issued this search — the `/search` page loader
+	 * (a URL navigation) or the `/api/search` fetcher (live/debounced typing and
+	 * pagination). Both surfaces log every request once, so an Enter-after-
+	 * debounce logs twice; without this discriminator the two events are field-
+	 * identical (the page logs `scope: null` for an all-groups search while the
+	 * fetcher always sends the full array) and analytics double-counts and
+	 * pollutes the OU-1 zero-result denominator. */
+	surface: "page" | "api";
 	userId?: string;
 	after?: string;
 }
@@ -19,7 +27,7 @@ export interface SearchLogContext {
 /** OBS-1: the one structured line the relevance-tuning loop feeds on.
  * ms is null in combined mode — per-group time is unmeasurable there (B24). */
 export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext): void {
-	const { q, scope, visibility, userId, after } = ctx;
+	const { q, scope, visibility, userId, after, surface } = ctx;
 	const perGroupMs: Record<string, number | null> = {};
 	const groupHits: Record<string, number> = {};
 	let degraded = false;
@@ -33,6 +41,8 @@ export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext)
 		}
 	}
 	logEvent("search_executed", {
+		// B16: page-loader vs API-fetcher events must be distinguishable.
+		surface,
 		q,
 		scope: scope ?? null,
 		reference: result.reference?.display ?? null,
@@ -62,13 +72,18 @@ export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext)
  * can reproduce the 500. */
 export function logSearchFailed(
 	err: unknown,
-	ctx: Pick<SearchLogContext, "q" | "scope" | "visibility">,
+	ctx: Pick<SearchLogContext, "q" | "scope" | "visibility" | "surface" | "after">,
 ): void {
 	logEvent("search_failed", {
 		message: err instanceof Error ? err.message : String(err),
+		surface: ctx.surface,
 		q: ctx.q,
 		qLen: ctx.q.length,
 		scope: ctx.scope ?? null,
 		visibility: ctx.visibility,
+		// B25/OC-5: a continuation-leg 500 must be distinguishable from a page-1
+		// failure so OBS-3's repro promise holds — boolean only, the raw cursor
+		// stays unechoed per F3.
+		hasCursor: ctx.after !== undefined,
 	});
 }

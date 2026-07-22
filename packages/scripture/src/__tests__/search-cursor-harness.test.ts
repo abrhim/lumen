@@ -75,6 +75,47 @@ async function scriptureOracle(
 	return rows.map((r: any) => ({ id: r.id as string, sub: Number(r.sub) }));
 }
 
+/**
+ * INDEPENDENT no-gap oracle for the episodes leg (B1/B30). Reproduces
+ * episodesLeg's inner (search.ts) and its ORDER BY (tier, sub, score DESC, id)
+ * with the id tiebreak pinned to `COLLATE "C"` — the code-unit order sortResults
+ * applies in JS and the cursor is minted against. Unlike the verse corpus,
+ * episode/moment ref_ids are MIXED-CASE (`unshaken-<YouTubeId>#<t>`), so "C" and
+ * the DB default (en_US.UTF-8) diverge inside score ties: this is exactly where
+ * B1 lives, so this oracle is a real divergence, not a pin-of-intent.
+ */
+async function episodesOracle(q: string, visible: string[], limit: number): Promise<string[]> {
+	const prefix = q.replace(/[\\%_]/g, (m) => '\\' + m) + '%';
+	const rows = await client`
+		SELECT id FROM (
+			SELECT si.ref_id AS id,
+				CASE WHEN si.kind = 'episode' AND lower(si.title) = lower(${q}) THEN 1
+				     WHEN si.kind = 'episode' AND (si.title ILIKE ${prefix} ESCAPE '\\'
+				       OR (char_length(${q}) <= 100
+				           AND extensions.word_similarity(${q}, si.title) >= 0.45)) THEN 2
+				     ELSE 3 END AS tier,
+				CASE WHEN si.kind = 'episode' THEN 0 ELSE 1 END AS sub,
+				GREATEST(
+					ts_rank('{0.1,0.2,0.4,1.0}'::float4[], si.tsv,
+						websearch_to_tsquery('english', ${q}), 1),
+					CASE WHEN si.kind = 'episode' AND char_length(${q}) <= 100
+					       AND extensions.word_similarity(${q}, si.title) >= 0.45
+					     THEN extensions.word_similarity(${q}, si.title) ELSE 0 END
+				)::float8 AS score
+			FROM lumen.search_index si
+			WHERE si.kind IN ('episode', 'moment')
+				AND si.collection_id = ANY(string_to_array(NULLIF(${visible.join(',')}, ''), ','))
+				AND (si.tsv @@ websearch_to_tsquery('english', ${q})
+					OR (si.kind = 'episode' AND (lower(si.title) = lower(${q})
+						OR si.title ILIKE ${prefix} ESCAPE '\\'
+						OR (char_length(${q}) <= 100
+							AND extensions.word_similarity(${q}, si.title) >= 0.45))))
+		) u
+		ORDER BY u.tier, u.sub, u.score DESC, u.id COLLATE "C"
+		LIMIT ${limit}`;
+	return rows.map((r: any) => r.id as string);
+}
+
 describe('F1/F5/F15 — keyset continuity on the live verse corpus', () => {
 	it('page 2 continues exactly after page 1: no dup, no gap, order preserved (independent raw-SQL oracle)', async () => {
 		// RED: searchAll has no `after`; groups have no `nextCursor`.
@@ -220,5 +261,148 @@ describe('F16 — cursor visibility re-gate (SU-1/SU-2)', () => {
 			'silent re-gate — a narrowed replay is not an error',
 		).toBeUndefined();
 		expect(g2.nextCursor, 'an empty page never mints a cursor').toBeUndefined();
+	});
+});
+
+describe('B1/B30 — episodes-leg keyset continuity across a collation-divergent score tie', () => {
+	it('page 2 continues exactly after page 1 with mixed-case ref_ids: no dup, no gap (independent C-order oracle)', async () => {
+		// B30 fixture (live 2026-07-22, prod-reproduced): q=israel scope=episodes
+		// limit=8 has 848 matching rows, and page 1 fills EXACTLY at a 3-way score
+		// tie (score_bits 3f8fbc6c40000000):
+		//   unshaken-O3SiM9Yi940#144, unshaken-ki0bTvQsaCo#1536, unshaken-ki0bTvQsaCo#356.
+		// The JS/code-unit tiebreak sorts O3Si… ('O'=0x4f) before ki0b… ('k'=0x6b),
+		// so mintNextCursor mints from JS-last = ki0bTvQsaCo#356. But the shipped leg
+		// ORDER BY / keysetAfter compare id in en_US.UTF-8, where ki0b… < O3Si…
+		// (case-insensitive k<o) — so `id > ki0bTvQsaCo#356` RE-ADMITS all three tie
+		// members on page 2. RED before COLLATE "C" (page1∩page2 = those 3 ids),
+		// GREEN after (SQL id order == the JS/C order the cursor is minted against).
+		const { searchAll } = await import('../search');
+		const opts: CursorOptions = {
+			q: 'israel', visibleCollections: ['unshaken'], scope: ['episodes'], limitPerGroup: 8,
+		};
+		const p1 = await searchAll(db, opts);
+		const g1 = p1.groups[0] as any;
+		expect(g1.results).toHaveLength(8);
+		expect(g1.nextCursor, 'full page must mint a nextCursor').toBeTruthy();
+
+		const p2 = await searchAll(db, { ...opts, after: g1.nextCursor });
+		const g2 = p2.groups[0] as any;
+		const ids1 = g1.results.map((r: any) => r.id);
+		const ids2 = g2.results.map((r: any) => r.id);
+		expect(ids2.length, '848 hits — page 2 is full too').toBe(8);
+
+		// The B1 discriminator: no row may appear on both pages.
+		expect(
+			new Set([...ids1, ...ids2]).size,
+			'no episode/moment row served on both pages',
+		).toBe(ids1.length + ids2.length);
+
+		// No-gap against the INDEPENDENT C-order oracle: page1 ++ page2 must equal
+		// the leg ordering's first 16 EXACTLY (proves the id tiebreak carries the
+		// mixed-case tie across the request gap, no reorder, no drop).
+		const oracle = await episodesOracle('israel', ['unshaken'], ids1.length + ids2.length);
+		expect(oracle).toHaveLength(16);
+		expect([...ids1, ...ids2]).toEqual(oracle);
+	});
+});
+
+describe('B20 — decodeSearchCursor rejects non-finite score bits', () => {
+	it('a tampered cursor with NaN/±Infinity score → cursor_invalid, never accepted', async () => {
+		const { encodeSearchCursor, decodeSearchCursor, SearchCursorError } = (await import(
+			'../search'
+		)) as any;
+		const bind = { q: 'faith', scope: 'scripture' as const };
+		// Mint a real cursor to inherit its (q, scope) hash + structure, then swap
+		// only the 16-hex score field for non-finite IEEE-754 bit patterns. encode
+		// never writes these (ts_rank scores are always finite), so rejecting them
+		// costs zero legitimate cursors while closing the F3/self-loop gap (B20):
+		// PG sorts NaN as greatest, so `score < NaN` re-admits page 1 forever.
+		const real = encodeSearchCursor({ ...bind, tier: 3, sub: 0, score: 0.25, id: '1-ne-3-7' });
+		const parts = Buffer.from(real, 'base64url').toString('utf8').split('|');
+		const tamper = (scoreHex: string) => {
+			const p = [...parts];
+			p[4] = scoreHex;
+			return Buffer.from(p.join('|'), 'utf8').toString('base64url');
+		};
+		for (const [label, bits] of [
+			['NaN', '7ff8000000000000'],
+			['+Infinity', '7ff0000000000000'],
+			['-Infinity', 'fff0000000000000'],
+		] as const) {
+			let thrown: unknown;
+			try {
+				decodeSearchCursor(tamper(bits), bind);
+			} catch (e) {
+				thrown = e;
+			}
+			expect(thrown, `${label} score cursor must be rejected`).toBeInstanceOf(SearchCursorError);
+			expect((thrown as any).code, `${label} → cursor_invalid`).toBe('cursor_invalid');
+		}
+		// Guard the guard: a finite score still round-trips (no false positive).
+		expect(decodeSearchCursor(real, bind).score).toBe(0.25);
+	});
+});
+
+describe('B11 — words leg payload carries render-ready original script (translit/original/lang/dir)', () => {
+	it('Hebrew (rtl) and Greek (ltr) strongs rows ship separate script fields, not a split title', async () => {
+		// The page must render the original script with a correct lang/dir instead
+		// of string-splitting `title` ("be.rit בְּרִית") — 354 multi-word titles
+		// break that split. The DB payload already holds translit/original/lang;
+		// the leg previously shipped only strongs_no. RED: original/lang/dir absent.
+		const { searchAll } = await import('../search');
+		// Source of truth from the live DB payload — compare original/translit
+		// against the stored bytes so niqqud/diacritic Unicode normalization can't
+		// make a hardcoded file literal spuriously diverge. lang/dir are derived.
+		const src = await client`
+			SELECT ref_id, payload FROM lumen.search_index
+			WHERE kind = 'strongs' AND ref_id IN ('H1285', 'G2787')`;
+		const srcOf = (id: string) => src.find((r: any) => r.ref_id === id)!.payload as any;
+
+		const wordsPayload = async (q: string, id: string) =>
+			(
+				(
+					await searchAll(db, {
+						q, visibleCollections: ['strongs'], scope: ['words'], limitPerGroup: 5,
+					})
+				).groups[0] as any
+			).results.find((r: any) => r.id === id)?.payload;
+
+		const heb = await wordsPayload('H1285', 'H1285');
+		expect(heb, 'H1285 (berit, Hebrew) present').toBeTruthy();
+		expect(heb.strongs_no).toBe('H1285');
+		expect(heb.translit).toBe(srcOf('H1285').translit);
+		expect(heb.original).toBe(srcOf('H1285').original); // בְּרִית
+		expect(heb.lang, 'Hebrew → BCP-47 he').toBe('he');
+		expect(heb.dir, 'Hebrew is right-to-left').toBe('rtl');
+
+		const grk = await wordsPayload('G2787', 'G2787');
+		expect(grk, 'G2787 (kibotos, Greek) present').toBeTruthy();
+		expect(grk.strongs_no).toBe('G2787');
+		expect(grk.translit).toBe(srcOf('G2787').translit);
+		expect(grk.original).toBe(srcOf('G2787').original); // κιβωτός
+		expect(grk.lang, 'Greek → BCP-47 grc').toBe('grc');
+		expect(grk.dir, 'Greek is left-to-right').toBe('ltr');
+	});
+});
+
+describe('B12 — book/volume reference lead headlines the canonical DB name, not the raw input', () => {
+	it('bare book/volume references resolve display from lumen.books / lumen.volumes', async () => {
+		// The 2xl reference lead parroted the raw-cased input ("moses"/"MOSES"/"pgp"),
+		// while chapter/verse already use the DB-proper name. RED before: display is
+		// parsed.raw; GREEN after: display is the canonical name.
+		const { searchAll } = await import('../search');
+		const cases: Array<[string, string]> = [
+			['moses', 'Moses'],
+			['MOSES', 'Moses'],
+			['pgp', 'Pearl of Great Price'],
+			['d&c', 'Doctrine and Covenants'],
+		];
+		for (const [q, expected] of cases) {
+			const res = await searchAll(db, {
+				q, visibleCollections: ['phase-b'], scope: ['scripture'],
+			});
+			expect(res.reference?.found, `${q} resolves a reference`).toBe(true);
+			expect(res.reference?.display, `${q} → canonical display`).toBe(expected);
+		}
 	});
 });

@@ -8,10 +8,8 @@ import {
 	ScrollRestoration,
 	data,
 } from "react-router";
-import { SearchIcon } from "lucide-react";
-
 import { AppMenu } from "~/components/AppMenu";
-import { SearchModal } from "~/components/SearchModal";
+import { SearchModal, SearchOrbAnchor } from "~/components/SearchModal";
 import { getSessionUser } from "~/lib/auth.server";
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -75,7 +73,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
  * Sign in item is user-summoned, not ambient. */
 
 /** Δ BRRU-3: a broken search chrome must never take the app shell with it.
- * The fallback is a plain-anchor orb to /search — degraded, still a door. */
+ * The fallback is a plain-anchor orb to /search — degraded, still a door. This
+ * class boundary catches CLIENT render throws only; the SSR path is made safe
+ * by SearchModal rendering the same static anchor server-side (B19). */
 class SearchChromeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
 	state = { failed: false };
 	static getDerivedStateFromError() {
@@ -83,15 +83,7 @@ class SearchChromeBoundary extends Component<{ children: ReactNode }, { failed: 
 	}
 	render() {
 		if (this.state.failed) {
-			return (
-				<a
-					href="/search"
-					aria-label="Search"
-					className="relative flex size-8 items-center justify-center rounded-full border border-rule2 bg-panel2 text-ink shadow-sm outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 after:absolute after:-inset-2 after:content-['']"
-				>
-					<SearchIcon className="size-4" aria-hidden="true" />
-				</a>
-			);
+			return <SearchOrbAnchor />;
 		}
 		return this.props.children;
 	}

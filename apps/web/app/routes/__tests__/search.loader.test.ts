@@ -21,8 +21,13 @@ vi.mock("~/lib/log.server", () => ({ logEvent: vi.fn() }));
 import { searchAll } from "@lumen/scripture";
 import { getSessionUser } from "~/lib/auth.server";
 import { logEvent } from "~/lib/log.server";
-// RED: module under test does not exist yet.
-import { loader, adaptiveLimit, parseMarks } from "../search";
+import { loader, adaptiveLimit, parseMarks, wordParts, isApiPage } from "../search";
+
+/** The loader returns `data(payload, { headers })` (B4 — session Set-Cookie must
+ * ride the response), so a direct call yields the DataWithResponseInit wrapper:
+ * payload on `.data`, response headers on `.init.headers`. */
+const payload = (res: any) => res.data;
+const resHeaders = (res: any) => new Headers(res.init?.headers);
 
 // Δ ACU-3: `satisfies`, never a cast — mock drift against the real response
 // type breaks typecheck instead of silently pinning a stale shape (harness-
@@ -70,9 +75,9 @@ beforeEach(() => {
 
 describe("F6 — SSR loader contract", () => {
 	it("calls searchAll directly (no self-HTTP) and returns data for first paint", async () => {
-		const data = await loader(makeArgs("?q=faith"));
+		const res = await loader(makeArgs("?q=faith"));
 		expect(searchAll).toHaveBeenCalledTimes(1);
-		expect(data.results.groups.map((g: any) => g.key)).toEqual([...GROUP_KEYS]);
+		expect(payload(res).results.groups.map((g: any) => g.key)).toEqual([...GROUP_KEYS]);
 	});
 	it("logs search_executed exactly once (no double-log with the API route)", async () => {
 		await loader(makeArgs("?q=faith"));
@@ -108,21 +113,21 @@ describe("F7/F8 — scope + adaptive density", () => {
 
 describe("F17 — Cache-Control: private, no-store on EVERY exit branch (Δ SU-4)", () => {
 	it("happy path", async () => {
-		const data = await loader(makeArgs("?q=faith"));
-		expect(data.headers.get("Cache-Control")).toBe("private, no-store");
+		const res = await loader(makeArgs("?q=faith"));
+		expect(resHeaders(res).get("Cache-Control")).toBe("private, no-store");
 	});
 	it("designed empty state (no q)", async () => {
-		const data = await loader(makeArgs(""));
-		expect(data.headers.get("Cache-Control")).toBe("private, no-store");
+		const res = await loader(makeArgs(""));
+		expect(resHeaders(res).get("Cache-Control")).toBe("private, no-store");
 	});
 	it("keep-typing state (sub-Q_MIN q)", async () => {
-		const data = await loader(makeArgs("?q=a"));
-		expect(data.headers.get("Cache-Control")).toBe("private, no-store");
+		const res = await loader(makeArgs("?q=a"));
+		expect(resHeaders(res).get("Cache-Control")).toBe("private, no-store");
 	});
 	it("reference short-circuit", async () => {
 		vi.mocked(searchAll).mockResolvedValueOnce(REFERENCE_RESPONSE());
-		const data = await loader(makeArgs("?q=1%20nephi%203:7"));
-		expect(data.headers.get("Cache-Control")).toBe("private, no-store");
+		const res = await loader(makeArgs("?q=1%20nephi%203:7"));
+		expect(resHeaders(res).get("Cache-Control")).toBe("private, no-store");
 	});
 	it("thrown 400 (unknown scope): the REJECTED Response carries the header too", async () => {
 		const err = await loader(makeArgs("?q=faith&scope=bogus")).then(
@@ -134,6 +139,51 @@ describe("F17 — Cache-Control: private, no-store on EVERY exit branch (Δ SU-4
 		expect(err).toBeInstanceOf(Response);
 		expect((err as Response).status).toBe(400);
 		expect((err as Response).headers.get("Cache-Control")).toBe("private, no-store");
+	});
+});
+
+describe("B4 — session token-rotation Set-Cookie survives client-nav (SC-1)", () => {
+	it("happy path: session Set-Cookie rides the data() response, Cache-Control intact", async () => {
+		vi.mocked(getSessionUser).mockResolvedValueOnce({
+			user: null,
+			headers: new Headers({ "Set-Cookie": "sb-session=rotated; Path=/; HttpOnly" }),
+		});
+		const res = await loader(makeArgs("?q=faith"));
+		expect(resHeaders(res).get("Set-Cookie")).toContain("sb-session=rotated");
+		expect(resHeaders(res).get("Cache-Control")).toBe("private, no-store");
+	});
+	it("500 path: the thrown Response keeps Cache-Control AND the session Set-Cookie", async () => {
+		vi.mocked(getSessionUser).mockResolvedValueOnce({
+			user: null,
+			headers: new Headers({ "Set-Cookie": "sb-session=rot; Path=/" }),
+		});
+		vi.mocked(searchAll).mockRejectedValueOnce(new Error("pool exhausted"));
+		const err = await loader(makeArgs("?q=faith")).then(
+			() => {
+				throw new Error("expected the loader to throw");
+			},
+			(e: unknown) => e,
+		);
+		expect(err).toBeInstanceOf(Response);
+		expect((err as Response).status).toBe(500);
+		expect((err as Response).headers.get("Cache-Control")).toBe("private, no-store");
+		expect((err as Response).headers.get("Set-Cookie")).toContain("sb-session=rot");
+	});
+});
+
+describe("B10 — hydration payload strips results.meta (raw DB error strings) (SC-2)", () => {
+	it("returns only {query, reference, groups}, never meta", async () => {
+		const res = await loader(makeArgs("?q=faith"));
+		expect(payload(res).results).not.toHaveProperty("meta");
+		expect(Object.keys(payload(res).results).sort()).toEqual(["groups", "query", "reference"]);
+	});
+});
+
+describe("B16 — search_executed carries a surface discriminator (OC-2)", () => {
+	it("the page loader logs surface: 'page'", async () => {
+		await loader(makeArgs("?q=faith"));
+		const call = vi.mocked(logEvent).mock.calls.find((c) => c[0] === "search_executed");
+		expect(call?.[1]).toMatchObject({ surface: "page" });
 	});
 });
 
@@ -176,15 +226,15 @@ describe("F18 — CPERF guard on the ENTITLED session path (Δ PU-2/ACU-4)", () 
 
 describe("F19 — designed empty + keep-typing states (Δ UU-2/UU-9)", () => {
 	it("bare /search (no q) → data.state 'empty', results null, searchAll never called", async () => {
-		const data = await loader(makeArgs(""));
+		const res = await loader(makeArgs(""));
 		expect(searchAll).not.toHaveBeenCalled();
-		expect(data.state).toBe("empty");
-		expect(data.results).toBeNull();
+		expect(payload(res).state).toBe("empty");
+		expect(payload(res).results).toBeNull();
 	});
 	it("sub-Q_MIN q ('a') → data.state 'keepTyping', searchAll never called", async () => {
-		const data = await loader(makeArgs("?q=a"));
+		const res = await loader(makeArgs("?q=a"));
 		expect(searchAll).not.toHaveBeenCalled();
-		expect(data.state).toBe("keepTyping");
+		expect(payload(res).state).toBe("keepTyping");
 	});
 });
 
@@ -233,10 +283,10 @@ describe("F21 — MarkedText emits JSX only (Δ SU-5)", () => {
 describe("F13 — reference short-circuit", () => {
 	it("resolved reference: loader flags referenceOnly, groups suppressed", async () => {
 		vi.mocked(searchAll).mockResolvedValueOnce(REFERENCE_RESPONSE());
-		const data = await loader(makeArgs("?q=1%20nephi%203:7"));
-		expect(data.results.reference?.found).toBe(true);
-		expect(data.referenceHref).toBe("/scripture/1-ne/3?verse=7");
-		expect(data.state).toBe("reference");
+		const res = await loader(makeArgs("?q=1%20nephi%203:7"));
+		expect(payload(res).results.reference?.found).toBe(true);
+		expect(payload(res).referenceHref).toBe("/scripture/1-ne/3?verse=7");
+		expect(payload(res).state).toBe("reference");
 	});
 
 	// B-U2 (Abram, live test 2026-07-21): q='moses' — a BOOK-level bare-name
@@ -256,11 +306,11 @@ describe("F13 — reference short-circuit", () => {
 						: [],
 			})),
 		} satisfies SearchResponse);
-		const data = await loader(makeArgs("?q=moses"));
-		expect(data.state).toBe("results");
-		expect(data.referenceHref).toBe("/scripture/moses");
+		const res = await loader(makeArgs("?q=moses"));
+		expect(payload(res).state).toBe("results");
+		expect(payload(res).referenceHref).toBe("/scripture/moses");
 		expect(
-			data.results.groups.find((g: any) => g.key === "people")?.results,
+			payload(res).results.groups.find((g: any) => g.key === "people")?.results,
 		).toHaveLength(1);
 	});
 });
@@ -321,5 +371,50 @@ describe("F10/F14 — deep links + route registration", () => {
 		const catchAllIdx = flat.indexOf("routes/node.tsx");
 		expect(searchIdx).toBeGreaterThan(-1);
 		expect(searchIdx).toBeLessThan(catchAllIdx);
+	});
+});
+
+describe("B3/B7 — fetcher shape-guard: API error bodies never reach `.groups` (CC-4/OC-1)", () => {
+	it("returned {error,code} 400/500 body is NOT an ApiSearchPage (no crash / no false append)", () => {
+		expect(isApiPage({ error: "cursor was minted for a different q", code: "cursor_mismatch" })).toBe(
+			false,
+		);
+		expect(isApiPage({ error: "Search failed", code: "internal" })).toBe(false);
+		expect(isApiPage(undefined)).toBe(false);
+		expect(isApiPage(null)).toBe(false);
+	});
+	it("a real page body ({query, reference, groups}) passes the guard", () => {
+		expect(isApiPage({ query: "faith", reference: null, groups: [] })).toBe(true);
+	});
+});
+
+describe("B11 — words original-script parts come from the payload, not a title split", () => {
+	const strong = (payload: Record<string, unknown>) =>
+		({ type: "strongs", id: "x", title: "ou mē οὐ μή", tier: 1, score: 1, payload }) as any;
+
+	it("multi-word original stays whole; name is the translit; lang/dir from payload", () => {
+		// The last-space split rendered name "ou mē οὐ" / original "μή" — the 354-row
+		// mode. The payload carries them cleanly.
+		const p = wordParts(
+			strong({ strongs_no: "G20852", translit: "ou mē", original: "οὐ μή", lang: "grc", dir: "ltr" }),
+		);
+		expect(p.name).toBe("ou mē");
+		expect(p.original).toBe("οὐ μή");
+		expect(p.lang).toBe("grc");
+		expect(p.dir).toBe("ltr");
+	});
+
+	it("hebrew: rtl + he ride the original-script span", () => {
+		const p = wordParts(
+			strong({ strongs_no: "H1285", translit: "be.rit", original: "בְּרִית", lang: "he", dir: "rtl" }),
+		);
+		expect(p).toMatchObject({ name: "be.rit", original: "בְּרִית", lang: "he", dir: "rtl" });
+	});
+
+	it("payload without translit/original → falls back to title, renders no original span", () => {
+		const p = wordParts(strong({ strongs_no: "H1" }));
+		expect(p.name).toBe("ou mē οὐ μή");
+		expect(p.original).toBe("");
+		expect(p.dir).toBeUndefined();
 	});
 });

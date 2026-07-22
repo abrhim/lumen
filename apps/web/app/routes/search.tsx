@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, isRouteErrorResponse, useFetcher, useLocation, useNavigate, useNavigation } from "react-router";
+import {
+	data,
+	Link,
+	isRouteErrorResponse,
+	useFetcher,
+	useLocation,
+	useNavigate,
+	useNavigation,
+} from "react-router";
 import { sql } from "drizzle-orm";
 import {
 	GROUP_KEYS,
@@ -8,7 +16,6 @@ import {
 	type ResultType,
 	type SearchGroup,
 	type SearchReference,
-	type SearchResponse,
 	type SearchResult,
 } from "@lumen/scripture";
 import {
@@ -42,6 +49,15 @@ import type { Route } from "./+types/search";
 
 type SearchPageState = "empty" | "keepTyping" | "reference" | "results";
 
+/** The client-facing search payload — {query, reference, groups} only. The page
+ * loader and the /api/search fetcher return the SAME shape; `meta` (raw DB error
+ * strings) is stripped before it reaches the hydration payload (B10). */
+interface ApiSearchPage {
+	query: string;
+	reference: SearchReference | null;
+	groups: SearchGroup[];
+}
+
 interface SearchLoaderData {
 	state: SearchPageState;
 	q: string;
@@ -49,12 +65,11 @@ interface SearchLoaderData {
 	scope: GroupKey[] | null;
 	/** Runtime-null on empty/keepTyping (F19 pins it); typed non-null because
 	 * the harness dereferences data.results on query paths without narrowing. */
-	results: SearchResponse;
+	results: ApiSearchPage;
 	referenceHref: string | null;
 	limitPerGroup: number;
 	/** Q_MIN rides the payload — the client can't import the .server module. */
 	qMin: number;
-	headers: Headers;
 }
 
 /** Δ CU-3/ACU-2 density mapping (F8): fewer groups, deeper pages. */
@@ -192,15 +207,31 @@ function referencePath(ref: SearchReference): string | null {
 	return `/scripture/${ref.book_id}`;
 }
 
-export async function loader({ request, context }: Route.LoaderArgs): Promise<SearchLoaderData> {
-	// F17 (Δ SU-4): EVERY exit — returns and thrown Responses alike — carries
-	// private, no-store; the body varies by session visibility.
-	const headers = new Headers({ "Cache-Control": "private, no-store" });
+/** The API's q upper bound (parseQ enforces 2–200): the client gates ≤ Q_MAX so a
+ * >200-char live query never round-trips to a silent 400 (B7). */
+const Q_MAX = 200;
+
+/** RR single-fetch RETURNS API 400/500 bodies as `fetcher.data = {error,code}`
+ * (never the ErrorBoundary), so every fetcher consumer shape-guards before it
+ * touches `.groups` (B3/B7). */
+export function isApiPage(d: unknown): d is ApiSearchPage {
+	return typeof d === "object" && d !== null && Array.isArray((d as { groups?: unknown }).groups);
+}
+
+/** F17 (Δ SU-4): Cache-Control on EVERY exit — and B4: the session's
+ * token-rotation Set-Cookie preserved when present (undefined pre-session). */
+function withNoStore(session?: Headers): Headers {
+	const headers = new Headers(session);
+	headers.set("Cache-Control", "private, no-store");
+	return headers;
+}
+
+export async function loader({ request, context }: Route.LoaderArgs) {
 	const url = new URL(request.url);
 
 	const scopeResult = parseScope(url.searchParams.get("scope"));
 	if (!scopeResult.ok) {
-		throw new Response(scopeResult.message, { status: 400, headers });
+		throw new Response(scopeResult.message, { status: 400, headers: withNoStore() });
 	}
 	const scope = scopeResult.value;
 	const limitPerGroup = adaptiveLimit(scope?.length ?? GROUP_KEYS.length);
@@ -208,11 +239,10 @@ export async function loader({ request, context }: Route.LoaderArgs): Promise<Se
 	const base = {
 		scope: scope ?? null,
 		// See SearchLoaderData.results: null at runtime, non-null in the type.
-		results: null as unknown as SearchResponse,
+		results: null as unknown as ApiSearchPage,
 		referenceHref: null,
 		limitPerGroup,
 		qMin: Q_MIN,
-		headers,
 	};
 
 	const rawQ = url.searchParams.get("q");
@@ -220,21 +250,29 @@ export async function loader({ request, context }: Route.LoaderArgs): Promise<Se
 	if (!qResult.ok) {
 		if (qResult.code === "q_required") {
 			// Δ UU-2/F19: bare /search is a designed state, not a dead end.
-			return { ...base, state: "empty", q: "" };
+			return data({ ...base, state: "empty", q: "" } satisfies SearchLoaderData, {
+				headers: withNoStore(),
+			});
 		}
 		const trimmed = (rawQ ?? "").trim();
 		if (trimmed.length < Q_MIN) {
 			// Δ UU-9/F19: sub-Q_MIN issues no search at all.
-			return { ...base, state: "keepTyping", q: trimmed };
+			return data({ ...base, state: "keepTyping", q: trimmed } satisfies SearchLoaderData, {
+				headers: withNoStore(),
+			});
 		}
-		throw new Response(qResult.message, { status: 400, headers });
+		throw new Response(qResult.message, { status: 400, headers: withNoStore() });
 	}
 	const q = qResult.value;
 
+	// B4: `session.headers` (token-rotation Set-Cookie) must survive client-nav —
+	// hoisted so the 500-throw path can attach it too (mirror api.search.tsx).
+	let sessionHeaders: Headers | undefined;
 	let visibility: "public" | "admin" = "public";
 	try {
 		const session = await getSessionUser(request, context.cloudflare.env);
 		const user = session.user;
+		sessionHeaders = session.headers;
 		const access = await getCollectionAccessStrict(context.db, user?.id ?? null);
 		let visibleCollections = access.publicIds;
 		if (access.entitled) {
@@ -247,34 +285,43 @@ export async function loader({ request, context }: Route.LoaderArgs): Promise<Se
 
 		const results = await searchAll(context.db, { q, visibleCollections, scope, limitPerGroup });
 
-		logSearchExecuted(results, { q, scope, visibility, userId: user?.id });
+		// B16: this surface is the page loader (a URL navigation), distinct from the
+		// /api/search fetcher — so Enter-after-debounce isn't double-counted.
+		logSearchExecuted(results, { q, scope, visibility, userId: user?.id, surface: "page" });
 
 		const referenceHref = results.reference?.found ? referencePath(results.reference) : null;
-		return {
-			...base,
-			state:
-				results.reference?.found && isShortCircuitReference(results.reference)
-					? "reference"
-					: "results",
-			q,
-			results,
-			referenceHref,
-		};
+		return data(
+			{
+				...base,
+				state:
+					results.reference?.found && isShortCircuitReference(results.reference)
+						? "reference"
+						: "results",
+				q,
+				// B10: strip `meta` (raw DB combinedError/error strings) — the client
+				// reads only these three, exactly like api.search.tsx.
+				results: { query: results.query, reference: results.reference, groups: results.groups },
+				referenceHref,
+			} satisfies SearchLoaderData,
+			{ headers: withNoStore(sessionHeaders) },
+		);
 	} catch (err) {
-		logSearchFailed(err, { q, scope, visibility });
-		throw new Response("Search failed", { status: 500, headers });
+		logSearchFailed(err, { q, scope, visibility, surface: "page" });
+		throw new Response("Search failed", { status: 500, headers: withNoStore(sessionHeaders) });
 	}
 }
 
-/** The loader returns a plain object (the harness pins data.headers on it),
- * so loaderHeaders is empty — the document header is static here and covers
- * the error branches too. */
-export function headers(_args: Route.HeadersArgs) {
-	return { "Cache-Control": "private, no-store" };
+/** B4: forward the loader's headers (Cache-Control + any session Set-Cookie set
+ * on the `data(…,{headers})` return) to the document response, guaranteeing the
+ * F17 header even when loaderHeaders is empty. */
+export function headers({ loaderHeaders }: Route.HeadersArgs) {
+	const headers = new Headers(loaderHeaders);
+	headers.set("Cache-Control", "private, no-store");
+	return headers;
 }
 
-export function meta({ data }: Route.MetaArgs) {
-	const q = data?.q;
+export function meta({ data: d }: Route.MetaArgs) {
+	const q = d?.q;
 	return [{ title: q ? `“${q}” · Search · Lumen` : "Search · Lumen" }];
 }
 
@@ -404,6 +451,22 @@ function RowIcon({ type }: { type: ResultType }) {
 	);
 }
 
+/** B11: the words leg ships translit/original/lang/dir as payload fields — read
+ * them directly rather than splitting `title` on its last space (354/20,734
+ * strongs titles carry a multi-word original the split mangled, e.g. "οὐ μή"). */
+export function wordParts(r: SearchResult): {
+	name: string;
+	original: string;
+	lang?: string;
+	dir?: "rtl" | "ltr";
+} {
+	const original = typeof r.payload.original === "string" ? r.payload.original : "";
+	const translit = typeof r.payload.translit === "string" ? r.payload.translit : "";
+	const lang = typeof r.payload.lang === "string" ? r.payload.lang : undefined;
+	const dir = r.payload.dir === "rtl" || r.payload.dir === "ltr" ? r.payload.dir : undefined;
+	return { name: translit || r.title, original, lang, dir };
+}
+
 function RowBody({ groupKey, r }: { groupKey: GroupKey; r: SearchResult }) {
 	if (groupKey === "scripture") {
 		return (
@@ -474,15 +537,19 @@ function RowBody({ groupKey, r }: { groupKey: GroupKey; r: SearchResult }) {
 		);
 	}
 	if (groupKey === "words") {
-		const parts = r.title.split(" ");
-		const orig = parts.length > 1 ? parts[parts.length - 1] : "";
-		const name = orig ? parts.slice(0, -1).join(" ") : r.title;
+		const { name, original, lang, dir } = wordParts(r);
 		return (
 			<>
 				<span className="font-reading text-[15px] leading-normal text-ink">
 					<RowIcon type={r.type} />
 					{name}
-					{orig && <span className="ml-1.5 font-reading text-[19px]">{orig}</span>}
+					{original && (
+						// B11: original script from the payload — carries its own lang/dir so
+						// screen readers don't voice Hebrew/Greek with the page language.
+						<span lang={lang} dir={dir} className="ml-1.5 font-reading text-[19px]">
+							{original}
+						</span>
+					)}
 					<span className="ml-2 font-ui text-[11px] font-medium tracking-[0.02em] text-faint">
 						{String(r.payload.strongs_no ?? "")}
 					</span>
@@ -519,14 +586,31 @@ function RowBody({ groupKey, r }: { groupKey: GroupKey; r: SearchResult }) {
 const ROW_CLASS =
 	"group relative block rounded-lg px-3 py-2 outline-none transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 focus:bg-sel focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-selbar";
 
-function ResultRow({ groupKey, r }: { groupKey: GroupKey; r: SearchResult }) {
+function ResultRow({
+	groupKey,
+	r,
+	tabStop,
+	onFocus,
+}: {
+	groupKey: GroupKey;
+	r: SearchResult;
+	tabStop: boolean;
+	onFocus: () => void;
+}) {
 	const href = resultHref(r);
 	const body = <RowBody groupKey={groupKey} r={r} />;
 	return (
 		<li>
 			{href ? (
-				// tabIndex -1: rows are reached by roving ↑↓ focus, not Tab (Δ AU-2).
-				<Link to={href} tabIndex={-1} data-result-row className={ROW_CLASS}>
+				// Roving tab-stop (Δ AU-2/AC-3/B15): the active row is tabIndex 0 so Tab
+				// reaches the list and ↑↓ move from it; the rest are -1.
+				<Link
+					to={href}
+					tabIndex={tabStop ? 0 : -1}
+					data-result-row
+					onFocus={onFocus}
+					className={ROW_CLASS}
+				>
 					{body}
 				</Link>
 			) : (
@@ -554,12 +638,6 @@ function Kbd({ children }: { children: React.ReactNode }) {
 	);
 }
 
-interface ApiSearchPage {
-	query: string;
-	reference: SearchReference | null;
-	groups: SearchGroup[];
-}
-
 export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const { state, q, results, referenceHref, qMin } = loaderData;
 	const scopeParam = loaderData.scope;
@@ -581,29 +659,61 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const debounceRef = useRef<number | undefined>(undefined);
 	const liveQRef = useRef<string | null>(null);
 	const [live, setLive] = useState<ApiSearchPage | null>(null);
+	// B7/OC-3: a live fetch that returns an API error body (or an over-long query)
+	// shows a quiet inline state, never leaves the view stuck "pending".
+	const [liveError, setLiveError] = useState(false);
 
 	// ── single-scope pagination appends (Δ CU-7/CU-4) ──
 	const pageFetcher = useFetcher<ApiSearchPage>();
 	const pendingCursorRef = useRef<string | null>(null);
 	const [extra, setExtra] = useState<{ results: SearchResult[]; nextCursor?: string } | null>(null);
+	// B3/CC-4: an append fetch that returns an API error body shows an inline retry,
+	// never a TypeError that swaps the whole page to the ErrorBoundary.
+	const [pageError, setPageError] = useState(false);
+	// B5/AC-1: a keyboard-initiated "More" moves focus to the first appended row so
+	// the roving anchor survives the append; pointer / sentinel appends leave it null.
+	const appendAnchorRef = useRef<number | null>(null);
+	// B15/AC-3: the roving tab-stop — the row Tab lands on and ↑↓ move from.
+	const [rovingKey, setRovingKey] = useState<string | null>(null);
 
-	// A navigation commit discards in-flight live results and appends (Q6).
+	// A navigation commit discards in-flight live results and appends (Q6). B2/CC-3:
+	// the pending append cursor + roving anchor + error flags reset here too.
 	useEffect(() => {
 		liveQRef.current = null;
 		setLive(null);
+		setLiveError(false);
 		setExtra(null);
+		setPageError(false);
+		pendingCursorRef.current = null;
+		setRovingKey(null);
 		setInput((prev) => (prev.trim() === q ? prev : q));
 	}, [location.key, q]);
 
 	useEffect(() => {
-		const d = liveFetcher.data;
-		if (d && liveQRef.current !== null && d.query === liveQRef.current) setLive(d);
+		const d = liveFetcher.data as unknown;
+		if (d === undefined || liveQRef.current === null) return;
+		if (!isApiPage(d)) {
+			// B7/OC-3: API 400/500 bodies land in fetcher.data (no `query` key), not
+			// the boundary — surface a quiet failure rather than showing stale results.
+			setLiveError(true);
+			return;
+		}
+		if (d.query === liveQRef.current) {
+			setLive(d);
+			setLiveError(false);
+		}
 	}, [liveFetcher.data]);
 
 	useEffect(() => {
-		const d = pageFetcher.data;
-		if (!d || pendingCursorRef.current === null) return;
+		const d = pageFetcher.data as unknown;
+		if (d === undefined || pendingCursorRef.current === null) return;
 		pendingCursorRef.current = null;
+		if (!isApiPage(d)) {
+			// B3/CC-4: never dereference an error body's `.groups` — retry inline.
+			setPageError(true);
+			return;
+		}
+		setPageError(false);
 		const g = d.groups.find((x) => x.key === singleScopeKey);
 		if (!g) return;
 		setExtra((prev) => ({
@@ -612,20 +722,44 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		}));
 	}, [pageFetcher.data, singleScopeKey]);
 
+	// B27/PC-4: a debounce still pending when the user clicks a result <Link> would
+	// fire a post-unmount /api/search round trip — clear it on unmount.
+	useEffect(() => () => window.clearTimeout(debounceRef.current), []);
+
 	const onInputChange = (value: string) => {
 		setInput(value);
 		window.clearTimeout(debounceRef.current);
 		const next = value.trim();
-		if (next === q || next.length < qMin) {
-			// Back to the SSR data / quiet keep-typing — no request (Δ UU-9).
+		if (next !== q) {
+			// The displayed query is leaving the committed single-scope page — its
+			// appended pages, pending cursor, and roving anchor no longer belong to
+			// it (B2/CC-2), so a later More can't replay an old cursor.
+			setExtra(null);
+			pendingCursorRef.current = null;
+			setRovingKey(null);
+		}
+		if (next === q || next.length < qMin || next.length > Q_MAX) {
+			// Back to SSR data / quiet keep-typing / too-long — no request (Δ UU-9, B7).
 			liveQRef.current = null;
 			setLive(null);
+			setLiveError(false);
 			return;
 		}
+		setLiveError(false);
 		debounceRef.current = window.setTimeout(() => {
 			liveQRef.current = next;
 			liveFetcher.load(buildPageFetchUrl({ q: next, scope: included }));
 		}, 350);
+	};
+
+	// B7: re-issue the live fetch after a transient failure (no debounce — the
+	// user asked for it explicitly).
+	const retryLive = () => {
+		if (trimmed.length < qMin || trimmed.length > Q_MAX) return;
+		window.clearTimeout(debounceRef.current);
+		setLiveError(false);
+		liveQRef.current = trimmed;
+		liveFetcher.load(buildPageFetchUrl({ q: trimmed, scope: included }));
 	};
 
 	const display = live ?? (state === "results" || state === "reference" ? results : null);
@@ -635,18 +769,20 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		? displayReference && referencePath(displayReference)
 		: referenceHref;
 
-	const view: "empty" | "keepTyping" | "pending" | "reference" | "zero" | "results" =
+	const view: "empty" | "keepTyping" | "pending" | "reference" | "zero" | "results" | "error" =
 		trimmed === ""
 			? "empty"
 			: trimmed.length < qMin
 				? "keepTyping"
-				: displayReference && isShortCircuitReference(displayReference)
-					? "reference"
-					: display
-						? display.groups.some((g) => g.results.length > 0)
-							? "results"
-							: "zero"
-						: "pending";
+				: trimmed.length > Q_MAX || liveError
+					? "error"
+					: displayReference && isShortCircuitReference(displayReference)
+						? "reference"
+						: display
+							? display.groups.some((g) => g.results.length > 0)
+								? "results"
+								: "zero"
+							: "pending";
 
 	// ── URL commits (Q6): Enter, scope clicks, restore-all ──
 	const commitNavigate = (to: string) => {
@@ -670,8 +806,9 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 			return;
 		}
 		if (trimmed.length < qMin) return;
-		// Second Enter on a resolved reference opens the reader (F13).
-		if (trimmed === q && view === "reference" && displayReferenceHref) {
+		// A resolved reference (committed OR live-typed) opens the reader on Enter —
+		// keyed on the DISPLAYED query, not the stale committed `q` (F13/B22).
+		if (view === "reference" && displayReferenceHref) {
 			commitNavigate(displayReferenceHref);
 			return;
 		}
@@ -732,6 +869,9 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		const cur = rows.findIndex((r) => r === document.activeElement);
 		if (cur === -1 && e.key === "ArrowUp") return;
 		e.preventDefault();
+		// B24: entering / moving among rows cancels a pending live re-fetch so a
+		// debounce firing mid-navigation can't re-key the list and drop the row.
+		window.clearTimeout(debounceRef.current);
 		if (cur === 0 && e.key === "ArrowUp") {
 			inputRef.current?.focus();
 			return;
@@ -742,8 +882,13 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	};
 
 	// ── delayed pending signal: skeleton-quiet under 300 ms ──
+	// B8/UC-3: `view === "pending"` (typed past qMin, first results not yet in)
+	// starts the slow-timer at the keystroke so it spans the 350 ms debounce.
 	const busy =
-		navigation.state !== "idle" || liveFetcher.state !== "idle" || pageFetcher.state !== "idle";
+		navigation.state !== "idle" ||
+		liveFetcher.state !== "idle" ||
+		pageFetcher.state !== "idle" ||
+		view === "pending";
 	const [busySlow, setBusySlow] = useState(false);
 	// A10 (human, live-test): advanced-syntax help — icon toggle, instructions
 	// render between the input row and the scope line.
@@ -765,11 +910,29 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		baseGroup && extra ? dedupeMoments(baseGroup.results, extra.results) : baseGroup?.results;
 	const currentCursor = extra ? extra.nextCursor : baseGroup?.nextCursor;
 
-	const loadMoreRef = useRef<() => void>(() => {});
-	loadMoreRef.current = () => {
+	// B5/AC-1: once a keyboard-initiated append lands, move focus to the first
+	// newly-appended row so ↑↓ keeps an anchor (and the unmounting "More" button
+	// on the final page doesn't drop focus to <body>).
+	useEffect(() => {
+		if (appendAnchorRef.current === null) return;
+		const anchor = appendAnchorRef.current;
+		appendAnchorRef.current = null;
+		const rows = Array.from(
+			mainRef.current?.querySelectorAll<HTMLElement>("[data-result-row]") ?? [],
+		);
+		const target = rows[anchor] ?? rows[rows.length - 1];
+		target?.focus();
+		target?.scrollIntoView({ block: "nearest" });
+	}, [mergedSingle?.length]);
+
+	const loadMoreRef = useRef<(viaKeyboard?: boolean) => void>(() => {});
+	loadMoreRef.current = (viaKeyboard = false) => {
 		if (!singleScopeKey || !currentCursor || pageFetcher.state !== "idle") return;
 		pendingCursorRef.current = currentCursor;
-		pageFetcher.load(buildPageFetchUrl({ q: displayQ, scope: [singleScopeKey], after: currentCursor }));
+		appendAnchorRef.current = viaKeyboard ? (mergedSingle?.length ?? 0) : null;
+		pageFetcher.load(
+			buildPageFetchUrl({ q: displayQ, scope: [singleScopeKey], after: currentCursor }),
+		);
 	};
 	const sentinelRef = useRef<HTMLDivElement>(null);
 	const hasCursor = currentCursor !== undefined;
@@ -799,15 +962,42 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const anyTruncated = included.some((key) => groupCount(key)?.truncated);
 	const hasRows = view === "results" && totalShown > 0;
 
+	// B15/AC-3: the roving tab-stop key. Default to the first rendered row so Tab
+	// reaches the list and ↑↓ work on a fresh SSR load; a stale key (after a query
+	// change) that matches no rendered row falls back to the first row.
+	let firstRowKey: string | null = null;
+	const renderedKeys = new Set<string>();
+	if (view === "results" && display) {
+		for (const gk of included) {
+			const g = display.groups.find((x) => x.key === gk);
+			const gkRows = gk === singleScopeKey && mergedSingle ? mergedSingle : g?.results;
+			if (gkRows) {
+				for (const row of gkRows) {
+					const k = rowKey(row);
+					renderedKeys.add(k);
+					if (firstRowKey === null) firstRowKey = k;
+				}
+			}
+		}
+	}
+	const activeRowKey = rovingKey && renderedKeys.has(rovingKey) ? rovingKey : firstRowKey;
+
 	const statusText = busySlow
 		? "Searching…"
 		: view === "results"
 			? `${totalShown}${anyTruncated ? "+" : ""} ${totalShown === 1 ? "result" : "results"} for “${displayQ}”`
 			: view === "zero"
 				? `No results for “${displayQ}”`
-				: view === "reference" && displayReference
-					? `Reference — ${displayReference.display}`
-					: "";
+				: view === "keepTyping"
+					? // B24/AC-8: parity with the sighted "Keep typing…" state.
+						`Keep typing — at least ${qMin} characters`
+					: view === "error"
+						? trimmed.length > Q_MAX
+							? `Search is too long — keep it under ${Q_MAX} characters`
+							: "Something went wrong — try again"
+						: view === "reference" && displayReference
+							? `Reference — ${displayReference.display}`
+							: "";
 
 	const showScopeLine = view === "results" || view === "zero" || excludedCount > 0;
 
@@ -881,7 +1071,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 				{syntaxOpen && (
 					<div
 						id="search-syntax"
-						className="mt-3 max-w-prose border-b border-rule pb-5 font-reading text-[15px] leading-relaxed"
+						className="mt-3 max-w-prose font-reading text-[15px] leading-relaxed"
 					>
 						<p className="text-ink">
 							Type plain words for most searches. A few extras, when you want them:
@@ -921,9 +1111,12 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 										type="button"
 										aria-pressed={isIncluded}
 										aria-disabled={lastIncluded || undefined}
+										// B9/UC-4: a pointer click must not leave the button focused, or
+										// Space-to-scroll re-fires the toggle (the B-U1 hijack mode).
+										onMouseDown={(e) => e.preventDefault()}
 										onClick={() => toggleScope(key)}
 										// after:-inset-y-2 over py-1 → 44 px hit box (house touch law, Δ UU-6)
-										className={`relative py-1 font-ui text-sm font-semibold transition-colors duration-150 after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] ${
+										className={`relative py-1 font-ui text-sm font-semibold transition-colors duration-150 after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] focus-visible:outline-none focus-visible:underline focus-visible:decoration-selbar focus-visible:decoration-2 focus-visible:underline-offset-4 ${
 											isIncluded
 												? "text-primary hover:underline hover:underline-offset-4"
 												: "text-faint line-through decoration-1 hover:text-muted-foreground"
@@ -939,7 +1132,13 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 											</span>
 										)}
 										<span className="sr-only">
-											{isIncluded ? ", included — activate to exclude" : ", excluded — activate to include"}
+											{/* B23/AC-7: the floor-of-1 toggle no-ops — don't tell SR users to
+											    "activate to exclude" it. */}
+											{lastIncluded
+												? ", included — at least one group must stay included"
+												: isIncluded
+													? ", included — activate to exclude"
+													: ", excluded — activate to include"}
 										</span>
 									</button>
 								</li>
@@ -949,8 +1148,9 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 							<li>
 								<button
 									type="button"
+									onMouseDown={(e) => e.preventDefault()}
 									onClick={() => commitScope([...GROUP_KEYS])}
-									className="relative py-1 font-ui text-sm font-semibold text-faint transition-colors duration-150 after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] hover:text-primary"
+									className="relative py-1 font-ui text-sm font-semibold text-faint transition-colors duration-150 after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] hover:text-primary focus-visible:outline-none focus-visible:underline focus-visible:decoration-selbar focus-visible:decoration-2 focus-visible:underline-offset-4"
 								>
 									Show all
 								</button>
@@ -972,7 +1172,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 
 			{view === "empty" && (
 				<div className="mt-12 max-w-prose">
-					<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+					<p className="font-reading text-[17px] leading-relaxed text-muted-foreground">
 						Search the whole library at once — scripture, people, places, topics, episodes, art,
 						and the words behind the words.
 					</p>
@@ -995,21 +1195,49 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 			)}
 
 			{view === "keepTyping" && (
-				<p className="mt-12 max-w-prose font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+				<p className="mt-12 max-w-prose font-reading text-[17px] leading-relaxed text-muted-foreground">
 					Keep typing…
 				</p>
 			)}
 
-			{view === "zero" && (
-				<p className="mt-12 max-w-prose font-reading text-[17px] italic leading-relaxed text-muted-foreground">
-					Nothing in the library matches <span className="not-italic">“{displayQ}”</span>
-					{excludedCount > 0 ? " in the included groups" : ""}. Try a broader phrase, a name, or
-					a book and chapter — “alma 32”.
+			{/* B8/UC-3: a quiet placeholder while the first live results resolve —
+			    shown only after the 300 ms slow-timer (which now spans the debounce). */}
+			{view === "pending" && busySlow && (
+				<ul className="mt-12 max-w-prose space-y-3" aria-hidden="true">
+					{[0, 1, 2, 3].map((i) => (
+						<li key={i} className="h-4 rounded bg-rule2/50" style={{ width: `${72 - i * 11}%` }} />
+					))}
+				</ul>
+			)}
+
+			{/* B7/CC-6/OC-3: a live-fetch failure or an over-long query never leaves a
+			    blank void — quiet copy, with a retry for the transient case. */}
+			{view === "error" && (
+				<p className="mt-12 max-w-prose font-reading text-[17px] leading-relaxed text-muted-foreground">
+					{trimmed.length > Q_MAX ? (
+						<>That’s a very long search — try fewer than {Q_MAX} characters.</>
+					) : (
+						<>
+							Something went wrong reaching the library.{" "}
+							<button
+								type="button"
+								onMouseDown={(e) => e.preventDefault()}
+								onClick={retryLive}
+								className="font-ui text-[15px] font-semibold not-italic text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-selbar"
+							>
+								Try again
+							</button>
+							.
+						</>
+					)}
 				</p>
 			)}
 
-			{(view === "reference" || (view === "results" && displayReference)) && displayReference && (
-				<div className="mt-10 border-b border-rule pb-4">
+			{/* B6/CC-5: a found book/volume reference renders its lead even when its
+			    groups are empty (zero copy sits beneath) — never suppress a valid
+			    reader door. */}
+			{displayReference && (view === "reference" || view === "results" || view === "zero") && (
+				<div className="mt-10">
 					<p className="font-ui text-[11px] font-medium uppercase tracking-[0.14em] text-faint">
 						Reference
 					</p>
@@ -1028,8 +1256,10 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 								</span>
 							</Link>
 							{view === "reference" && (
-								<p className="mt-1.5 font-reading text-[15px] italic text-muted-foreground">
-									Opens the reader at {displayReference.display} — press Enter again to go.
+								<p className="mt-1.5 font-reading text-[15px] text-muted-foreground">
+									{/* B22/UC-8: one Enter opens the reader now (onSubmit is keyed on
+									    the displayed query), so the count is honest. */}
+									Opens the reader at {displayReference.display} — press Enter to open.
 								</p>
 							)}
 						</>
@@ -1039,6 +1269,14 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 						</p>
 					)}
 				</div>
+			)}
+
+			{view === "zero" && (
+				<p className="mt-12 max-w-prose font-reading text-[17px] leading-relaxed text-muted-foreground">
+					Nothing in the library matches <span className="not-italic">“{displayQ}”</span>
+					{excludedCount > 0 ? " in the included groups" : ""}. Try a broader phrase, a name, or
+					a book and chapter — “alma 32”.
+				</p>
 			)}
 
 			{view === "results" &&
@@ -1055,7 +1293,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 						<section key={key} className="mt-11">
 							{/* Fraunces sentence-case group header — never caps-tracked
 							    (Abram's ban); the More-pill shows on truncation ONLY. */}
-							<h2 className="flex items-center gap-2.5 border-b border-rule pb-2">
+							<h2 className="flex items-center gap-2.5 pb-1">
 								<GIcon
 									aria-hidden="true"
 									strokeWidth={1.8}
@@ -1079,33 +1317,57 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 							</h2>
 							<ol className="mt-2 max-w-prose list-none space-y-0.5 p-0">
 								{rows.map((r) => (
-									<ResultRow key={rowKey(r)} groupKey={key} r={r} />
+									<ResultRow
+										key={rowKey(r)}
+										groupKey={key}
+										r={r}
+										tabStop={rowKey(r) === activeRowKey}
+										onFocus={() => setRovingKey(rowKey(r))}
+									/>
 								))}
 							</ol>
 							{key === singleScopeKey && (
 								<>
-									{currentCursor !== undefined && (
+									{pageError ? (
+										// B3/CC-4: an append error surfaces here — never a page crash.
+										<p className="mt-4 pl-3 font-reading text-[15px] text-muted-foreground">
+											Couldn’t load more.{" "}
+											<button
+												type="button"
+												onMouseDown={(e) => e.preventDefault()}
+												onClick={(e) => {
+													setPageError(false);
+													loadMoreRef.current(e.detail === 0);
+												}}
+												className="font-ui text-xs font-semibold not-italic text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-selbar"
+											>
+												Try again
+											</button>
+										</p>
+									) : currentCursor !== undefined ? (
 										<>
 											{/* Sentinel + explicit button: the button IS the
-											    keyboard / reduced-motion / no-observer path. */}
+											    keyboard / reduced-motion / no-observer path. B5: not
+											    disabled while loading (that blurs focus to <body>) —
+											    aria-busy + loadMoreRef's own idle guard instead. */}
 											<div ref={sentinelRef} aria-hidden="true" className="h-px" />
 											<p className="mt-4 pl-3">
 												<button
 													type="button"
-													onClick={() => loadMoreRef.current()}
-													disabled={pageFetcher.state !== "idle"}
-													className="relative rounded-full border border-rule2 px-4 py-1.5 font-ui text-xs font-semibold text-primary transition-colors duration-150 after:absolute after:-inset-2 after:content-[''] hover:border-primary disabled:opacity-60"
+													onMouseDown={(e) => e.preventDefault()}
+													onClick={(e) => loadMoreRef.current(e.detail === 0)}
+													aria-busy={pageFetcher.state !== "idle"}
+													className="relative rounded-full border border-rule2 px-4 py-1.5 font-ui text-xs font-semibold text-primary transition-colors duration-150 after:absolute after:-inset-2 after:content-[''] hover:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-selbar"
 												>
 													{pageFetcher.state === "idle" ? "More" : "Loading…"}
 												</button>
 											</p>
 										</>
-									)}
-									{currentCursor === undefined && extra && (
-										<p className="mt-4 pl-3 font-reading text-[15px] italic text-muted-foreground">
+									) : extra ? (
+										<p className="mt-4 pl-3 font-reading text-[15px] text-muted-foreground">
 											That’s everything.
 										</p>
-									)}
+									) : null}
 								</>
 							)}
 						</section>
@@ -1124,6 +1386,40 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 				? error.data
 				: "That search couldn’t be read."
 			: "Search failed — nothing wrong with your query; the library hiccuped.";
+
+	// B29/BRRC-3: on the errored /search the page's own hotkey effect is
+	// unmounted and SearchModal still stands down by pathname, so `/` and ⌘K would
+	// be dead on the one page whose hint says "Press / anywhere". Render a working
+	// input here and rebind the hotkeys so recovery never depends on the modal.
+	const navigate = useNavigate();
+	const inputRef = useRef<HTMLInputElement>(null);
+	const [value, setValue] = useState("");
+	useEffect(() => {
+		const onKeyDown = (e: KeyboardEvent) => {
+			const focusInline = () => {
+				e.preventDefault();
+				inputRef.current?.focus();
+				inputRef.current?.select();
+			};
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+				focusInline();
+				return;
+			}
+			if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+				const t = e.target as HTMLElement | null;
+				const editable =
+					t &&
+					(t.tagName === "INPUT" ||
+						t.tagName === "TEXTAREA" ||
+						t.tagName === "SELECT" ||
+						t.isContentEditable);
+				if (!editable) focusInline();
+			}
+		};
+		document.addEventListener("keydown", onKeyDown);
+		return () => document.removeEventListener("keydown", onKeyDown);
+	}, []);
+
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-10">
 			<header className="border-b border-rule pb-6">
@@ -1133,8 +1429,29 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 					</Link>{" "}
 					· Search
 				</p>
+				<form
+					className="relative mt-3 max-w-prose"
+					onSubmit={(e) => {
+						e.preventDefault();
+						const t = value.trim();
+						navigate(t ? `/search?${new URLSearchParams({ q: t })}` : "/search");
+					}}
+				>
+					<input
+						ref={inputRef}
+						type="search"
+						value={value}
+						onChange={(e) => setValue(e.target.value)}
+						autoComplete="off"
+						spellCheck={false}
+						enterKeyHint="search"
+						aria-label="Search the library"
+						placeholder="a name, a phrase, a verse…"
+						className="w-full rounded-none border-0 border-b border-rule2 bg-transparent pb-2 pt-1 font-display text-[clamp(1.6rem,5.5vw,2.25rem)] font-medium leading-tight tracking-[-0.02em] text-ink caret-selbar outline-none transition-colors duration-150 placeholder:font-reading placeholder:text-[clamp(1.15rem,4vw,1.5rem)] placeholder:font-normal placeholder:italic placeholder:tracking-normal placeholder:text-faint focus-visible:border-selbar [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
+					/>
+				</form>
 			</header>
-			<p className="mt-8 max-w-prose font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+			<p className="mt-8 max-w-prose font-reading text-[17px] leading-relaxed text-muted-foreground">
 				{message}
 			</p>
 			<p className="mt-4">

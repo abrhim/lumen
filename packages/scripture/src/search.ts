@@ -2,6 +2,24 @@ import { sql } from 'drizzle-orm';
 import type { Db } from './types';
 import { parseReference, buildVerseId } from './slug-map';
 
+// Db-free public shapes live in the leaf so client code can import GROUP_KEYS /
+// result types without dragging drizzle onto the /search hydration path (B18).
+// Re-exported here so the barrel surface and every existing consumer are
+// unchanged; imported below for this module's own use.
+export * from './search-types';
+import { GROUP_KEYS } from './search-types';
+import type {
+	GroupKey,
+	ResultType,
+	SearchOptions,
+	SearchResult,
+	SearchGroup,
+	SearchReference,
+	SearchGroupMeta,
+	SearchMeta,
+	SearchResponse,
+} from './search-types';
+
 /**
  * Typed federated search (search-endpoint plan v2, decision 1–7).
  *
@@ -18,114 +36,6 @@ import { parseReference, buildVerseId } from './slug-map';
  * postgres.js trap (API-6): jsonb/numeric can arrive as strings — every row
  * passes through coerceRow() before leaving this module.
  */
-
-export const GROUP_KEYS = [
-	'scripture',
-	'people',
-	'places',
-	'topics',
-	'episodes',
-	'art',
-	'words',
-] as const;
-export type GroupKey = (typeof GROUP_KEYS)[number];
-
-export type ResultType =
-	| 'verse'
-	| 'jst'
-	| 'person'
-	| 'place'
-	| 'topic'
-	| 'principle'
-	| 'symbol'
-	| 'event'
-	| 'era'
-	| 'summary'
-	| 'episode'
-	| 'moment'
-	| 'artwork'
-	| 'strongs';
-
-/** Which result types each group may contain (API-4: two enums, exported). */
-export const GROUP_RESULT_TYPES: Record<GroupKey, ResultType[]> = {
-	scripture: ['verse', 'jst'],
-	people: ['person'],
-	places: ['place'],
-	topics: ['topic', 'principle', 'symbol', 'event', 'era', 'summary'],
-	episodes: ['episode', 'moment'],
-	art: ['artwork'],
-	words: ['strongs'],
-};
-
-export interface SearchOptions {
-	q: string;
-	visibleCollections: string[];
-	scope?: GroupKey[];
-	limitPerGroup?: number;
-	/** Opaque keyset cursor from a prior page's `nextCursor`. Honored only when
-	 * `scope` is exactly one group (the route 400s `cursor_scope` otherwise). */
-	after?: string;
-}
-
-export interface SearchResult {
-	type: ResultType;
-	/**
-	 * Durable for verse/entity/episode/artwork/strongs. MOMENT ids are
-	 * RESPONSE-SCOPED (re-keyed on every M3 re-window) — never persist, cache,
-	 * or deep-link one; deep-link via payload episode_id + t_start_s (APIC-6).
-	 */
-	id: string;
-	title: string;
-	/** Plain text with ⟪⟫ highlight markers — never HTML (API-1). */
-	snippet?: string;
-	tier: number;
-	score: number;
-	payload: Record<string, unknown>;
-}
-
-export interface SearchGroup {
-	key: GroupKey;
-	results: SearchResult[];
-	/** Present ONLY when this page is full (`results.length === limitPerGroup`)
-	 * — a short or empty page is the end of the set (F5). */
-	nextCursor?: string;
-}
-
-/** Parse + existence only — never embedded verse arrays (API-2). */
-export interface SearchReference {
-	level: 'volume' | 'book' | 'chapter' | 'verse';
-	book_id?: string;
-	chapter?: number;
-	verse?: number;
-	verse_id?: string;
-	display: string;
-	found: boolean;
-}
-
-export interface SearchGroupMeta {
-	/** Wall-clock leg ms. Only measurable in fallback mode (one statement per
-	 * group); in combined mode a single statement serves every group, so this
-	 * is null and meta.totalMs is the authoritative latency (PER-5/OBS-4). */
-	ms: number | null;
-	hits: number;
-	error?: string;
-}
-
-export interface SearchMeta {
-	perGroup: Record<string, SearchGroupMeta>;
-	totalMs: number;
-	mode: 'combined' | 'fallback' | 'none';
-	/** Why the combined statement failed, when mode === 'fallback' — without it
-	 * a combined-only failure class degrades every request silently (OBS-2). */
-	combinedError?: string;
-}
-
-export interface SearchResponse {
-	query: string;
-	reference: SearchReference | null;
-	groups: SearchGroup[];
-	meta: SearchMeta;
-}
 
 /* ─── Keyset cursor codec (search-ui plan, cursor bullet) ─── */
 
@@ -243,7 +153,12 @@ export function decodeSearchCursor(
 		throw new SearchCursorError('cursor_invalid');
 	}
 	if (hash !== cursorHash(bind.q, bind.scope)) throw new SearchCursorError('cursor_mismatch');
-	return { tier: Number(tierRaw), sub: Number(subRaw), score: scoreFromHex(scoreHex), id };
+	// encode only ever writes finite ts_rank bits; NaN/±Infinity is tampering.
+	// PG sorts NaN as greatest, so `score < NaN` re-admits page 1 in a self-loop
+	// (B20/F3) — reject non-finite here so a forged cursor can never repeat page 1.
+	const score = scoreFromHex(scoreHex);
+	if (!Number.isFinite(score)) throw new SearchCursorError('cursor_invalid');
+	return { tier: Number(tierRaw), sub: Number(subRaw), score, id };
 }
 
 const HEADLINE_OPTS = 'StartSel=⟪, StopSel=⟫, MaxFragments=1, MaxWords=18';
@@ -284,11 +199,22 @@ async function resolveSearchReference(
 
 	if (parsed.level === 'volume' || parsed.level === 'book') {
 		// Bare names ("john") are real content words: reference AND full FTS.
+		// The reference lead headlines `display`, so resolve the canonical DB name
+		// ("Moses", "Pearl of Great Price") rather than parroting the raw-cased
+		// input — chapter/verse already resolve their display from the DB (B12).
+		const rows =
+			parsed.level === 'volume'
+				? ((await db.execute(
+						sql`SELECT name FROM lumen.volumes WHERE id = ${parsed.volumeId} LIMIT 1`,
+					)) as Array<{ name: string }>)
+				: ((await db.execute(
+						sql`SELECT name FROM lumen.books WHERE id = ${parsed.bookId} LIMIT 1`,
+					)) as Array<{ name: string }>);
 		return {
 			reference: {
 				level: parsed.level,
 				book_id: parsed.bookId,
-				display: parsed.raw,
+				display: rows[0]?.name ?? parsed.raw,
 				found: true,
 			},
 			shortCircuit: false,
@@ -338,12 +264,16 @@ async function resolveSearchReference(
 
 type Leg = { key: GroupKey; query: ReturnType<typeof sql> };
 
-/** Strictly-after under the leg ORDER BY (tier, sub, score DESC, id): the
- * comparison flips on score because it sorts descending; id ties break in the
- * column's own collation — the same one the leg ORDER BY uses. */
+/** Strictly-after under the leg ORDER BY (tier, sub, score DESC, id COLLATE "C"):
+ * the comparison flips on score because it sorts descending; id ties break in
+ * `COLLATE "C"` (byte/code-unit order) to MATCH the JS tiebreak sortResults
+ * applies and mintNextCursor mints against. The DB default en_US.UTF-8 orders
+ * mixed-case ref_ids (episode/moment YouTube ids) differently from JS code
+ * units, so without this the JS-minted cursor lands en_US-below the SQL page
+ * boundary and page 2 re-serves the tie members (B1). */
 function keysetAfter(c: SearchCursor) {
 	return sql`(tier > ${c.tier} OR (tier = ${c.tier} AND (sub > ${c.sub}
-	    OR (sub = ${c.sub} AND (score < ${c.score} OR (score = ${c.score} AND id > ${c.id}))))))`;
+	    OR (sub = ${c.sub} AND (score < ${c.score} OR (score = ${c.score} AND id COLLATE "C" > ${c.id}))))))`;
 }
 
 /** Order-and-limit tail for every leg. tier/sub/score are computed
@@ -358,13 +288,18 @@ function paged(
 	limit: number,
 	after: SearchCursor | undefined,
 ): ReturnType<typeof sql> {
+	// Both branches wrap `inner` in a subquery so `id COLLATE "C"` binds to the
+	// projected `id` alias, not the base table: COLLATE forces expression
+	// evaluation (not a bare output-name reference), and the bare-table legs
+	// (episodes/art/words select `si.ref_id AS id` over search_index, which has
+	// no `id` column) would otherwise error "column id does not exist".
 	if (after === undefined)
-		return sql`${inner}
-	  ORDER BY tier, sub, score DESC, id
+		return sql`SELECT * FROM (${inner}) u
+	  ORDER BY tier, sub, score DESC, id COLLATE "C"
 	  LIMIT ${limit}`;
 	return sql`SELECT * FROM (${inner}) u
 	  WHERE ${keysetAfter(after)}
-	  ORDER BY tier, sub, score DESC, id
+	  ORDER BY tier, sub, score DESC, id COLLATE "C"
 	  LIMIT ${limit}`;
 }
 
@@ -596,7 +531,13 @@ function wordsLeg(
 	         THEN 1 ELSE 3 END AS tier,
 	    0 AS sub,
 	    ts_rank(${WEIGHTS}::float4[], si.tsv, ${tsq(q)}, 1)::float8 AS score,
-	    jsonb_build_object('strongs_no', si.payload -> 'strongs_no') AS payload
+	    jsonb_build_object(
+	      'strongs_no', si.payload -> 'strongs_no',
+	      'translit', si.payload -> 'translit',
+	      'original', si.payload -> 'original',
+	      'lang', CASE WHEN si.payload ->> 'lang' = 'hebrew' THEN 'he' ELSE 'grc' END,
+	      'dir', CASE WHEN si.payload ->> 'lang' = 'hebrew' THEN 'rtl' ELSE 'ltr' END
+	    ) AS payload
 	  FROM lumen.search_index si
 	  WHERE si.kind = 'strongs'
 	    AND si.collection_id = ANY(${anyOf(visible)})

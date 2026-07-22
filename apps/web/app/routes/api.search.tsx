@@ -127,7 +127,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			after,
 		});
 
-		logSearchExecuted(result, { q, scope, visibility, userId: user?.id, after });
+		logSearchExecuted(result, { q, scope, visibility, userId: user?.id, after, surface: "api" });
 
 		return json(
 			{ query: result.query, reference: result.reference, groups: result.groups },
@@ -135,7 +135,19 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			headers,
 		);
 	} catch (err) {
-		logSearchFailed(err, { q, scope, visibility });
+		logSearchFailed(err, { q, scope, visibility, after, surface: "api" });
 		return json({ error: "Search failed", code: "internal" }, 500, headers);
 	}
+}
+
+/**
+ * B17/OC-4: the RR single-fetch `.data` variant — the ONLY variant the page's
+ * fetchers hit — takes its headers from this export, NOT from the loader's
+ * returned Response. Without it, session-varying (admin-entitled) bodies escape
+ * the SECURITY-3 / F17 `private, no-store` mandate on the shipped UI path. The
+ * `json()` helper still sets it on direct GETs of the raw route; this covers the
+ * `.data` protocol responses (incl. the returned 400/500 error bodies).
+ */
+export function headers(): HeadersInit {
+	return { "Cache-Control": "private, no-store" };
 }

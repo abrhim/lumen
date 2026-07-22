@@ -374,8 +374,18 @@ describe('M5 — searchAll contract', () => {
 			.results.find((r: any) => r.id === 'G26');
 		expect(strongs, 'agape returns G26').toBeTruthy();
 		expect(strongs!.type).toBe('strongs');
-		expect(Object.keys(strongs!.payload)).toEqual(['strongs_no']);
+		// B11: words payload widened to carry render-ready original-script fields
+		// (original/translit + lang/dir so the page renders Hebrew rtl). Contract
+		// updated in lockstep with the wordsLeg projection, not to pass a bug.
+		expect(Object.keys(strongs!.payload).sort()).toEqual([
+			'dir',
+			'lang',
+			'original',
+			'strongs_no',
+			'translit',
+		]);
 		expect(typeof strongs!.payload.strongs_no).toBe('string');
+		expect(strongs!.payload.dir === 'ltr' || strongs!.payload.dir === 'rtl').toBe(true);
 	});
 
 	it('H17: a failing group degrades to empty results + meta.error — never a throw (COR-1)', async () => {

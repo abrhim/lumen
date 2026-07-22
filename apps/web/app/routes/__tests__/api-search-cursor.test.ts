@@ -22,7 +22,9 @@ vi.mock("~/lib/auth.server", () => ({
 vi.mock("~/lib/log.server", () => ({ logEvent: vi.fn() }));
 
 import { searchAll, encodeSearchCursor } from "@lumen/scripture";
+import { logEvent } from "~/lib/log.server";
 import { loader } from "../api.search";
+import * as apiSearchModule from "../api.search";
 
 // Δ ACU-3: `satisfies`, never a cast — mock drift against the real response
 // type breaks typecheck instead of silently pinning a stale shape (harness-
@@ -118,5 +120,63 @@ describe("F5 — nextCursor passthrough", () => {
 		const c = encodeSearchCursor({ q: "faith", scope: "scripture", tier: 3, score: 1.2, id: "x" });
 		await loader(makeArgs(`?q=faith&scope=scripture&after=${c}`));
 		expect((vi.mocked(searchAll).mock.calls[0][1] as any).after).toBeTruthy();
+	});
+});
+
+// ── Observability contract (B16/B25/B26/B17). The OU-1 / decision-10 invariants
+// were implemented but never pinned; a regression could silently break the
+// zero-result denominator or start logging raw cursors. logEvent is mocked and
+// its call history clears between tests (clearMocks). ──
+
+function executedFields(): Record<string, unknown> | undefined {
+	return vi.mocked(logEvent).mock.calls.find((c) => c[0] === "search_executed")?.[1] as
+		| Record<string, unknown>
+		| undefined;
+}
+
+describe("B26 — OU-1 / decision-10 observability pins (previously unwired)", () => {
+	it("cursor-rejection 400s log NOTHING (decision 10 — raw cursors never reach the stream)", async () => {
+		const scoped = encodeSearchCursor({ q: "faith", scope: "scripture", tier: 3, score: 1, id: "x" });
+		const mismatch = encodeSearchCursor({ q: "hope", scope: "scripture", tier: 3, score: 1, id: "x" });
+		await loader(makeArgs(`?q=faith&after=${scoped}`)); // cursor_scope
+		await loader(makeArgs("?q=faith&scope=scripture&after=garbage")); // cursor_invalid
+		await loader(makeArgs(`?q=faith&scope=scripture&after=${mismatch}`)); // cursor_mismatch
+		expect(logEvent).not.toHaveBeenCalled();
+	});
+
+	it("a continuation (valid `after`) is excluded from the zeroResult denominator", async () => {
+		const c = encodeSearchCursor({ q: "faith", scope: "scripture", tier: 3, score: 1.2, id: "x" });
+		await loader(makeArgs(`?q=faith&scope=scripture&after=${c}`));
+		expect(executedFields()).toMatchObject({ hasCursor: true, zeroResult: false, surface: "api" });
+	});
+
+	it("a page-1 request (no `after`) stays a real zeroResult candidate with hasCursor:false", async () => {
+		await loader(makeArgs("?q=faith&scope=scripture"));
+		expect(executedFields()).toMatchObject({ hasCursor: false, zeroResult: true, surface: "api" });
+	});
+});
+
+describe("B16 — surface discriminator on search_executed", () => {
+	it("the API surface tags every executed event surface:'api' (the page loader tags 'page')", async () => {
+		await loader(makeArgs("?q=faith"));
+		expect(executedFields()).toMatchObject({ surface: "api" });
+	});
+});
+
+describe("B25 — search_failed carries continuation context (hasCursor) + surface", () => {
+	it("a continuation-leg 500 is distinguishable from a page-1 failure", async () => {
+		vi.mocked(searchAll).mockRejectedValueOnce(new Error("pool exhausted"));
+		const c = encodeSearchCursor({ q: "faith", scope: "scripture", tier: 3, score: 1.2, id: "x" });
+		const res = (await loader(makeArgs(`?q=faith&scope=scripture&after=${c}`))) as Response;
+		expect(res.status).toBe(500);
+		const failed = vi.mocked(logEvent).mock.calls.find((c) => c[0] === "search_failed");
+		expect(failed?.[1]).toMatchObject({ surface: "api", hasCursor: true });
+	});
+});
+
+describe("B17 — /api/search.data carries Cache-Control via the headers() export", () => {
+	it("headers() sets private, no-store (the .data variant reads this, not the loader Response)", () => {
+		expect(typeof apiSearchModule.headers).toBe("function");
+		expect(apiSearchModule.headers()).toMatchObject({ "Cache-Control": "private, no-store" });
 	});
 });
