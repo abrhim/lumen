@@ -62,6 +62,9 @@ export interface SearchOptions {
 	visibleCollections: string[];
 	scope?: GroupKey[];
 	limitPerGroup?: number;
+	/** Opaque keyset cursor from a prior page's `nextCursor`. Honored only when
+	 * `scope` is exactly one group (the route 400s `cursor_scope` otherwise). */
+	after?: string;
 }
 
 export interface SearchResult {
@@ -83,6 +86,9 @@ export interface SearchResult {
 export interface SearchGroup {
 	key: GroupKey;
 	results: SearchResult[];
+	/** Present ONLY when this page is full (`results.length === limitPerGroup`)
+	 * — a short or empty page is the end of the set (F5). */
+	nextCursor?: string;
 }
 
 /** Parse + existence only — never embedded verse arrays (API-2). */
@@ -119,6 +125,125 @@ export interface SearchResponse {
 	reference: SearchReference | null;
 	groups: SearchGroup[];
 	meta: SearchMeta;
+}
+
+/* ─── Keyset cursor codec (search-ui plan, cursor bullet) ─── */
+
+/**
+ * Opaque cursor: base64url of `v1|qhash|tier|sub|score|id`. `sub` is part of
+ * the shipped ORDER BY (the jst/moment demotion key) — a 3-column cursor
+ * live-provably drops the whole sub=1 partition (Δ CU-1). `score` travels as
+ * raw float64 bits, never a decimal rendering: live 10-way score ties make the
+ * id tiebreak precision-dependent (Δ CU-5). The 8-char hash binds the cursor
+ * to (q, scope) — binding, not integrity (Q1): a tampered position field can
+ * only re-paginate a result set the caller already sees, because visibility is
+ * re-derived per request and NEVER carried here (Δ SU-1/F16). Decode is pure
+ * comparison math, never a DB lookup (Δ SU-2).
+ */
+export interface SearchCursor {
+	tier: number;
+	sub: number;
+	score: number;
+	id: string;
+}
+
+export type SearchCursorErrorCode = 'cursor_invalid' | 'cursor_mismatch';
+
+/** Typed decode failure so the route can map `code` to its stable 400
+ * (`cursor_invalid` = malformed, `cursor_mismatch` = minted for another
+ * (q, scope)). The raw cursor never appears in the message (F3). */
+export class SearchCursorError extends Error {
+	constructor(readonly code: SearchCursorErrorCode) {
+		super(code === 'cursor_invalid' ? 'malformed cursor' : 'cursor was minted for another search');
+		this.name = 'SearchCursorError';
+	}
+}
+
+const CURSOR_VERSION = 'v1';
+
+/** FNV-1a 32-bit over scope␀q → 8 hex chars. */
+function cursorHash(q: string, scope: string): string {
+	let h = 0x811c9dc5;
+	const s = scope + '\u0000' + q;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 0x01000193);
+	}
+	return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+function scoreToHex(score: number): string {
+	const view = new DataView(new ArrayBuffer(8));
+	view.setFloat64(0, score);
+	let out = '';
+	for (let i = 0; i < 8; i++) out += view.getUint8(i).toString(16).padStart(2, '0');
+	return out;
+}
+
+function scoreFromHex(hex: string): number {
+	const view = new DataView(new ArrayBuffer(8));
+	for (let i = 0; i < 8; i++) view.setUint8(i, parseInt(hex.slice(i * 2, i * 2 + 2), 16));
+	return view.getFloat64(0);
+}
+
+function b64urlEncode(text: string): string {
+	const bytes = new TextEncoder().encode(text);
+	let bin = '';
+	for (const b of bytes) bin += String.fromCharCode(b);
+	return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlDecode(raw: string): string {
+	const bin = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
+	const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+	return new TextDecoder().decode(bytes);
+}
+
+export function encodeSearchCursor(input: {
+	q: string;
+	scope: GroupKey;
+	tier: number;
+	sub?: number;
+	score: number;
+	id: string;
+}): string {
+	return b64urlEncode(
+		[
+			CURSOR_VERSION,
+			cursorHash(input.q, input.scope),
+			String(input.tier),
+			String(input.sub ?? 0),
+			scoreToHex(input.score),
+			input.id,
+		].join('|'),
+	);
+}
+
+export function decodeSearchCursor(
+	cursor: string,
+	bind: { q: string; scope: GroupKey },
+): SearchCursor {
+	let text: string;
+	try {
+		text = b64urlDecode(cursor);
+	} catch {
+		throw new SearchCursorError('cursor_invalid');
+	}
+	const parts = text.split('|');
+	if (parts.length < 6 || parts[0] !== CURSOR_VERSION) throw new SearchCursorError('cursor_invalid');
+	const [, hash, tierRaw, subRaw, scoreHex] = parts;
+	const id = parts.slice(5).join('|');
+	if (
+		!/^[0-9a-f]{8}$/.test(hash) ||
+		!/^\d+$/.test(tierRaw) ||
+		!/^\d+$/.test(subRaw) ||
+		!/^[0-9a-f]{16}$/.test(scoreHex) ||
+		id === ''
+	) {
+		throw new SearchCursorError('cursor_invalid');
+	}
+	if (hash !== cursorHash(bind.q, bind.scope)) throw new SearchCursorError('cursor_mismatch');
+	return { tier: Number(tierRaw), sub: Number(subRaw), score: scoreFromHex(scoreHex), id };
 }
 
 const HEADLINE_OPTS = 'StartSel=⟪, StopSel=⟫, MaxFragments=1, MaxWords=18';
@@ -213,6 +338,36 @@ async function resolveSearchReference(
 
 type Leg = { key: GroupKey; query: ReturnType<typeof sql> };
 
+/** Strictly-after under the leg ORDER BY (tier, sub, score DESC, id): the
+ * comparison flips on score because it sorts descending; id ties break in the
+ * column's own collation — the same one the leg ORDER BY uses. */
+function keysetAfter(c: SearchCursor) {
+	return sql`(tier > ${c.tier} OR (tier = ${c.tier} AND (sub > ${c.sub}
+	    OR (sub = ${c.sub} AND (score < ${c.score} OR (score = ${c.score} AND id > ${c.id}))))))`;
+}
+
+/** Order-and-limit tail for every leg. tier/sub/score are computed
+ * expressions, so a cursor's keyset WHERE cannot sit beside the gates — it
+ * wraps them (the planner flattens the subquery and pushes the predicate into
+ * each arm with the expressions substituted; EXPLAIN-verified no plan
+ * regression, the FTS bitmap arms still drive). The collection gates stay
+ * INSIDE `inner`, so visibility always comes from this request's
+ * visibleCollections, never from cursor state (Δ SU-1/F16). */
+function paged(
+	inner: ReturnType<typeof sql>,
+	limit: number,
+	after: SearchCursor | undefined,
+): ReturnType<typeof sql> {
+	if (after === undefined)
+		return sql`${inner}
+	  ORDER BY tier, sub, score DESC, id
+	  LIMIT ${limit}`;
+	return sql`SELECT * FROM (${inner}) u
+	  WHERE ${keysetAfter(after)}
+	  ORDER BY tier, sub, score DESC, id
+	  LIMIT ${limit}`;
+}
+
 /** Guard for historically double-encoded jsonb metadata (A2 latent-bug class). */
 const META = sql`CASE WHEN jsonb_typeof(e.metadata) = 'string'
 	THEN (e.metadata #>> '{}')::jsonb ELSE coalesce(e.metadata, '{}'::jsonb) END`;
@@ -244,14 +399,13 @@ function scriptureHeadlineTsq(q: string) {
 	  WHERE to_tsvector('english', kv.modern) @@ ${tsq(q)})`;
 }
 
-function scriptureLeg(q: string, visible: string[], limit: number): ReturnType<typeof sql> {
-	return sql`
-	SELECT 'scripture' AS grp, s.type, s.id, s.title,
-	  CASE WHEN s.snip_src = '' THEN NULL
-	       ELSE ts_headline('english', s.snip_src, ${scriptureHeadlineTsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
-	  s.tier, s.score, s.payload
-	FROM (
-	  SELECT * FROM (
+function scriptureLeg(
+	q: string,
+	visible: string[],
+	limit: number,
+	after?: SearchCursor,
+): ReturnType<typeof sql> {
+	const inner = sql`SELECT * FROM (
 	    SELECT 'verse' AS type, v.id, v.reference AS title, v.text AS snip_src,
 	      3 AS tier, 0 AS sub,
 	      ts_rank(${WEIGHTS}::float4[], v.search_vector, ${tsq(q)}, 1)::float8 AS score,
@@ -267,9 +421,15 @@ function scriptureLeg(q: string, visible: string[], limit: number): ReturnType<t
 	    WHERE e.entity_type = 'jst_reading'
 	      AND e.collection_id = ANY(${anyOf(visible)})
 	      AND e.search_vector @@ ${tsq(q)}
-	  ) u
-	  ORDER BY u.tier, u.sub, u.score DESC, u.id
-	  LIMIT ${limit}
+	  ) u`;
+	return sql`
+	SELECT 'scripture' AS grp, s.type, s.id, s.title,
+	  CASE WHEN s.snip_src = '' THEN NULL
+	       ELSE ts_headline('english', s.snip_src, ${scriptureHeadlineTsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
+	  s.tier, s.score, s.payload,
+	  encode(float8send(s.score), 'hex') AS score_bits
+	FROM (
+	  ${paged(inner, limit, after)}
 	) s`;
 }
 
@@ -279,15 +439,10 @@ function entityLeg(
 	q: string,
 	visible: string[],
 	limit: number,
+	after?: SearchCursor,
 ): ReturnType<typeof sql> {
 	const prefix = escapeLike(q) + '%';
-	return sql`
-	SELECT ${key} AS grp, s.type, s.id, s.title,
-	  CASE WHEN s.snip_src = '' THEN NULL
-	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
-	  s.tier, s.score, s.payload
-	FROM (
-	  SELECT
+	const inner = sql`SELECT
 	    CASE e.entity_type
 	      WHEN 'naves_topic' THEN 'topic'
 	      WHEN 'chapter_summary' THEN 'summary'
@@ -324,21 +479,26 @@ function entityLeg(
 	        AND (e.name ILIKE ${prefix} ESCAPE '\\'
 	          OR (${q} OPERATOR(extensions.%) e.name
 	              AND extensions.word_similarity(${q}, e.name) >= ${TRGM_MIN})))
-	      OR e.search_vector @@ ${tsq(q)})
-	  ORDER BY tier, sub, score DESC, id
-	  LIMIT ${limit}
+	      OR e.search_vector @@ ${tsq(q)})`;
+	return sql`
+	SELECT ${key} AS grp, s.type, s.id, s.title,
+	  CASE WHEN s.snip_src = '' THEN NULL
+	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
+	  s.tier, s.score, s.payload,
+	  encode(float8send(s.score), 'hex') AS score_bits
+	FROM (
+	  ${paged(inner, limit, after)}
 	) s`;
 }
 
-function episodesLeg(q: string, visible: string[], limit: number): ReturnType<typeof sql> {
+function episodesLeg(
+	q: string,
+	visible: string[],
+	limit: number,
+	after?: SearchCursor,
+): ReturnType<typeof sql> {
 	const prefix = escapeLike(q) + '%';
-	return sql`
-	SELECT 'episodes' AS grp, s.type, s.id, s.title,
-	  CASE WHEN s.snip_src = '' THEN NULL
-	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
-	  s.tier, s.score, s.payload
-	FROM (
-	  SELECT si.kind AS type, si.ref_id AS id, si.title,
+	const inner = sql`SELECT si.kind AS type, si.ref_id AS id, si.title,
 	    CASE WHEN si.kind = 'moment' THEN coalesce(si.payload ->> 'text', '') ELSE si.title END AS snip_src,
 	    CASE WHEN si.kind = 'episode' AND lower(si.title) = lower(${q}) THEN 1
 	         WHEN si.kind = 'episode' AND (si.title ILIKE ${prefix} ESCAPE '\\'
@@ -365,20 +525,26 @@ function episodesLeg(q: string, visible: string[], limit: number): ReturnType<ty
 	      OR (si.kind = 'episode' AND (lower(si.title) = lower(${q})
 	        OR si.title ILIKE ${prefix} ESCAPE '\\'
 	        OR (char_length(${q}) <= ${NAME_ARM_Q_MAX}
-	            AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}))))
-	  ORDER BY tier, sub, score DESC, id
-	  LIMIT ${limit}
+	            AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}))))`;
+	return sql`
+	SELECT 'episodes' AS grp, s.type, s.id, s.title,
+	  CASE WHEN s.snip_src = '' THEN NULL
+	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
+	  s.tier, s.score, s.payload,
+	  encode(float8send(s.score), 'hex') AS score_bits
+	FROM (
+	  ${paged(inner, limit, after)}
 	) s`;
 }
 
-function artLeg(q: string, visible: string[], limit: number): ReturnType<typeof sql> {
+function artLeg(
+	q: string,
+	visible: string[],
+	limit: number,
+	after?: SearchCursor,
+): ReturnType<typeof sql> {
 	const prefix = escapeLike(q) + '%';
-	return sql`
-	SELECT 'art' AS grp, s.type, s.id, s.title,
-	  NULL::text AS snippet,
-	  s.tier, s.score, s.payload
-	FROM (
-	  SELECT 'artwork' AS type, si.ref_id AS id, si.title,
+	const inner = sql`SELECT 'artwork' AS type, si.ref_id AS id, si.title,
 	    CASE WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
 	           AND lower(si.title) = lower(${q}) THEN 1
 	         WHEN char_length(${q}) <= ${NAME_ARM_Q_MAX}
@@ -406,20 +572,24 @@ function artLeg(q: string, visible: string[], limit: number): ReturnType<typeof 
 	      OR (char_length(${q}) <= ${NAME_ARM_Q_MAX}
 	        AND (si.title ILIKE ${prefix} ESCAPE '\\'
 	          OR (${q} OPERATOR(extensions.%) si.title
-	              AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}))))
-	  ORDER BY tier, sub, score DESC, id
-	  LIMIT ${limit}
+	              AND extensions.word_similarity(${q}, si.title) >= ${TRGM_MIN}))))`;
+	return sql`
+	SELECT 'art' AS grp, s.type, s.id, s.title,
+	  NULL::text AS snippet,
+	  s.tier, s.score, s.payload,
+	  encode(float8send(s.score), 'hex') AS score_bits
+	FROM (
+	  ${paged(inner, limit, after)}
 	) s`;
 }
 
-function wordsLeg(q: string, visible: string[], limit: number): ReturnType<typeof sql> {
-	return sql`
-	SELECT 'words' AS grp, s.type, s.id, s.title,
-	  CASE WHEN s.snip_src = '' THEN NULL
-	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
-	  s.tier, s.score, s.payload
-	FROM (
-	  SELECT 'strongs' AS type, si.ref_id AS id, si.title,
+function wordsLeg(
+	q: string,
+	visible: string[],
+	limit: number,
+	after?: SearchCursor,
+): ReturnType<typeof sql> {
+	const inner = sql`SELECT 'strongs' AS type, si.ref_id AS id, si.title,
 	    coalesce(si.payload ->> 'gloss', '') AS snip_src,
 	    CASE WHEN upper(${q}) = si.ref_id
 	           OR lower(extensions.unaccent(coalesce(si.payload ->> 'translit', ''))) = lower(${q})
@@ -430,18 +600,30 @@ function wordsLeg(q: string, visible: string[], limit: number): ReturnType<typeo
 	  FROM lumen.search_index si
 	  WHERE si.kind = 'strongs'
 	    AND si.collection_id = ANY(${anyOf(visible)})
-	    AND (si.tsv @@ ${tsq(q)} OR upper(${q}) = si.ref_id)
-	  ORDER BY tier, sub, score DESC, id
-	  LIMIT ${limit}
+	    AND (si.tsv @@ ${tsq(q)} OR upper(${q}) = si.ref_id)`;
+	return sql`
+	SELECT 'words' AS grp, s.type, s.id, s.title,
+	  CASE WHEN s.snip_src = '' THEN NULL
+	       ELSE ts_headline('english', s.snip_src, ${tsq(q)}, ${HEADLINE_OPTS}) END AS snippet,
+	  s.tier, s.score, s.payload,
+	  encode(float8send(s.score), 'hex') AS score_bits
+	FROM (
+	  ${paged(inner, limit, after)}
 	) s`;
 }
 
-function buildLegs(scope: GroupKey[], q: string, visible: string[], limit: number): Leg[] {
+function buildLegs(
+	scope: GroupKey[],
+	q: string,
+	visible: string[],
+	limit: number,
+	after?: SearchCursor,
+): Leg[] {
 	const legs: Leg[] = [];
 	for (const key of scope) {
-		if (key === 'scripture') legs.push({ key, query: scriptureLeg(q, visible, limit) });
-		else if (key === 'people') legs.push({ key, query: entityLeg('people', ['person'], q, visible, limit) });
-		else if (key === 'places') legs.push({ key, query: entityLeg('places', ['place'], q, visible, limit) });
+		if (key === 'scripture') legs.push({ key, query: scriptureLeg(q, visible, limit, after) });
+		else if (key === 'people') legs.push({ key, query: entityLeg('people', ['person'], q, visible, limit, after) });
+		else if (key === 'places') legs.push({ key, query: entityLeg('places', ['place'], q, visible, limit, after) });
 		else if (key === 'topics')
 			legs.push({
 				key,
@@ -451,11 +633,12 @@ function buildLegs(scope: GroupKey[], q: string, visible: string[], limit: numbe
 					q,
 					visible,
 					limit,
+					after,
 				),
 			});
-		else if (key === 'episodes') legs.push({ key, query: episodesLeg(q, visible, limit) });
-		else if (key === 'art') legs.push({ key, query: artLeg(q, visible, limit) });
-		else if (key === 'words') legs.push({ key, query: wordsLeg(q, visible, limit) });
+		else if (key === 'episodes') legs.push({ key, query: episodesLeg(q, visible, limit, after) });
+		else if (key === 'art') legs.push({ key, query: artLeg(q, visible, limit, after) });
+		else if (key === 'words') legs.push({ key, query: wordsLeg(q, visible, limit, after) });
 	}
 	return legs;
 }
@@ -470,6 +653,12 @@ interface RawRow {
 	snippet: string | null;
 	tier: number | string;
 	score: number | string;
+	/** Exact IEEE-754 bits of score (`float8send` hex): the pooled path runs
+	 * extra_float_digits=0, so the textual `score` is a 15-digit ROUNDING —
+	 * comparing it back against the column live-provably re-admits page-1 rows
+	 * (probed 2026-07-21: gen-1-20 true bits 3f8d4f2980000000 vs its rounded
+	 * text). Cursors and ordering must come from these bits. */
+	score_bits?: string;
 	payload: unknown;
 }
 
@@ -485,7 +674,12 @@ function coerceRow(r: RawRow): SearchResult {
 		title: r.title,
 		snippet: r.snippet ?? undefined,
 		tier: Number(r.tier),
-		score: Number(r.score),
+		// Bit-exact from float8send when the statement provides it (all legs do);
+		// the textual fallback only serves injected fallback-mode test rows.
+		score:
+			typeof r.score_bits === 'string' && /^[0-9a-f]{16}$/.test(r.score_bits)
+				? scoreFromHex(r.score_bits)
+				: Number(r.score),
 		payload,
 	};
 }
@@ -501,15 +695,37 @@ class LegFailure extends Error {
 	}
 }
 
+/** The demotion key each leg computes as `sub` — one derivation shared by the
+ * sort and cursor minting so SQL sub and JS sub can never drift. */
+function subOf(type: ResultType): 0 | 1 {
+	return type === 'jst' || type === 'moment' ? 1 : 0;
+}
+
 /** Deterministic within-group order: tier, jst-after-canon, score desc, id (COR-4/REL-5). */
 function sortResults(results: SearchResult[]): SearchResult[] {
 	return results.sort((a, b) => {
 		if (a.tier !== b.tier) return a.tier - b.tier;
-		const aSub = a.type === 'jst' || a.type === 'moment' ? 1 : 0;
-		const bSub = b.type === 'jst' || b.type === 'moment' ? 1 : 0;
+		const aSub = subOf(a.type);
+		const bSub = subOf(b.type);
 		if (aSub !== bSub) return aSub - bSub;
 		if (a.score !== b.score) return b.score - a.score;
 		return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	});
+}
+
+/** F5/Δ UU-1: a full page — and ONLY a full page — mints the continuation
+ * cursor from its last row's sort key. Short and empty pages are the end of
+ * the set; degraded groups arrive here empty and mint nothing. */
+function mintNextCursor(g: SearchGroup, q: string, limit: number): void {
+	if (g.results.length !== limit) return;
+	const last = g.results[g.results.length - 1];
+	g.nextCursor = encodeSearchCursor({
+		q,
+		scope: g.key,
+		tier: last.tier,
+		sub: subOf(last.type),
+		score: last.score,
+		id: last.id,
 	});
 }
 
@@ -521,6 +737,14 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 	const limit = clampLimit(opts.limitPerGroup);
 	const scope: GroupKey[] = opts.scope?.length ? opts.scope : [...GROUP_KEYS];
 	const visible = opts.visibleCollections ?? [];
+
+	// Continuation only ever composes with a single leg (the route 400s
+	// cursor_scope on any other shape). Typed decode errors propagate — the
+	// caller maps them to cursor_invalid / cursor_mismatch.
+	const after =
+		opts.after !== undefined && scope.length === 1
+			? decodeSearchCursor(opts.after, { q, scope: scope[0] })
+			: undefined;
 
 	const groups: SearchGroup[] = scope.map((key) => ({ key, results: [] }));
 	const meta: SearchMeta = { perGroup: {}, totalMs: 0, mode: 'none' };
@@ -538,7 +762,7 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 		}
 	}
 
-	const legs = buildLegs(scope, q, visible, limit);
+	const legs = buildLegs(scope, q, visible, limit, after);
 
 	// Primary: one combined statement, one round trip (PER-3).
 	let combinedRows: RawRow[] | null = null;
@@ -563,6 +787,7 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 		for (const g of groups) {
 			try {
 				g.results = sortResults(rawByKey.get(g.key)!.map(coerceRow));
+				mintNextCursor(g, q, limit);
 				meta.perGroup[g.key] = { ms: null, hits: g.results.length };
 			} catch (err) {
 				// One poisoned row degrades its own group, never the search (decision 7).
@@ -598,6 +823,7 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 		const outcome = settled[i];
 		if (outcome.status === 'fulfilled') {
 			g.results = outcome.value.results;
+			mintNextCursor(g, q, limit);
 			meta.perGroup[key] = { ms: outcome.value.ms, hits: g.results.length };
 		} else {
 			const reason: unknown = outcome.reason;
