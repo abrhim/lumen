@@ -541,6 +541,11 @@ function Sample({ children }: { children: React.ReactNode }) {
 	return <span className="font-medium text-ink">{children}</span>;
 }
 
+/** A10: a word called out mid-sentence (a keyword, or the matched form). */
+function Term({ children }: { children: React.ReactNode }) {
+	return <em className="font-medium not-italic text-ink">{children}</em>;
+}
+
 function Kbd({ children }: { children: React.ReactNode }) {
 	return (
 		<kbd className="mx-0.5 rounded border border-rule2 px-1 py-px font-ui text-[10px] font-semibold">
@@ -876,18 +881,30 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 				{syntaxOpen && (
 					<div
 						id="search-syntax"
-						className="mt-3 max-w-prose border-b border-rule pb-4 font-reading text-[15px] leading-relaxed text-muted-foreground"
+						className="mt-3 max-w-prose border-b border-rule pb-5 font-reading text-[15px] leading-relaxed"
 					>
-						<p>
-							Quotes match an exact phrase — <Sample>“wall of Jerusalem”</Sample>. Words
-							combine on their own; <Sample>faith OR hope</Sample> takes either, and a
-							leading minus excludes — <Sample>temple -solomon</Sample>.
+						<p className="text-ink">
+							Type plain words for most searches. A few extras, when you want them:
 						</p>
-						<p className="mt-2">
-							Word forms come free (<Sample>believe</Sample> finds{" "}
-							<em className="text-ink">believeth</em>), names forgive misspellings (
-							<Sample>melchisedek</Sample>), and a reference like{" "}
-							<Sample>1 nephi 3:7</Sample> jumps straight toward the reader.
+						<ul className="mt-2.5 space-y-2 text-muted-foreground">
+							<li>
+								<Sample>“wall of Jerusalem”</Sample> — quotation marks keep words together,
+								as one exact phrase.
+							</li>
+							<li>
+								<Sample>faith OR hope</Sample> — the word <Term>OR</Term>, in capitals,
+								finds either one.
+							</li>
+							<li>
+								<Sample>temple -solomon</Sample> — a minus sign right before a word leaves
+								it out.
+							</li>
+						</ul>
+						<p className="mt-3 text-muted-foreground">
+							The rest is automatic: <Sample>believe</Sample> also finds{" "}
+							<Term>believeth</Term>, a misspelled name like <Sample>melchisedek</Sample>{" "}
+							still finds Melchizedek, and a reference like <Sample>1 Nephi 3:7</Sample>{" "}
+							opens the verse.
 						</p>
 					</div>
 				)}
