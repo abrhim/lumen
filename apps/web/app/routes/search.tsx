@@ -172,6 +172,13 @@ export function dedupeMoments<
 	return out;
 }
 
+/** B-U2: only verse/chapter references SHORT-CIRCUIT (the engine skips FTS —
+ * decision 4). A bare book/volume name ('moses') returns reference AND full
+ * groups; suppressing them hid the whole graph behind the Book of Moses. */
+function isShortCircuitReference(ref: SearchReference): boolean {
+	return ref.level === "verse" || ref.level === "chapter";
+}
+
 function referencePath(ref: SearchReference): string | null {
 	if (!ref.found || !ref.book_id) return null;
 	if (ref.level === "verse" && ref.chapter !== undefined && ref.verse !== undefined) {
@@ -243,7 +250,10 @@ export async function loader({ request, context }: Route.LoaderArgs): Promise<Se
 		const referenceHref = results.reference?.found ? referencePath(results.reference) : null;
 		return {
 			...base,
-			state: results.reference?.found ? "reference" : "results",
+			state:
+				results.reference?.found && isShortCircuitReference(results.reference)
+					? "reference"
+					: "results",
 			q,
 			results,
 			referenceHref,
@@ -618,7 +628,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 			? "empty"
 			: trimmed.length < qMin
 				? "keepTyping"
-				: displayReference
+				: displayReference && isShortCircuitReference(displayReference)
 					? "reference"
 					: display
 						? display.groups.some((g) => g.results.length > 0)
@@ -923,7 +933,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 				</p>
 			)}
 
-			{view === "reference" && displayReference && (
+			{(view === "reference" || (view === "results" && displayReference)) && displayReference && (
 				<div className="mt-10 border-b border-rule pb-4">
 					<p className="font-ui text-[11px] font-medium uppercase tracking-[0.14em] text-faint">
 						Reference
@@ -942,9 +952,11 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 									→
 								</span>
 							</Link>
-							<p className="mt-1.5 font-reading text-[15px] italic text-muted-foreground">
-								Opens the reader at {displayReference.display} — press Enter again to go.
-							</p>
+							{view === "reference" && (
+								<p className="mt-1.5 font-reading text-[15px] italic text-muted-foreground">
+									Opens the reader at {displayReference.display} — press Enter again to go.
+								</p>
+							)}
 						</>
 					) : (
 						<p className="mt-2 font-display text-2xl font-medium tracking-tight text-ink">

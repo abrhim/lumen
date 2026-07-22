@@ -236,6 +236,32 @@ describe("F13 — reference short-circuit", () => {
 		const data = await loader(makeArgs("?q=1%20nephi%203:7"));
 		expect(data.results.reference?.found).toBe(true);
 		expect(data.referenceHref).toBe("/scripture/1-ne/3?verse=7");
+		expect(data.state).toBe("reference");
+	});
+
+	// B-U2 (Abram, live test 2026-07-21): q='moses' — a BOOK-level bare-name
+	// reference. Decision 4: book/volume level returns reference AND full FTS;
+	// the page must render the groups with a reference lead, never suppress
+	// them. Only verse/chapter levels short-circuit.
+	it("book-level bare name: reference lead + FULL results, state 'results' (B-U2)", async () => {
+		vi.mocked(searchAll).mockResolvedValueOnce({
+			...structuredClone(EMPTY),
+			query: "moses",
+			reference: { level: "book", book_id: "moses", display: "moses", found: true },
+			groups: GROUP_KEYS.map((key) => ({
+				key,
+				results:
+					key === "people"
+						? [{ type: "person", id: "moses-1", title: "Moses", tier: 1, score: 9, payload: {} }]
+						: [],
+			})),
+		} satisfies SearchResponse);
+		const data = await loader(makeArgs("?q=moses"));
+		expect(data.state).toBe("results");
+		expect(data.referenceHref).toBe("/scripture/moses");
+		expect(
+			data.results.groups.find((g: any) => g.key === "people")?.results,
+		).toHaveLength(1);
 	});
 });
 
