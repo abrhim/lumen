@@ -1,0 +1,24 @@
+=== search-ui harness INITIAL run (red baseline) — 2026-07-21 19:40 ===
+--- apps/web: search.loader + api-search-cursor ---
+
+ Test Files  2 failed (2)
+      Tests  9 failed | 1 passed (10)
+   Start at  19:40:52
+   Duration  554ms (transform 130ms, setup 0ms, collect 364ms, tests 10ms, environment 0ms, prepare 83ms)
+
+EXIT=0
+--- packages/scripture: search-cursor-harness (live) ---
+
+ Test Files  1 failed (1)
+      Tests  3 skipped (3)
+   Start at  19:40:53
+   Duration  386ms (transform 23ms, setup 0ms, collect 216ms, tests 2ms, environment 0ms, prepare 40ms)
+
+EXIT=0
+EXIT=1 (normalized: 9 web pins red on missing routes/search.tsx + cursor exports; live cursor harness red at import — modules do not exist pre-implementation)
+
+=== post-synthesis red baseline (F1-F22 pins) — 2026-07-21 21:50 ===
+scripture cursor harness (live): 4 failed / 1 green-vacuous-by-design (negative exhaustion pin)
+web search.loader: collection-fails on missing ../search (intended)
+web api-search-cursor: 9 failed / 1 pre-existing-green (F5 verbatim passthrough; minting side pinned live)
+EXIT=1 (normalized: all reds are missing-module/missing-export/missing-behavior — verified by the delta agent's runs)
