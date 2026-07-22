@@ -163,3 +163,25 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
   findings survive. Keep the refutation burden on the tagger.
 - **Version-bump ops commits must update their test pins** (graph:v2 /
   vconn:v3 shipped source-only; both pins were red on main for two weeks).
+
+## search-ui (2026-07-22)
+
+- **Two-layer bugs need both review stages.** The cursor sort key was wrong
+  at the plan stage (missing `sub`, panel-1 caught it) AND at a deeper level
+  (SQL-collation vs JS-code-unit id tiebreak, code-panel caught it live). The
+  plan-stage fix was necessary but not sufficient; only post-ship live probing
+  surfaced the collation split. Don't assume a caught bug's family is closed.
+- **Keyset pins must test a collation-DIVERGENT leg.** The harness pinned
+  no-dup on the scripture (verse-id, collation-neutral) leg while the real bug
+  lived on episodes (mixed-case YouTube ids). A pin on the wrong leg is
+  coverage theater.
+- **Node-only vitest cannot catch interaction bugs.** All 3 user-found bugs +
+  ~11 code-panel bugs were focus/native-control/SSR-boundary/render defects
+  invisible to the test env. A browser e2e layer is the top missing tool; the
+  human tester is currently substituting for it.
+- **Present fix-scope before launching a big fix cycle.** Launched a 30-bug
+  workflow without surfacing the 5-high / 25-polish split; the user stopped to
+  ask "what is this work." Offer the scope choice up front.
+- **Pre-deploy divergence check is mandatory for worktree deploys.** Deployed a
+  diverged feature branch and silently reverted a concurrent session's live
+  fix. `git log HEAD..main` before every worktree deploy.
