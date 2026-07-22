@@ -10,6 +10,7 @@ vi.mock("@lumen/scripture", async (importOriginal) => {
 		getVerseConnections: vi.fn(),
 		getNeighborhood: vi.fn(),
 		getChapterNumbers: vi.fn(),
+		getGraphIdPointer: vi.fn(),
 	};
 });
 
@@ -19,6 +20,7 @@ import {
 	getVerseConnections,
 	getNeighborhood,
 	getChapterNumbers,
+	getGraphIdPointer,
 } from "@lumen/scripture";
 import { loader } from "../scripture";
 
@@ -60,6 +62,7 @@ beforeEach(() => {
 	} as any);
 	vi.mocked(getNeighborhood).mockResolvedValue(mockNeighborhood as any);
 	vi.mocked(getChapterNumbers).mockResolvedValue([{ chapter_number: 3 }] as any);
+	vi.mocked(getGraphIdPointer).mockResolvedValue(null);
 });
 
 describe("scripture loader — ?graph param (graph-view harness)", () => {
@@ -122,6 +125,7 @@ describe("scripture loader — ?graph param (graph-view harness)", () => {
 		const kv = kvNoop();
 		const data = await loader(makeArgs("?graph=obedience&depth=2", kv));
 		await data.graph;
+		// v2 since the 2026-07-21 D&C+PGP spine sync (cache-version invalidation)
 		expect(kv.get).toHaveBeenCalledWith(expect.stringMatching(/^graph:v2:obedience:2:/));
 	});
 
@@ -171,6 +175,59 @@ describe("scripture loader — ?graph param (graph-view harness)", () => {
 		const graphLogs = errorSpy.mock.calls.filter((c) => String(c[0]).includes("graph_"));
 		expect(graphLogs).toHaveLength(0);
 		errorSpy.mockRestore();
+	});
+
+	it("resolves namespaced ids via metadata.neo4j_id on a miss (DATA-1 contract)", async () => {
+		vi.mocked(getNeighborhood)
+			.mockResolvedValueOnce({
+				found: false, center: null, nodes: [], edges: [], truncated: { shown: 0, total: 0 },
+			} as any)
+			.mockResolvedValueOnce(mockNeighborhood as any);
+		vi.mocked(getGraphIdPointer).mockResolvedValue("moses-1");
+		const kv = kvNoop();
+		const data = await loader(makeArgs("?graph=person:moses-1&depth=2", kv));
+		const g = await data.graph!;
+		expect(g.degraded).toBe(false);
+		if (!g.degraded) expect(g.neighborhood.found).toBe(true);
+		expect(getNeighborhood).toHaveBeenNthCalledWith(
+			1, expect.anything(), "person:moses-1", expect.objectContaining({ depth: 2 }),
+		);
+		expect(getNeighborhood).toHaveBeenNthCalledWith(
+			2, expect.anything(), "moses-1", expect.objectContaining({ depth: 2 }),
+		);
+		// cached under the REQUESTED id — the link space uses PG ids
+		expect(kv.put).toHaveBeenCalledWith(
+			expect.stringMatching(/^graph:v2:person:moses-1:2:/), expect.any(String), expect.anything(),
+		);
+	});
+
+	it("no pointer → single query, stays not-found, never caches (art class)", async () => {
+		vi.mocked(getNeighborhood).mockResolvedValue({
+			found: false, center: null, nodes: [], edges: [], truncated: { shown: 0, total: 0 },
+		} as any);
+		const kv = kvNoop();
+		const data = await loader(makeArgs("?graph=art:some-piece", kv));
+		const g = await data.graph!;
+		if (!g.degraded) expect(g.neighborhood.found).toBe(false);
+		expect(getNeighborhood).toHaveBeenCalledTimes(1);
+		expect(getGraphIdPointer).toHaveBeenCalledTimes(1);
+		expect(kv.put).not.toHaveBeenCalled();
+	});
+
+	it("a failing pointer lookup degrades to not-found, never rejects", async () => {
+		vi.mocked(getNeighborhood).mockResolvedValue({
+			found: false, center: null, nodes: [], edges: [], truncated: { shown: 0, total: 0 },
+		} as any);
+		vi.mocked(getGraphIdPointer).mockRejectedValue(new Error("pool exhausted"));
+		const data = await loader(makeArgs("?graph=person:moses-1"));
+		const g = await data.graph!;
+		expect(g.degraded).toBe(false);
+		if (!g.degraded) expect(g.neighborhood.found).toBe(false);
+	});
+
+	it("found on first try never touches PG (hot path stays Neo4j+KV)", async () => {
+		await loader(makeArgs("?graph=obedience")).then((d) => d.graph);
+		expect(getGraphIdPointer).not.toHaveBeenCalled();
 	});
 
 	it("graph logs carry elapsedMs and full dimensions (B19/OBS-1)", async () => {

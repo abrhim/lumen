@@ -105,7 +105,7 @@ describe("scripture loader — happy paths", () => {
 		if (!panel.degraded) expect(panel.principles[0].id).toBe("obedience");
 	});
 
-	it("uses the v2 versioned cache key (payload shape changed with the crossref move, FM-9)", async () => {
+	it("uses the v3 versioned cache key (v2 = crossref move; v3 = 2026-07-21 spine sync, FM-9)", async () => {
 		const kv = kvNoop();
 		const data = await loader(makeArgs("1-ne", "3", "?verse=7", kv));
 		await data.connections;
@@ -201,8 +201,10 @@ describe("scripture loader — happy paths", () => {
 		expect(getVersesByChapter).toHaveBeenCalledTimes(1);
 		expect(getChapterSummary).toHaveBeenCalledTimes(1);
 		expect(getChapterNumbers).toHaveBeenCalledTimes(1);
-		// art is the only direct db.execute on a plain chapter view (no ?graph)
-		expect(args.context.db.execute).toHaveBeenCalledTimes(1);
+		// direct db.execute on a plain chapter view (no ?graph): public-collection
+		// visibility + chapter art + verse signals. The graph-id pointer fallback
+		// must NOT appear here — it only runs on a ?graph miss.
+		expect(args.context.db.execute).toHaveBeenCalledTimes(3);
 		expect(getVerseConnections).not.toHaveBeenCalled();
 	});
 
