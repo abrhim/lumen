@@ -98,7 +98,7 @@ export function SearchModal() {
 				enterKeyHint="search"
 				aria-label="Search the library"
 				placeholder="a name, a phrase, a verse…"
-				className="w-full rounded-none border-0 border-b border-rule2 bg-transparent pb-2 pt-1 font-display text-2xl font-medium tracking-[-0.01em] text-ink caret-selbar outline-none transition-colors duration-150 placeholder:font-reading placeholder:text-base placeholder:font-normal placeholder:italic placeholder:tracking-normal placeholder:text-faint focus-visible:border-selbar"
+				className="w-full rounded-none border-0 border-b border-rule2 bg-transparent pb-2 pt-1 font-display text-2xl font-medium tracking-[-0.01em] text-ink caret-selbar outline-none transition-colors duration-150 placeholder:font-reading placeholder:text-base placeholder:font-normal placeholder:italic placeholder:tracking-normal placeholder:text-faint focus-visible:border-selbar [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
 			/>
 		</form>
 	);

@@ -100,6 +100,11 @@ Give the deployed `/api/search` its first consumer: a `/search` page in the read
 
 Panel-2 dissent rate: 0.40 (35 material / 20 noise / 1 risky / 2 out-of-scope of 58). No high-severity security/correctness finding was killed — safety carve-out untriggered. Tier re-check (step-4 exit): stays **large**.
 
+## Plan amendments (post-ship, human-directed at live test — 2026-07-21)
+
+- **A10 (human): advanced-syntax help surfaced in the page** — a `Search syntax` icon toggle (CircleHelp) at the right of the hint row; instructions render between the input and the scope line (quotes/OR/-exclude, free word forms, name fuzz, reference jump). Supersedes the synthesis default of an empty-state-only hint.
+- **A11 (B-U3, human): native `type="search"` cancel X suppressed** on both the page input and the modal (OS chrome, off-brand); the page gets a branded lucide `XIcon` clear button in the house negative-margin hit-area idiom, shown only when the input is non-empty.
+
 ## Drift baseline (filled at end of step 6)
 - plan-hash: 570d988433781b6b (sha256/16 of plan.md pre-stamp)
 - harness-hash: 88a65abaed97b8fc (sha256/16 of search.loader.test.ts + api-search-cursor.test.ts + search-cursor-harness.test.ts, concatenated in that order)

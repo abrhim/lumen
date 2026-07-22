@@ -17,6 +17,7 @@ import {
 	FileTextIcon,
 	HourglassIcon,
 	ImageIcon,
+	CircleHelpIcon,
 	LanguagesIcon,
 	LightbulbIcon,
 	MapPinIcon,
@@ -24,6 +25,7 @@ import {
 	ShapesIcon,
 	TagIcon,
 	UserRoundIcon,
+	XIcon,
 	type LucideIcon,
 } from "lucide-react";
 import { getSessionUser } from "~/lib/auth.server";
@@ -534,6 +536,11 @@ function ResultRow({ groupKey, r }: { groupKey: GroupKey; r: SearchResult }) {
 	);
 }
 
+/** A10: inline example query in the syntax help — reads as content, not chrome. */
+function Sample({ children }: { children: React.ReactNode }) {
+	return <span className="font-medium text-ink">{children}</span>;
+}
+
 function Kbd({ children }: { children: React.ReactNode }) {
 	return (
 		<kbd className="mx-0.5 rounded border border-rule2 px-1 py-px font-ui text-[10px] font-semibold">
@@ -733,6 +740,9 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const busy =
 		navigation.state !== "idle" || liveFetcher.state !== "idle" || pageFetcher.state !== "idle";
 	const [busySlow, setBusySlow] = useState(false);
+	// A10 (human, live-test): advanced-syntax help — icon toggle, instructions
+	// render between the input row and the scope line.
+	const [syntaxOpen, setSyntaxOpen] = useState(false);
 	useEffect(() => {
 		if (!busy) {
 			setBusySlow(false);
@@ -805,7 +815,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 					</Link>{" "}
 					· Search
 				</p>
-				<form className="mt-3 max-w-prose" onSubmit={onSubmit}>
+				<form className="relative mt-3 max-w-prose" onSubmit={onSubmit}>
 					<input
 						ref={inputRef}
 						type="search"
@@ -817,22 +827,70 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 						autoFocus={state === "empty"}
 						aria-label="Search the library"
 						placeholder="a name, a phrase, a verse — “melchizedek”, “covenant”, “1 nephi 3:7”…"
-						className="w-full rounded-none border-0 border-b border-rule2 bg-transparent pb-2 pt-1 font-display text-[clamp(1.6rem,5.5vw,2.25rem)] font-medium leading-tight tracking-[-0.02em] text-ink caret-selbar outline-none transition-colors duration-150 placeholder:font-reading placeholder:text-[clamp(1.15rem,4vw,1.5rem)] placeholder:font-normal placeholder:italic placeholder:tracking-normal placeholder:text-faint focus-visible:border-selbar"
+						// B-U3: the native search-cancel X is OS chrome, off-brand — killed
+						// here; the branded clear button below replaces it.
+						className="w-full rounded-none border-0 border-b border-rule2 bg-transparent pb-2 pt-1 pr-9 font-display text-[clamp(1.6rem,5.5vw,2.25rem)] font-medium leading-tight tracking-[-0.02em] text-ink caret-selbar outline-none transition-colors duration-150 placeholder:font-reading placeholder:text-[clamp(1.15rem,4vw,1.5rem)] placeholder:font-normal placeholder:italic placeholder:tracking-normal placeholder:text-faint focus-visible:border-selbar [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-cancel-button]:appearance-none"
 					/>
-				</form>
-				{/* Δ UU-7: no hotkey hint on touch; ↑↓ appears only once rows exist. */}
-				<p className="mt-2 hidden font-ui text-xs font-medium text-faint pointer-fine:block">
-					Press <Kbd>/</Kbd> anywhere to search
-					{hasRows && (
-						<>
-							{" · "}
-							<Kbd>↑</Kbd>
-							<Kbd>↓</Kbd> to move
-						</>
+					{input !== "" && (
+						<button
+							type="button"
+							aria-label="Clear search"
+							onClick={() => {
+								onInputChange("");
+								inputRef.current?.focus();
+							}}
+							className="absolute bottom-3 right-0 -m-2 p-2 text-faint transition-colors duration-150 hover:text-ink"
+						>
+							<XIcon aria-hidden="true" strokeWidth={1.8} className="size-4" />
+						</button>
 					)}
-					{" · "}
-					<Kbd>Enter</Kbd> to open
-				</p>
+				</form>
+				{/* Δ UU-7: no hotkey hint on touch; ↑↓ appears only once rows exist.
+				    A10: the syntax toggle is universal — touch users get it too. */}
+				<div className="mt-2 flex items-baseline justify-between gap-4">
+					<p className="hidden font-ui text-xs font-medium text-faint pointer-fine:block">
+						Press <Kbd>/</Kbd> anywhere to search
+						{hasRows && (
+							<>
+								{" · "}
+								<Kbd>↑</Kbd>
+								<Kbd>↓</Kbd> to move
+							</>
+						)}
+						{" · "}
+						<Kbd>Enter</Kbd> to open
+					</p>
+					<button
+						type="button"
+						aria-expanded={syntaxOpen}
+						aria-controls="search-syntax"
+						onClick={() => setSyntaxOpen((v) => !v)}
+						className={`relative ml-auto flex items-center gap-1.5 font-ui text-xs font-semibold transition-colors duration-150 after:absolute after:-inset-2 after:content-[''] ${
+							syntaxOpen ? "text-primary" : "text-faint hover:text-primary"
+						}`}
+					>
+						<CircleHelpIcon aria-hidden="true" strokeWidth={1.8} className="size-3.5" />
+						Search syntax
+					</button>
+				</div>
+				{syntaxOpen && (
+					<div
+						id="search-syntax"
+						className="mt-3 max-w-prose border-b border-rule pb-4 font-reading text-[15px] leading-relaxed text-muted-foreground"
+					>
+						<p>
+							Quotes match an exact phrase — <Sample>“wall of Jerusalem”</Sample>. Words
+							combine on their own; <Sample>faith OR hope</Sample> takes either, and a
+							leading minus excludes — <Sample>temple -solomon</Sample>.
+						</p>
+						<p className="mt-2">
+							Word forms come free (<Sample>believe</Sample> finds{" "}
+							<em className="text-ink">believeth</em>), names forgive misspellings (
+							<Sample>melchisedek</Sample>), and a reference like{" "}
+							<Sample>1 nephi 3:7</Sample> jumps straight toward the reader.
+						</p>
+					</div>
+				)}
 
 				{showScopeLine && (
 					<ul className="mt-6 flex flex-wrap gap-x-4 gap-y-1.5">
