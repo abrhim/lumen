@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { SearchIcon } from "lucide-react";
 import { useIsMobile } from "~/hooks/use-mobile";
@@ -25,6 +25,10 @@ const MODAL_Q_MIN = 2;
 export function SearchModal() {
 	const [open, setOpen] = useState(false);
 	const [q, setQ] = useState("");
+	// B-U1 (Abram, live test): a pointer-opened modal must NOT return focus to
+	// the orb on close — the focused button then turns Space-to-scroll into
+	// Space-reopens-search. Keyboard opens keep the a11y return-focus.
+	const openedByPointer = useRef(false);
 	const isMobile = useIsMobile();
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -36,6 +40,7 @@ export function SearchModal() {
 			// ⌘K opens EVERYWHERE — including inside inputs (Decisions SU-6).
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
 				e.preventDefault();
+				openedByPointer.current = false;
 				setOpen(true);
 				return;
 			}
@@ -50,6 +55,7 @@ export function SearchModal() {
 						t.isContentEditable);
 				if (editable) return;
 				e.preventDefault();
+				openedByPointer.current = false;
 				setOpen(true);
 			}
 		};
@@ -71,6 +77,9 @@ export function SearchModal() {
 			type="button"
 			aria-label="Search"
 			title="Search ( / or ⌘K )"
+			onPointerDown={() => {
+				openedByPointer.current = true;
+			}}
 			// visual size-8 with a 44px hit box (after: overlay) — Emil touch rule
 			className="relative flex size-8 items-center justify-center rounded-full border border-rule2 bg-panel2 text-ink shadow-sm outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 after:absolute after:-inset-2 after:content-['']"
 		>
@@ -97,7 +106,17 @@ export function SearchModal() {
 	return isMobile ? (
 		<Sheet open={open} onOpenChange={setOpen}>
 			<SheetTrigger asChild>{trigger}</SheetTrigger>
-			<SheetContent side="bottom" className="px-6 pb-8 motion-reduce:animate-none">
+			<SheetContent
+				side="bottom"
+				className="px-6 pb-8 motion-reduce:animate-none"
+				onCloseAutoFocus={(e) => {
+					if (openedByPointer.current) {
+						e.preventDefault();
+						(document.activeElement as HTMLElement | null)?.blur?.();
+					}
+					openedByPointer.current = false;
+				}}
+			>
 				<SheetHeader className="px-0 pb-1">
 					<SheetTitle className="font-display text-lg font-medium">Search</SheetTitle>
 				</SheetHeader>
@@ -111,6 +130,13 @@ export function SearchModal() {
 				showCloseButton={false}
 				aria-describedby={undefined}
 				className="top-[22vh] max-w-md translate-y-0 gap-3 p-5 motion-reduce:animate-none"
+				onCloseAutoFocus={(e) => {
+					if (openedByPointer.current) {
+						e.preventDefault();
+						(document.activeElement as HTMLElement | null)?.blur?.();
+					}
+					openedByPointer.current = false;
+				}}
 			>
 				<DialogTitle className="sr-only">Search the library</DialogTitle>
 				{form}
