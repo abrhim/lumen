@@ -988,6 +988,27 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							);
 						})}
 					</ol>
+
+					{/* The page-turn lives where the reading ends (navigation.md §4):
+					    in-content foot nav, never a bar. Mirrors the header's real
+					    bounds; aligned to the verse text edges (pl-14 = the gutter). */}
+					<nav
+						aria-label={`${unit} navigation`}
+						className="mt-10 flex max-w-prose justify-between border-t border-rule pl-14 pr-4 pt-4 font-ui text-sm font-semibold text-primary"
+					>
+						{chapter > 1 ? (
+							<Link to={`/scripture/${bookId}/${chapter - 1}`} className="hover:underline">
+								← {unit} {chapter - 1}
+							</Link>
+						) : (
+							<span aria-hidden="true" />
+						)}
+						{(maxChapter === null || chapter < maxChapter) && (
+							<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
+								{unit} {chapter + 1} →
+							</Link>
+						)}
+					</nav>
 				</main>
 
 				{/* Desktop rail — always mounted (on desktop) so selecting a verse never
