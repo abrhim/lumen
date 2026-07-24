@@ -828,7 +828,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			    the column + rail center as ONE unit (the plate's geometry), and the
 			    header lives inside the text column so the title, summary, and navs
 			    share the verse text's left edge instead of the page's. */}
-			<div className="mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-10">
+			<div className="mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-x-14 lg:gap-y-10">
 			<header className="pl-10 pr-4 lg:col-start-1 lg:pl-14">
 				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
 					<Link to="/" className="hover:text-ink">
@@ -983,7 +983,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{signals && (
 											<span
 												aria-hidden
-												className="absolute -right-[26px] top-[1.15rem] hidden items-center gap-[5px] lg:flex"
+												className="absolute left-[calc(100%+10px)] top-[1.15rem] hidden items-center gap-[5px] lg:flex"
 											>
 												{signals.principles && <span className="size-[5px] rounded-full bg-dot-teaches" />}
 												{signals.people && <span className="size-[5px] rounded-full bg-dot-mentions" />}
