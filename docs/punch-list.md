@@ -5,6 +5,11 @@ Add freely; strike when shipped.
 
 ## Abram's list
 
+0. **Reading typography is too small, and the mobile reader's margins are
+   too wide.** (2026-07-23) Base reading size goes up; the 56px verse
+   gutter + container padding shrink on mobile (the freed gutter hosts the
+   mobile depth affordance — see docs/design/navigation.md §6a). A
+   type-size setting (Smaller · Standard · Larger) ships with the Desk.
 1. **Theme is too parchmenty.** Rework the palette — keep the reading-first
    feel, lose the sepia-everywhere. Candidate: neutral paper + one warm accent,
    or a proper light/dark pair (tokens all live in `apps/web/app/app.css`).
