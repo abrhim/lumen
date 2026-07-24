@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useId, useRef, useState } from "react";
 import {
 	Await,
 	Link,
@@ -33,7 +33,6 @@ import {
 	type VerseEntityRef,
 } from "@lumen/scripture";
 import { Skeleton } from "~/components/ui/skeleton";
-import { RefRow } from "~/components/RefRow";
 import {
 	Sheet,
 	SheetContent,
@@ -858,6 +857,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				    directly under the h1 — no card, no rule, no kicker label. */}
 				{summary && (
 					<section aria-label="Chapter summary">
+						{/* heading-nav is the dominant SR navigation mode; the visual design
+						    carries no label, so the heading is screen-reader-only */}
+						<h2 className="sr-only">Chapter summary</h2>
 						<p className="mt-3.5 max-w-[58ch] font-reading text-[15px] italic leading-relaxed text-muted-foreground">
 							{summary}
 						</p>
@@ -865,7 +867,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				)}
 				<nav
 					aria-label={`${unit} navigation`}
-					className="mt-4 flex gap-4 font-ui text-xs text-faint"
+					className="mt-4 flex gap-4 font-ui text-xs text-muted-foreground"
 				>
 					{chapter > 1 && (
 						<Link
@@ -1008,7 +1010,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					    bounds; aligned to the verse text edges (pl-14 = the gutter). */}
 					<nav
 						aria-label={`${unit} navigation`}
-						className="mt-10 flex max-w-prose justify-between border-t border-rule pl-14 pr-4 pt-4 font-ui text-xs text-faint"
+						className="mt-10 flex max-w-prose justify-between border-t border-rule pl-14 pr-4 pt-4 font-ui text-xs text-muted-foreground"
 					>
 						{chapter > 1 ? (
 							<Link
@@ -1219,7 +1221,7 @@ function PanelBody({
 			</blockquote>
 			{art.length > 0 && (
 				<div className="mt-4">
-					<h3 className="font-reading text-sm font-normal italic text-faint">
+					<h3 className="font-reading text-sm font-normal italic text-muted-foreground">
 						Art · {art.length}
 					</h3>
 					<ul className="mt-2 flex list-none gap-2 overflow-x-auto">
@@ -1269,19 +1271,25 @@ function PanelBody({
 			    amendment: "who teaches this verse" reads with the entities). */}
 			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
 				<div className="mt-5">
-					<h3 className="font-reading text-sm font-normal italic text-faint">Heard in</h3>
+					<h3 className="font-reading text-sm font-normal italic text-muted-foreground">Heard in</h3>
+					{/* Plate II·b quiet ruled rows — RefRow's chip idiom stays the
+					    media-page treatment; inside this rail every register is ruled.
+					    ▸ is a licensed player glyph (doctrine 8). */}
 					<ul className="mt-1 list-none">
 						{mediaRefs.moments.map((m) => (
-							<li key={`${m.episodeId}-${m.t}`}>
-								<RefRow
+							<li key={`${m.episodeId}-${m.t}`} className="border-t border-rule first:border-t-0">
+								<Link
 									to={`/media/${m.episodeId}?t=${Math.floor(m.t)}`}
-									ariaLabel={`Play ${m.episodeName} from ${fmtTimestamp(m.t)}`}
+									aria-label={`Play ${m.episodeName} from ${fmtTimestamp(m.t)}`}
+									className="group flex items-baseline justify-between gap-3 py-2"
 								>
-									<span className="min-w-0 truncate font-reading text-sm text-ink">
+									<span className="min-w-0 truncate font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
 										{m.episodeName.replace(/^Come Follow Me - /, "")}
 									</span>
-									<span className="font-ui text-xs tabular-nums text-faint">{fmtTimestamp(m.t)}</span>
-								</RefRow>
+									<span className="shrink-0 font-ui text-[11px] tabular-nums text-muted-foreground">
+										▸ {fmtTimestamp(m.t)}
+									</span>
+								</Link>
 							</li>
 						))}
 					</ul>
@@ -1495,13 +1503,25 @@ function CrossRefsSection({
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const seeAllRef = useRef<HTMLButtonElement>(null);
+	const showFewerRef = useRef<HTMLButtonElement>(null);
 	const restoreFocus = useRef(false);
+	const disclosureId = useId();
 	// Focus returns to the "See all" trigger AFTER the collapsed tree renders it again.
 	useEffect(() => {
 		if (!expanded && restoreFocus.current) {
 			restoreFocus.current = false;
 			seeAllRef.current?.focus();
 		}
+	}, [expanded]);
+	// Symmetric on expand: activating "See all" unmounts the focused trigger, so
+	// without this focus drops to <body> (desktop: Esc never reaches our
+	// onKeyDown) or gets recaptured by the mobile Sheet's FocusScope (Esc then
+	// closes the WHOLE sheet — inverting doctrine 6). Keeping focus on "Show
+	// fewer" keeps keydowns bubbling through this register's div. Expansion is
+	// only ever user-initiated (state starts false; PanelBody keys this per
+	// verse), so focusing here never steals focus on mount.
+	useEffect(() => {
+		if (expanded) showFewerRef.current?.focus();
 	}, [expanded]);
 
 	if (panel.degraded) return null;
@@ -1512,6 +1532,12 @@ function CrossRefsSection({
 	const references = cards.filter((c) => c.direction === "outgoing");
 	const referencedBy = cards.filter((c) => c.direction === "incoming");
 	const total = panel.totals.outgoing + panel.totals.incoming;
+	// Truncation is disclosed, not silent — but only when rows were actually cut
+	// by the loader's 200/direction limit: the SQL total counts pre-dedup rows,
+	// so "N of M" with untruncated cards would misread duplicates as hidden refs.
+	// (The "See all N →" door keeps N = total per the work order.)
+	const groupCount = (rendered: number, sqlTotal: number) =>
+		rendered >= 200 && sqlTotal > rendered ? `${rendered} of ${sqlTotal}` : `${rendered}`;
 	const collapse = () => {
 		restoreFocus.current = true;
 		setExpanded(false);
@@ -1553,11 +1579,11 @@ function CrossRefsSection({
 				}
 			}}
 		>
-			<h3 className="font-reading text-sm font-normal italic text-faint">
+			<h3 className="font-reading text-sm font-normal italic text-muted-foreground">
 				Cross-references
 				{panel.curated && (
 					// curated provenance as a quiet sans word, never a bordered chip
-					<span className="ml-2 font-ui text-[11px] not-italic text-faint">curated</span>
+					<span className="ml-2 font-ui text-[11px] not-italic text-muted-foreground">curated</span>
 				)}
 			</h3>
 			{!expanded ? (
@@ -1575,6 +1601,7 @@ function CrossRefsSection({
 							<button
 								ref={seeAllRef}
 								type="button"
+								aria-expanded={false}
 								onClick={() => setExpanded(true)}
 								className="flex w-full py-2 text-left font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
 							>
@@ -1584,9 +1611,12 @@ function CrossRefsSection({
 					)}
 				</ul>
 			) : (
-				<div className="mt-1">
+				<div className="mt-1" id={disclosureId}>
 					<button
+						ref={showFewerRef}
 						type="button"
+						aria-expanded={true}
+						aria-controls={disclosureId}
 						onClick={collapse}
 						className="flex w-full py-2 text-left font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
 					>
@@ -1594,8 +1624,10 @@ function CrossRefsSection({
 					</button>
 					{references.length > 0 && (
 						<>
-							<span className="block border-t border-rule pb-0.5 pt-3 font-reading text-[12.5px] italic text-faint">
-								Cites · {panel.totals.outgoing}
+							{/* the sublabel carries direction for the whole group, so the
+							    rows below drop their per-row "cites ·" gloss (Plate II·b) */}
+							<span className="block border-t border-rule pb-0.5 pt-3 font-reading text-[12.5px] italic text-muted-foreground">
+								Cites · {groupCount(references.length, panel.totals.outgoing)}
 							</span>
 							<ul className="list-none">
 								{references.map((x) => (
@@ -1603,6 +1635,7 @@ function CrossRefsSection({
 										key={`${x.direction}-${x.verse_id}`}
 										card={x}
 										onNavigate={onNavigate}
+										showDirection={false}
 										className="border-t border-rule"
 									/>
 								))}
@@ -1611,8 +1644,8 @@ function CrossRefsSection({
 					)}
 					{referencedBy.length > 0 && (
 						<>
-							<span className="block border-t border-rule pb-0.5 pt-3 font-reading text-[12.5px] italic text-faint">
-								Cited by · {panel.totals.incoming}
+							<span className="block border-t border-rule pb-0.5 pt-3 font-reading text-[12.5px] italic text-muted-foreground">
+								Cited by · {groupCount(referencedBy.length, panel.totals.incoming)}
 							</span>
 							<ul className="list-none">
 								{referencedBy.map((x) => (
@@ -1620,6 +1653,7 @@ function CrossRefsSection({
 										key={`${x.direction}-${x.verse_id}`}
 										card={x}
 										onNavigate={onNavigate}
+										showDirection={false}
 										className="border-t border-rule"
 									/>
 								))}
@@ -1669,7 +1703,7 @@ function EntityRows({
 	if (chips.length === 0) return null;
 	return (
 		<div className="mt-5">
-			<h3 className="font-reading text-sm font-normal italic text-faint">{title}</h3>
+			<h3 className="font-reading text-sm font-normal italic text-muted-foreground">{title}</h3>
 			<ul className="mt-1 list-none">
 				{chips.map((c) => (
 					<li key={c.id} className="border-t border-rule first:border-t-0">
@@ -1700,31 +1734,49 @@ function verseIdToTarget(verseId: string): { href: string; verse: number } | nul
 	};
 }
 
+/** Per-source provenance words, lowercased to fit the quiet gloss register.
+ * The old panel deliberately distinguished AI-suggested from human-curated —
+ * collapsing them to one word would mislabel machine suggestions as
+ * human-curated (a trust-signal inversion). Keep that distinction. */
+const CURATED_SOURCE_WORDS: Record<string, string> = {
+	"anthropic-batch": "AI-suggested",
+	curated: "curated",
+	"lds-doc-project": "LDS Documentation Project",
+};
+
 /** One ruled reference row: the serif reference (the accessible name carries
  * the full range, A11Y-3) over a one-line sans gloss built from the card —
- * direction ("cites ·" / "cited by ·"), curated provenance where the source
- * isn't OpenBible, and the target's text. */
+ * direction ("cites ·" / "cited by ·") unless the surrounding group sublabel
+ * already carries it (Plate II·b disclosed state), curated provenance where
+ * the source isn't OpenBible, and the target's text. */
 function CrossRefRow({
 	card,
 	onNavigate,
+	showDirection = true,
 	className = "",
 }: {
 	card: CrossRefCard;
 	onNavigate: (verse: number) => void;
+	showDirection?: boolean;
 	className?: string;
 }) {
 	const target = verseIdToTarget(card.verse_id);
 	const gloss = card.direction === "outgoing" ? "cites" : "cited by";
 	// provenance stays visible on curated-source rows (trust signal kept from
 	// the old panel) — as a quiet word in the gloss, never a bordered chip
-	const curatedRow = card.source !== null && card.source !== "openbible";
+	const sourceWord =
+		card.source !== null && card.source !== "openbible"
+			? (CURATED_SOURCE_WORDS[card.source] ?? card.source)
+			: null;
 	const body = (
 		<>
 			<span className="block font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
 				{card.label}
 			</span>
-			<span className="block truncate font-ui text-[11px] text-faint">
-				{gloss} ·{curatedRow ? " curated ·" : ""} {card.text}
+			<span className="block truncate font-ui text-[11px] text-muted-foreground">
+				{showDirection ? `${gloss} · ` : ""}
+				{sourceWord ? `${sourceWord} · ` : ""}
+				{card.text}
 			</span>
 		</>
 	);
