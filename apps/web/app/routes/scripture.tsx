@@ -1531,11 +1531,13 @@ function CrossRefsSection({
 	// groupCrossRefs already vote-sorted the cards; filtering preserves that order.
 	const references = cards.filter((c) => c.direction === "outgoing");
 	const referencedBy = cards.filter((c) => c.direction === "incoming");
-	const total = panel.totals.outgoing + panel.totals.incoming;
+	// The door's N is the RENDERED card count (plate semantics: "See all 14" =
+	// 3 + 11 disclosed rows). The SQL totals are pre-dedup/pre-limit and can
+	// overstate on hub verses; truncation is disclosed by the group sublabels.
+	const total = references.length + referencedBy.length;
 	// Truncation is disclosed, not silent — but only when rows were actually cut
 	// by the loader's 200/direction limit: the SQL total counts pre-dedup rows,
 	// so "N of M" with untruncated cards would misread duplicates as hidden refs.
-	// (The "See all N →" door keeps N = total per the work order.)
 	const groupCount = (rendered: number, sqlTotal: number) =>
 		rendered >= 200 && sqlTotal > rendered ? `${rendered} of ${sqlTotal}` : `${rendered}`;
 	const collapse = () => {

@@ -229,7 +229,12 @@ freed gutter also hosts the mobile depth affordance (§6a).
 
 The rail = the shipped verse panel wearing the craft rules (register
 anatomy, print-nothing rule, every-row-a-door, degradation-as-absence — as
-rev 1, unchanged), plus: **"See all" is disclosure, never navigation** —
+rev 1, unchanged). Register order (correcting the artifact's Plate II·b,
+which drew it wrong): **art · Teaches · Mentions · Heard in ·
+Cross-references** — moments read with the entities, per Abram's original
+panel-order amendment; the shipped order stands. The "See all" door's N is
+the rendered row count, not the SQL total. Plus: **"See all" is disclosure,
+never navigation** —
 in-place, inside the rail's scroll, URL/back untouched, `Esc` folds it
 first with focus returning to the trigger; the disclosure is *controlled*
 state so the escape registry can observe it. Growth registers (Conference,
