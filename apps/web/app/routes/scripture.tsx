@@ -965,15 +965,18 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										>
 											{verse.verse_number}
 										</span>
-										{/* §6a.2 — mobile single gutter dot: below lg one neutral
-										    dot under the number says "depth exists" (the typed
-										    spread stays desktop-only in the margin). */}
+										{/* §6a.2 amended (Abram): the mobile gutter speaks the full color
+										    legend — typed dots stack VERTICALLY under the number (4px dots,
+										    tight rhythm: a 4-kind stack runs ~23px, inside a one-line row). */}
 										{hasDepth && (
 											<span
 												aria-hidden
-												className="absolute left-2 top-8 flex w-6 justify-end lg:hidden"
+												className="absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] lg:hidden"
 											>
-												<span className="size-[4.5px] rounded-full bg-faint/60" />
+												{signals?.principles && <span className="size-[4px] rounded-full bg-dot-teaches" />}
+												{signals?.people && <span className="size-[4px] rounded-full bg-dot-mentions" />}
+												{signals?.xrefs && <span className="size-[4px] rounded-full bg-dot-xref" />}
+												{signals?.media && <span className="size-[4px] rounded-full bg-dot-media" />}
 											</span>
 										)}
 										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
