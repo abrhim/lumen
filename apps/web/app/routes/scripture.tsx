@@ -35,6 +35,7 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import {
 	Sheet,
+	SheetClose,
 	SheetContent,
 	SheetDescription,
 	SheetHeader,
@@ -822,23 +823,29 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	);
 
 	return (
-		<div className="mx-auto max-w-6xl px-4 py-14 lg:px-6">
-			<header>
+		<div className="mx-auto px-4 pt-[72px] pb-14 lg:px-6">
+			{/* Balance (Abram's call, overruling the earlier widths-stay ruling):
+			    the column + rail center as ONE unit (the plate's geometry), and the
+			    header lives inside the text column so the title, summary, and navs
+			    share the verse text's left edge instead of the page's. */}
+			<div className="mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-10">
+			<header className="pl-10 pr-4 lg:col-start-1 lg:pl-14">
 				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
 					<Link to="/" className="hover:text-ink">
 						Lumen
 					</Link>
 				</p>
-				<div className="mt-2 flex items-center gap-3">
+				<div className="relative mt-2 flex items-center gap-3">
+					{/* the back arrow hangs in the gutter, like the verse numbers */}
 					<button
 						type="button"
 						onClick={goBack}
 						aria-label="Back"
-						className="-m-2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink"
+						className="absolute -left-9 top-1/2 -translate-y-1/2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink lg:-left-11"
 					>
 						<ArrowLeftIcon className="size-5" aria-hidden="true" />
 					</button>
-					<h1 className="font-display text-[34px] font-medium tracking-tight">
+					<h1 className="font-display text-[34px] font-medium tracking-[-0.01em]">
 						{/* the book name doubles as a breadcrumb to the chapter grid */}
 						<Link
 							to={`/scripture/${bookId}`}
@@ -860,9 +867,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 						{/* heading-nav is the dominant SR navigation mode; the visual design
 						    carries no label, so the heading is screen-reader-only */}
 						<h2 className="sr-only">Chapter summary</h2>
-						<p className="mt-3.5 max-w-[58ch] font-reading text-[15px] italic leading-relaxed text-muted-foreground">
-							{summary}
-						</p>
+						<ChapterSummary text={summary} />
 					</section>
 				)}
 				<nav
@@ -874,7 +879,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							to={`/scripture/${bookId}/${chapter - 1}`}
 							className="transition-colors duration-150 hover:text-ink"
 						>
-							‹ {bookName} {chapter - 1}
+							‹&nbsp; {bookName} {chapter - 1}
 						</Link>
 					)}
 					{(maxChapter === null || chapter < maxChapter) && (
@@ -882,7 +887,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							to={`/scripture/${bookId}/${chapter + 1}`}
 							className="transition-colors duration-150 hover:text-ink"
 						>
-							{bookName} {chapter + 1} ›
+							{bookName} {chapter + 1} &nbsp;›
 						</Link>
 					)}
 				</nav>
@@ -898,8 +903,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				className="mt-6 lg:hidden"
 			/>
 
-			<div className="mt-8 gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
-				<main>
+				<main className="mt-8 lg:col-start-1">
 					<ol className="max-w-prose list-none">
 						{verses.map((verse) => {
 							const isActive = verse.verse_number === activeVerse;
@@ -945,7 +949,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												);
 											}
 										}}
-										className={`relative block rounded-lg py-2 pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 lg:pl-14 ${
+										className={`relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 lg:pl-14 ${
 											isActive ? "bg-sel" : ""
 										}`}
 									>
@@ -978,11 +982,11 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{signals && (
 											<span
 												aria-hidden
-												className="absolute -right-7 top-[1.15rem] hidden items-center gap-[5px] lg:flex"
+												className="absolute -right-[26px] top-[1.15rem] hidden items-center gap-[5px] lg:flex"
 											>
-												{signals.principles && <span className="size-[5px] rounded-full bg-selbar/60" />}
-												{signals.people && <span className="size-[5px] rounded-full bg-people/60" />}
-												{signals.xrefs && <span className="size-[5px] rounded-full bg-faint/45" />}
+												{signals.principles && <span className="size-[5px] rounded-full bg-selbar/70" />}
+												{signals.people && <span className="size-[5px] rounded-full bg-people/70" />}
+												{signals.xrefs && <span className="size-[5px] rounded-full bg-faint/55" />}
 												{signals.media && <span className="size-[5px] rounded-full bg-primary/70" />}
 											</span>
 										)}
@@ -1038,7 +1042,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				    panel isn't reconciled twice; the CSS classes keep it hidden on
 				    mobile before hydration. */}
 				{!isMobile && (
-					<div className="hidden lg:block">
+					<div className="hidden lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:block">
 						{/* a DISTINCT card above the verse detail — the whole card is
 						    the link to the chapter gallery (Abram's design) */}
 						<ChapterArtStack
@@ -1050,12 +1054,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 						/>
 						<section
 							aria-label="Verse connections"
-							className="h-fit rounded-xl border border-rule bg-panel p-5 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
+							className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[22px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
 						>
 						{selected ? (
 							<>
 								<div className="flex items-baseline justify-between gap-3">
-									<h2 className="font-display text-xl font-medium">{selected.reference}</h2>
+									<h2 className="font-display text-[21px] font-medium tracking-[-0.01em]">{selected.reference}</h2>
 									<span className="flex items-center gap-2">
 										{graphButton(selected.id, `Open the local graph for ${selected.reference}`)}
 										<Link
@@ -1097,18 +1101,31 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				>
 					<SheetContent
 						side="bottom"
+						showCloseButton={false}
 						className="max-h-[75dvh] overflow-y-auto rounded-t-2xl border-rule bg-panel p-5 pb-8"
 					>
 						{sheetVerse && (
 							<>
 								<SheetHeader className="p-0 text-left">
-									<SheetTitle className="font-display text-xl font-medium text-ink">
-										{sheetVerse.reference}
-									</SheetTitle>
+									{/* the rail's head idiom, in the sheet container (one anatomy,
+									    two containers): reference left; Graph + × words/marks right */}
+									<div className="flex items-baseline justify-between gap-3">
+										<SheetTitle className="font-display text-[21px] font-medium tracking-[-0.01em] text-ink">
+											{sheetVerse.reference}
+										</SheetTitle>
+										<span className="flex items-center gap-3">
+											{graphButton(sheetVerse.id, `Open the local graph for ${sheetVerse.reference}`)}
+											<SheetClose
+												aria-label="Close verse panel"
+												className="-m-2 p-2 font-reading text-lg leading-none text-muted-foreground transition-colors duration-150 hover:text-ink"
+											>
+												<span aria-hidden="true">×</span>
+											</SheetClose>
+										</span>
+									</div>
 									<SheetDescription className="sr-only">
 										Connections for {sheetVerse.reference}
 									</SheetDescription>
-									<div>{graphButton(sheetVerse.id, `Open the local graph for ${sheetVerse.reference}`)}</div>
 								</SheetHeader>
 								{panelFor(sheetVerse)}
 							</>
@@ -1132,6 +1149,38 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				</Suspense>
 			)}
 		</div>
+	);
+}
+
+/** The chapter summary wearing the doorway device (navigation.md §3): real
+ * summaries run ~110 words, and unclamped they invert the page's hierarchy —
+ * the apparatus louder than the text. Clamped to ~3 lines with the fade;
+ * clicking discloses in place (never navigation). Short summaries render
+ * plain. Focus discipline: expansion unmounts the button, so focus moves to
+ * the revealed paragraph (the see-all lesson). */
+function ChapterSummary({ text }: { text: string }) {
+	const [expanded, setExpanded] = useState(false);
+	const expandedRef = useRef<HTMLParagraphElement>(null);
+	useEffect(() => {
+		if (expanded) expandedRef.current?.focus();
+	}, [expanded]);
+	const cls = "mt-3.5 max-w-[58ch] font-reading text-[15px] italic leading-relaxed text-muted-foreground";
+	if (text.length <= 220 || expanded) {
+		return (
+			<p ref={expandedRef} tabIndex={expanded ? -1 : undefined} className={`${cls} outline-none`}>
+				{text}
+			</p>
+		);
+	}
+	return (
+		<button
+			type="button"
+			aria-expanded="false"
+			onClick={() => setExpanded(true)}
+			className={`${cls} relative block max-h-[4.6em] cursor-pointer overflow-hidden text-left after:absolute after:inset-x-0 after:bottom-0 after:h-8 after:bg-gradient-to-b after:from-transparent after:to-background`}
+		>
+			{text}
+		</button>
 	);
 }
 
@@ -1220,7 +1269,7 @@ function PanelBody({
 				{verseText}
 			</blockquote>
 			{art.length > 0 && (
-				<div className="mt-4">
+				<div className="mt-[18px]">
 					<h3 className="font-reading text-sm font-normal italic text-muted-foreground">
 						Art · {art.length}
 					</h3>
@@ -1270,7 +1319,7 @@ function PanelBody({
 			{/* Media moments after the entity rows, before citations (panel-order
 			    amendment: "who teaches this verse" reads with the entities). */}
 			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
-				<div className="mt-5">
+				<div className="mt-[18px]">
 					<h3 className="font-reading text-sm font-normal italic text-muted-foreground">Heard in</h3>
 					{/* Plate II·b quiet ruled rows — RefRow's chip idiom stays the
 					    media-page treatment; inside this rail every register is ruled.
@@ -1283,10 +1332,15 @@ function PanelBody({
 									aria-label={`Play ${m.episodeName} from ${fmtTimestamp(m.t)}`}
 									className="group flex items-baseline justify-between gap-3 py-2"
 								>
-									<span className="min-w-0 truncate font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
-										{m.episodeName.replace(/^Come Follow Me - /, "")}
+									<span className="min-w-0">
+										<span className="block truncate font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+											{m.episodeName.replace(/^Come Follow Me - /, "")}
+										</span>
+										<span className="block truncate font-ui text-[11px] text-muted-foreground">
+											Unshaken · discusses this verse
+										</span>
 									</span>
-									<span className="shrink-0 font-ui text-[11px] tabular-nums text-muted-foreground">
+									<span className="shrink-0 font-ui text-[10.5px] tabular-nums text-muted-foreground">
 										▸ {fmtTimestamp(m.t)}
 									</span>
 								</Link>
@@ -1582,7 +1636,8 @@ function CrossRefsSection({
 			}}
 		>
 			<h3 className="font-reading text-sm font-normal italic text-muted-foreground">
-				Cross-references
+				{/* the disclosed state carries the count (plate: "Cross-references · 14") */}
+				{expanded ? `Cross-references · ${total}` : "Cross-references"}
 				{panel.curated && (
 					// curated provenance as a quiet sans word, never a bordered chip
 					<span className="ml-2 font-ui text-[11px] not-italic text-muted-foreground">curated</span>
@@ -1605,7 +1660,7 @@ function CrossRefsSection({
 								type="button"
 								aria-expanded={false}
 								onClick={() => setExpanded(true)}
-								className="flex w-full py-2 text-left font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+								className="flex w-full py-2 text-left font-ui text-[11.5px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
 							>
 								See all {total} →
 							</button>
@@ -1620,7 +1675,7 @@ function CrossRefsSection({
 						aria-expanded={true}
 						aria-controls={disclosureId}
 						onClick={collapse}
-						className="flex w-full py-2 text-left font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+						className="flex w-full py-2 text-left font-ui text-[11.5px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
 					>
 						Show fewer ↑
 					</button>
@@ -1704,7 +1759,7 @@ function EntityRows({
 }) {
 	if (chips.length === 0) return null;
 	return (
-		<div className="mt-5">
+		<div className="mt-[18px]">
 			<h3 className="font-reading text-sm font-normal italic text-muted-foreground">{title}</h3>
 			<ul className="mt-1 list-none">
 				{chips.map((c) => (
@@ -1715,7 +1770,7 @@ function EntityRows({
 							className="group flex items-baseline gap-2 py-2"
 						>
 							<span aria-hidden className={`relative -top-[3px] size-[5px] shrink-0 rounded-full ${dotClass}`} />
-							<span className="font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+							<span className="font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
 								{c.name}
 							</span>
 						</Link>
@@ -1772,7 +1827,7 @@ function CrossRefRow({
 			: null;
 	const body = (
 		<>
-			<span className="block font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+			<span className="block font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
 				{card.label}
 			</span>
 			<span className="block truncate font-ui text-[11px] text-muted-foreground">
