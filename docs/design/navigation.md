@@ -297,9 +297,10 @@ mechanisms, composed rather than chosen:
    underline tick — the dots' information moved into an element that
    already exists at every width. Zero new chrome; color is not the sole
    carrier (weight + tick), per 1.4.1.
-2. **Gutter dots return on mobile** once §4's margin reduction lands — the
-   freed gutter hosts a compact single-dot variant (one dot = "depth
-   exists," not the full type spread; the full spread stays desktop).
+2. **Gutter dots return on mobile** — amended (Abram, 2026-07-24): not the
+   single-dot variant; the typed dots stack VERTICALLY under the verse
+   number (4px, tight rhythm — a four-kind stack runs ~23px, inside even a
+   one-line row), so mobile speaks the same color legend as desktop.
 3. **The figure's cycle gains a connections state** — "v. 20 of 43" → "12
    connected verses" → time-left → off — putting depth literally on the
    floor's odometer.
