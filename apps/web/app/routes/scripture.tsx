@@ -1271,7 +1271,7 @@ function PanelBody({
 			{art.length > 0 && (
 				<div className="mt-[18px]">
 					<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
-						<ImageIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px] text-faint" />
+						<ImageIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />
 						Art · {art.length}
 					</h3>
 					<ul className="mt-2 flex list-none gap-2 overflow-x-auto">
@@ -1322,7 +1322,7 @@ function PanelBody({
 			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
 				<div className="mt-[18px]">
 					<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
-						<HeadphonesIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px] text-dot-media" />
+						<HeadphonesIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />
 						Heard in
 					</h3>
 					{/* Plate II·b quiet ruled rows — RefRow's chip idiom stays the
@@ -1640,7 +1640,7 @@ function CrossRefsSection({
 			}}
 		>
 			<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
-				<Link2Icon aria-hidden="true" strokeWidth={1.75} className="size-[13px] text-dot-xref" />
+				<Link2Icon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />
 				{/* the disclosed state carries the count (plate: "Cross-references · 14") */}
 				{expanded ? `Cross-references · ${total}` : "Cross-references"}
 				{panel.curated && (
@@ -1741,8 +1741,8 @@ function Connections({ panel }: { panel: VersePanelData }) {
 			aria-live="polite"
 			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
 		>
-			<EntityRows title="Teaches" labelIcon={<LightbulbIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px] text-dot-teaches" />} dotClass="bg-dot-teaches" chips={panel.principles} nodeType="principles" />
-			<EntityRows title="Mentions" labelIcon={<UsersIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px] text-dot-mentions" />} dotClass="bg-dot-mentions" chips={panel.people} nodeType="people" />
+			<EntityRows title="Teaches" labelIcon={<LightbulbIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />} dotClass="bg-dot-teaches" chips={panel.principles} nodeType="principles" />
+			<EntityRows title="Mentions" labelIcon={<UsersIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />} dotClass="bg-dot-mentions" chips={panel.people} nodeType="people" />
 		</div>
 	);
 }

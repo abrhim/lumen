@@ -315,11 +315,12 @@ Primary metric (replacing Desk-visits): **"engaged any depth affordance"**
 
 1. **Label idiom — ruled for the rail (Abram, 2026-07-24, two passes):**
    register labels are quiet sans sentence-case, 13px normal weight, led by
-   a SMALL LUCIDE ICON (13px, 1.75 stroke) in the register's dot-token
-   color — Lightbulb/teaches, Users/mentions, Headphones/media, Link2/xref,
+   a SMALL LUCIDE ICON (13px, 1.75 stroke) in the LABEL'S OWN INK
+   (currentColor, not the dot-token colors — Abram's ruling, second pass) —
+   Lightbulb/teaches, Users/mentions, Headphones/media, Link2/xref,
    Image/art. The dot-led attempt read as another list row (label and rows
-   shared one anatomy); the icon differentiates the header while its color
-   keeps the margin-dot legend. Doctrine 8 amended: the pictographic ban
+   shared one anatomy); the icon differentiates the header, and the rows'
+   dots alone carry the color legend. Doctrine 8 amended: the pictographic ban
    holds for NAVIGATION chrome; rail register labels are content-side and
    carry these five marks by ruling. Desk register labels: still open.
 2. Esc-to-Desk from a bare chapter: deferred by doctrine 6 (v1 inert);
