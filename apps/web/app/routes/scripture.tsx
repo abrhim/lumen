@@ -1270,7 +1270,7 @@ function PanelBody({
 			</blockquote>
 			{art.length > 0 && (
 				<div className="mt-[18px]">
-					<h3 className="font-ui text-[11px] font-semibold text-muted-foreground">
+					<h3 className="font-ui text-[13px] font-normal text-muted-foreground">
 						Art · {art.length}
 					</h3>
 					<ul className="mt-2 flex list-none gap-2 overflow-x-auto">
@@ -1320,7 +1320,7 @@ function PanelBody({
 			    amendment: "who teaches this verse" reads with the entities). */}
 			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
 				<div className="mt-[18px]">
-					<h3 className="flex items-center gap-2 font-ui text-[11px] font-semibold text-muted-foreground">
+					<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
 						<span aria-hidden className="size-[5px] rounded-full bg-dot-media" />
 						Heard in
 					</h3>
@@ -1638,7 +1638,7 @@ function CrossRefsSection({
 				}
 			}}
 		>
-			<h3 className="flex items-center gap-2 font-ui text-[11px] font-semibold text-muted-foreground">
+			<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
 				<span aria-hidden className="size-[5px] rounded-full bg-dot-xref" />
 				{/* the disclosed state carries the count (plate: "Cross-references · 14") */}
 				{expanded ? `Cross-references · ${total}` : "Cross-references"}
@@ -1687,7 +1687,7 @@ function CrossRefsSection({
 						<>
 							{/* the sublabel carries direction for the whole group, so the
 							    rows below drop their per-row "cites ·" gloss (Plate II·b) */}
-							<span className="block border-t border-rule pb-0.5 pt-3 font-ui text-[10.5px] font-semibold text-muted-foreground">
+							<span className="block border-t border-rule pb-0.5 pt-3 font-ui text-[10.5px] font-medium text-muted-foreground">
 								Cites · {groupCount(references.length, panel.totals.outgoing)}
 							</span>
 							<ul className="list-none">
@@ -1705,7 +1705,7 @@ function CrossRefsSection({
 					)}
 					{referencedBy.length > 0 && (
 						<>
-							<span className="block border-t border-rule pb-0.5 pt-3 font-ui text-[10.5px] font-semibold text-muted-foreground">
+							<span className="block border-t border-rule pb-0.5 pt-3 font-ui text-[10.5px] font-medium text-muted-foreground">
 								Cited by · {groupCount(referencedBy.length, panel.totals.incoming)}
 							</span>
 							<ul className="list-none">
@@ -1764,7 +1764,7 @@ function EntityRows({
 	if (chips.length === 0) return null;
 	return (
 		<div className="mt-[18px]">
-			<h3 className="flex items-center gap-2 font-ui text-[11px] font-semibold text-muted-foreground">
+			<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
 				<span aria-hidden className={`size-[5px] rounded-full ${dotClass}`} />
 				{title}
 			</h3>
