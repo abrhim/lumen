@@ -903,7 +903,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				className="mt-6 lg:hidden"
 			/>
 
-				<main className="mt-8 lg:col-start-1">
+				<main className="mt-8 lg:col-start-1 lg:row-start-2">
 					<ol className="max-w-prose list-none">
 						{verses.map((verse) => {
 							const isActive = verse.verse_number === activeVerse;
@@ -950,7 +950,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												);
 											}
 										}}
-										className={`relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 lg:pl-14 ${
+										className={`relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
 											isActive ? "bg-sel" : ""
 										}`}
 									>
@@ -1048,7 +1048,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					   via the view transition the verse links opt into (Abram's call);
 					   reduced-motion is stilled by the existing ::view-transition rules. */
 					<div
-						className={`hidden lg:col-start-2 lg:block ${selected ? "lg:row-start-1 lg:row-span-3" : "lg:row-start-3 lg:mt-8"}`}
+						className={`hidden lg:col-start-2 lg:block ${selected ? "lg:row-start-1 lg:row-span-2" : "lg:row-start-2 lg:mt-8"}`}
 						style={{ viewTransitionName: "verse-rail" }}
 					>
 						{/* a DISTINCT card above the verse detail — the whole card is
