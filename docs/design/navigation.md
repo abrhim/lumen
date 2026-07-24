@@ -313,9 +313,13 @@ Primary metric (replacing Desk-visits): **"engaged any depth affordance"**
 
 ## 7. Open questions / risks carried forward
 
-1. **Label idiom**: shipped uppercase-tracked `font-ui` labels vs the
-   Composition's italic-serif register — decide before the Desk build;
-   whichever wins applies everywhere (doctrine 14 bans only mono-caps).
+1. **Label idiom — partially ruled (Abram, 2026-07-24):** rail register
+   labels are quiet sans sentence-case (11px semibold muted), NOT italic
+   serif and NOT uppercase-tracked, each led by its register's 5px type
+   dot — the same colors the margin dots speak, so the rail labels double
+   as the margin's legend. Icons considered and declined in favor of the
+   dots (doctrine 8 holds). Still open for the Desk's register labels —
+   decide before the Desk build.
 2. Esc-to-Desk from a bare chapter: deferred by doctrine 6 (v1 inert);
    revisit after the escape registry has shipped and earned trust.
 3. The cross-route persistent player (audio surviving navigation) — real
