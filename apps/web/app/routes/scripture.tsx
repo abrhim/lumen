@@ -7,7 +7,7 @@ import {
 	useNavigation,
 	useNavigationType,
 } from "react-router";
-import { ArrowLeftIcon, WaypointsIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, XIcon } from "lucide-react";
 import { sql } from "drizzle-orm";
 import {
 	parseReference,
@@ -34,12 +34,6 @@ import {
 } from "@lumen/scripture";
 import { Skeleton } from "~/components/ui/skeleton";
 import { RefRow } from "~/components/RefRow";
-import {
-	Accordion,
-	AccordionItem,
-	AccordionTrigger,
-	AccordionContent,
-} from "~/components/ui/accordion";
 import {
 	Sheet,
 	SheetContent,
@@ -803,6 +797,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 
 	const panelFor = (verse: VerseRow) => (
 		<PanelBody
+			// key: disclosure state (cross-refs "see all") must not leak across verses
+			key={verse.id}
 			verseText={verse.text}
 			isPending={isPending}
 			connections={connections}
@@ -813,21 +809,22 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 		/>
 	);
 
+	// The graph affordance is a plain word (doctrine 8: no pictographic icons;
+	// typographic marks and quiet sans words carry the chrome).
 	const graphButton = (entityId: string, label: string) => (
 		<button
 			type="button"
 			onClick={() => openGraph(entityId)}
 			aria-label={label}
-			className="inline-flex items-center gap-1 rounded-md border border-rule2 px-2 py-1 font-ui text-[10px] font-bold uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary hover:text-primary"
+			className="font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
 		>
-			<WaypointsIcon className="size-3.5" aria-hidden="true" />
 			Graph
 		</button>
 	);
 
 	return (
-		<div className="mx-auto max-w-6xl px-6 py-10">
-			<header className="border-b border-rule pb-5">
+		<div className="mx-auto max-w-6xl px-4 py-14 lg:px-6">
+			<header>
 				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
 					<Link to="/" className="hover:text-ink">
 						Lumen
@@ -842,7 +839,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					>
 						<ArrowLeftIcon className="size-5" aria-hidden="true" />
 					</button>
-					<h1 className="font-display text-3xl font-medium tracking-tight">
+					<h1 className="font-display text-[34px] font-medium tracking-tight">
 						{/* the book name doubles as a breadcrumb to the chapter grid */}
 						<Link
 							to={`/scripture/${bookId}`}
@@ -857,18 +854,33 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					    carry only structural CONTAINS edges) */}
 					{graphButton(`summary-${bookId}-${chapter}`, `Open the local graph for ${reference}`)}
 				</div>
+				{/* Plate II: the chapter summary is a plain italic-serif paragraph
+				    directly under the h1 — no card, no rule, no kicker label. */}
+				{summary && (
+					<section aria-label="Chapter summary">
+						<p className="mt-3.5 max-w-[58ch] font-reading text-[15px] italic leading-relaxed text-muted-foreground">
+							{summary}
+						</p>
+					</section>
+				)}
 				<nav
 					aria-label={`${unit} navigation`}
-					className="mt-3 flex gap-3 font-ui text-sm font-semibold text-primary"
+					className="mt-4 flex gap-4 font-ui text-xs text-faint"
 				>
 					{chapter > 1 && (
-						<Link to={`/scripture/${bookId}/${chapter - 1}`} className="hover:underline">
-							← {unit} {chapter - 1}
+						<Link
+							to={`/scripture/${bookId}/${chapter - 1}`}
+							className="transition-colors duration-150 hover:text-ink"
+						>
+							‹ {bookName} {chapter - 1}
 						</Link>
 					)}
 					{(maxChapter === null || chapter < maxChapter) && (
-						<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
-							{unit} {chapter + 1} →
+						<Link
+							to={`/scripture/${bookId}/${chapter + 1}`}
+							className="transition-colors duration-150 hover:text-ink"
+						>
+							{bookName} {chapter + 1} ›
 						</Link>
 					)}
 				</nav>
@@ -886,20 +898,6 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 
 			<div className="mt-8 gap-10 lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
 				<main>
-					{summary && (
-						<section
-							aria-label="Chapter summary"
-							className="mb-8 rounded-lg border border-rule2 bg-panel p-5"
-						>
-							<h2 className="font-ui text-[10.5px] font-bold uppercase tracking-[0.14em] text-faint">
-								Chapter summary
-							</h2>
-							<p className="mt-2 max-w-prose font-reading text-[15px] leading-relaxed text-ink">
-								{summary}
-							</p>
-						</section>
-					)}
-
 					<ol className="max-w-prose list-none">
 						{verses.map((verse) => {
 							const isActive = verse.verse_number === activeVerse;
@@ -916,6 +914,11 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 								wordTag && selectedWord !== null
 									? wordGroupPositions(wordTags!.tags, selectedWord)
 									: undefined;
+							// Depth affordance (§6a.1): any signal deepens the verse
+							// number's ink and adds a hairline tick — weight + tick
+							// carry it at every width, never color alone.
+							const signals = verseSignals?.[verse.verse_number];
+							const hasDepth = signals !== undefined && Object.values(signals).some(Boolean);
 							return (
 								<li key={verse.id} id={`v${verse.verse_number}`}>
 									<Link
@@ -940,36 +943,47 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												);
 											}
 										}}
-										className={`relative block rounded-lg py-2 pl-14 pr-4 font-reading text-[19px] leading-relaxed text-ink transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 ${
+										className={`relative block rounded-lg py-2 pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 lg:pl-14 ${
 											isActive ? "bg-sel" : ""
 										}`}
 									>
 										<span
-											className={`absolute left-4 top-3 w-7 text-right font-ui text-xs font-semibold transition-colors duration-150 ${
-												isActive ? "text-selbar" : "text-faint"
-											}`}
+											className={`absolute left-2 top-3 w-6 text-right font-ui text-xs font-semibold transition-colors duration-150 lg:left-4 lg:w-7 ${
+												isActive
+													? "text-selbar"
+													: hasDepth
+														? "text-muted-foreground"
+														: "text-faint"
+											} ${hasDepth ? "underline decoration-faint/50 decoration-1 underline-offset-4" : ""}`}
 										>
 											{verse.verse_number}
 										</span>
+										{/* §6a.2 — mobile single gutter dot: below lg one neutral
+										    dot under the number says "depth exists" (the typed
+										    spread stays desktop-only in the margin). */}
+										{hasDepth && (
+											<span
+												aria-hidden
+												className="absolute left-2 top-8 flex w-6 justify-end lg:hidden"
+											>
+												<span className="size-[4.5px] rounded-full bg-faint/60" />
+											</span>
+										)}
 										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
 										{/* Margin dots (spike): one per KIND of reference behind the
 										    verse — stable order, first text line, outside the prose.
 										    Hinting, not data: no counts, no labels. */}
-										{(() => {
-											const s = verseSignals?.[verse.verse_number];
-											if (!s) return null;
-											return (
-												<span
-													aria-hidden
-													className="absolute -right-7 top-[1.15rem] hidden items-center gap-[5px] lg:flex"
-												>
-													{s.principles && <span className="size-[5px] rounded-full bg-selbar/60" />}
-													{s.people && <span className="size-[5px] rounded-full bg-people/60" />}
-													{s.xrefs && <span className="size-[5px] rounded-full bg-faint/45" />}
-													{s.media && <span className="size-[5px] rounded-full bg-primary/70" />}
-												</span>
-											);
-										})()}
+										{signals && (
+											<span
+												aria-hidden
+												className="absolute -right-7 top-[1.15rem] hidden items-center gap-[5px] lg:flex"
+											>
+												{signals.principles && <span className="size-[5px] rounded-full bg-selbar/60" />}
+												{signals.people && <span className="size-[5px] rounded-full bg-people/60" />}
+												{signals.xrefs && <span className="size-[5px] rounded-full bg-faint/45" />}
+												{signals.media && <span className="size-[5px] rounded-full bg-primary/70" />}
+											</span>
+										)}
 									</Link>
 									{showWordCard && (
 										<InlineWordCard
@@ -994,18 +1008,24 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					    bounds; aligned to the verse text edges (pl-14 = the gutter). */}
 					<nav
 						aria-label={`${unit} navigation`}
-						className="mt-10 flex max-w-prose justify-between border-t border-rule pl-14 pr-4 pt-4 font-ui text-sm font-semibold text-primary"
+						className="mt-10 flex max-w-prose justify-between border-t border-rule pl-14 pr-4 pt-4 font-ui text-xs text-faint"
 					>
 						{chapter > 1 ? (
-							<Link to={`/scripture/${bookId}/${chapter - 1}`} className="hover:underline">
-								← {unit} {chapter - 1}
+							<Link
+								to={`/scripture/${bookId}/${chapter - 1}`}
+								className="transition-colors duration-150 hover:text-ink"
+							>
+								‹ {bookName} {chapter - 1}
 							</Link>
 						) : (
 							<span aria-hidden="true" />
 						)}
 						{(maxChapter === null || chapter < maxChapter) && (
-							<Link to={`/scripture/${bookId}/${chapter + 1}`} className="hover:underline">
-								{unit} {chapter + 1} →
+							<Link
+								to={`/scripture/${bookId}/${chapter + 1}`}
+								className="transition-colors duration-150 hover:text-ink"
+							>
+								{bookName} {chapter + 1} ›
 							</Link>
 						)}
 					</nav>
@@ -1040,9 +1060,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											to={chapterUrl}
 											preventScrollReset
 											aria-label="Close verse panel"
-											className="-m-2 p-2 text-muted-foreground transition-colors duration-150 hover:text-ink"
+											className="-m-2 p-2 font-reading text-lg leading-none text-muted-foreground transition-colors duration-150 hover:text-ink"
 										>
-											<XIcon className="size-4" aria-hidden="true" />
+											<span aria-hidden="true">×</span>
 										</Link>
 									</span>
 								</div>
@@ -1199,7 +1219,7 @@ function PanelBody({
 			</blockquote>
 			{art.length > 0 && (
 				<div className="mt-4">
-					<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+					<h3 className="font-reading text-sm font-normal italic text-faint">
 						Art · {art.length}
 					</h3>
 					<ul className="mt-2 flex list-none gap-2 overflow-x-auto">
@@ -1237,8 +1257,10 @@ function PanelBody({
 					{/* errorElement: the server maps failures to {degraded:true}, but the
 					    stream itself can still reject client-side — turbo-stream aborts
 					    (server streamTimeout) and navigations cancelling in-flight deferred
-					    data. Without it those rejections would take down the whole page. */}
-					<Await resolve={connections} errorElement={<DegradedNotice />}>
+					    data. Without it those rejections would take down the whole page.
+					    Degradation is a value the UI prints as ABSENCE (Plate II·b) —
+					    the errorElement renders nothing, it only contains the rejection. */}
+					<Await resolve={connections} errorElement={<></>}>
 						{(panel) => <Connections panel={panel} />}
 					</Await>
 				</Suspense>
@@ -1247,9 +1269,7 @@ function PanelBody({
 			    amendment: "who teaches this verse" reads with the entities). */}
 			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
 				<div className="mt-5">
-					<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-						Unshaken · {mediaRefs.moments.length}
-					</h3>
+					<h3 className="font-reading text-sm font-normal italic text-faint">Heard in</h3>
 					<ul className="mt-1 list-none">
 						{mediaRefs.moments.map((m) => (
 							<li key={`${m.episodeId}-${m.t}`}>
@@ -1420,38 +1440,21 @@ function InlineWordCard({
 	);
 }
 
-function DegradedNotice() {
-	return (
-		<p className="mt-5 font-reading text-sm italic text-muted-foreground">
-			Graph features are unavailable right now — connections for this verse couldn't be loaded.
-			The chapter text is unaffected.
-		</p>
-	);
-}
-
 /** Skeleton for the synchronous cross-ref block (only shown while a same-chapter
  * verse navigation is pending — the data itself arrives with the loader).
- * Shaped like the median real output — two titled groups of cards — so the
- * pending→resolved swap moves layout as little as possible (CUX-2). */
+ * Shaped like the at-rest register — a label, three ruled rows, the see-all
+ * row — so the pending→resolved swap moves layout as little as possible (CUX-2). */
 function CrossRefsSkeleton() {
 	return (
 		<div aria-busy="true">
 			<span className="sr-only">Loading cross-references…</span>
-			<div className="mt-5 space-y-5" aria-hidden="true">
-				<div>
-					<Skeleton className="h-3 w-28" />
-					<div className="mt-2 space-y-2">
-						<Skeleton className="h-20 w-full rounded-lg" />
-						<Skeleton className="h-20 w-full rounded-lg" />
-						<Skeleton className="h-20 w-full rounded-lg" />
-					</div>
-				</div>
-				<div>
-					<Skeleton className="h-3 w-24" />
-					<div className="mt-2 space-y-2">
-						<Skeleton className="h-20 w-full rounded-lg" />
-						<Skeleton className="h-20 w-full rounded-lg" />
-					</div>
+			<div className="mt-5" aria-hidden="true">
+				<Skeleton className="h-4 w-32" />
+				<div className="mt-2 space-y-2">
+					<Skeleton className="h-9 w-full" />
+					<Skeleton className="h-9 w-full" />
+					<Skeleton className="h-9 w-full" />
+					<Skeleton className="h-5 w-24" />
 				</div>
 			</div>
 		</div>
@@ -1459,18 +1462,17 @@ function CrossRefsSkeleton() {
 }
 
 /** aria-busy scopes to ONLY the still-streaming entity block (A11Y-2) —
- * the already-rendered cross-ref cards above are never inside a busy region. */
+ * the already-rendered cross-ref rows are never inside a busy region. */
 function EntityChipsSkeleton() {
 	return (
 		<div aria-busy="true">
 			<span className="sr-only">Loading principles and people…</span>
 			<div className="mt-5 space-y-5" aria-hidden="true">
 				<div>
-					<Skeleton className="h-3 w-24" />
-					<div className="mt-2 flex gap-1.5">
-						<Skeleton className="h-7 w-24 rounded-md" />
-						<Skeleton className="h-7 w-16 rounded-md" />
-						<Skeleton className="h-7 w-20 rounded-md" />
+					<Skeleton className="h-4 w-20" />
+					<div className="mt-2 space-y-2">
+						<Skeleton className="h-6 w-full" />
+						<Skeleton className="h-6 w-3/4" />
 					</div>
 				</div>
 			</div>
@@ -1478,6 +1480,12 @@ function EntityChipsSkeleton() {
 	);
 }
 
+/** One "Cross-references" register (Plate II·b): at rest the top three ruled
+ * rows and a "See all N →" door; disclosed IN PLACE via controlled state —
+ * the URL, the back button, and the chapter column are untouched. Esc folds
+ * the disclosure (before anything else closes) and returns focus to the
+ * trigger. Degraded or empty renders NOTHING — degradation is a value the
+ * UI prints as absence. */
 function CrossRefsSection({
 	panel,
 	onNavigate,
@@ -1485,27 +1493,29 @@ function CrossRefsSection({
 	panel: CrossRefsPanel;
 	onNavigate: (verse: number) => void;
 }) {
-	if (panel.degraded) {
-		return (
-			<p className="mt-5 font-reading text-sm italic text-muted-foreground">
-				Cross-references couldn't be loaded right now. The chapter text is unaffected.
-			</p>
-		);
-	}
-	const references = panel.cards.filter((c) => c.direction === "outgoing");
-	const referencedBy = panel.cards.filter((c) => c.direction === "incoming");
+	const [expanded, setExpanded] = useState(false);
+	const seeAllRef = useRef<HTMLButtonElement>(null);
+	const restoreFocus = useRef(false);
+	// Focus returns to the "See all" trigger AFTER the collapsed tree renders it again.
+	useEffect(() => {
+		if (!expanded && restoreFocus.current) {
+			restoreFocus.current = false;
+			seeAllRef.current?.focus();
+		}
+	}, [expanded]);
 
-	if (references.length === 0 && referencedBy.length === 0) {
-		// differentiated empty states (UX-5): a Bible verse without OpenBible
-		// refs is rare; an uncurated BoM/D&C verse is expected
-		return (
-			<p className="mt-5 font-reading text-sm italic text-faint">
-				{panel.curated
-					? "Cross-references are not yet curated for this volume."
-					: "No cross-references found for this verse."}
-			</p>
-		);
-	}
+	if (panel.degraded) return null;
+	const { cards } = panel;
+	if (cards.length === 0) return null;
+
+	// groupCrossRefs already vote-sorted the cards; filtering preserves that order.
+	const references = cards.filter((c) => c.direction === "outgoing");
+	const referencedBy = cards.filter((c) => c.direction === "incoming");
+	const total = panel.totals.outgoing + panel.totals.incoming;
+	const collapse = () => {
+		restoreFocus.current = true;
+		setExpanded(false);
+	};
 
 	const credit = !panel.curated && (
 		<p className="mt-1.5 font-ui text-[10px] text-faint">
@@ -1532,56 +1542,125 @@ function CrossRefsSection({
 	);
 
 	return (
-		<Accordion type="multiple" className="mt-5">
-			<CrossRefAccordionItem
-				value="references"
-				title="References"
-				accent="text-cites"
-				cards={references}
-				total={panel.totals.outgoing}
-				curated={panel.curated}
-				onNavigate={onNavigate}
-				credit={credit}
-			/>
-			<CrossRefAccordionItem
-				value="referenced-by"
-				title="Referenced by"
-				accent="text-citedby"
-				cards={referencedBy}
-				total={panel.totals.incoming}
-				curated={panel.curated}
-				onNavigate={onNavigate}
-				credit={references.length === 0 ? credit : null}
-			/>
-		</Accordion>
-	);
-}
-
-function Connections({ panel }: { panel: VersePanelData }) {
-	if (panel.degraded) return <DegradedNotice />;
-	if (panel.principles.length === 0 && panel.people.length === 0) return null;
-
-	return (
-		// the live region belongs HERE — this is the block that arrives late
-		// (streamed via Await); the cross-ref cards above render synchronously (CUX-1)
 		<div
-			aria-live="polite"
-			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
+			className="mt-5"
+			onKeyDown={(e) => {
+				// Esc folds the disclosure first (doctrine 6: innermost thing closes);
+				// respect handlers deeper in the tree that already consumed the key.
+				if (expanded && e.key === "Escape" && !e.defaultPrevented) {
+					e.preventDefault();
+					collapse();
+				}
+			}}
 		>
-			<EntityChips title="Principles" accent="text-selbar" chips={panel.principles} nodeType="principles" />
-			<EntityChips title="People" accent="text-people" chips={panel.people} nodeType="people" />
+			<h3 className="font-reading text-sm font-normal italic text-faint">
+				Cross-references
+				{panel.curated && (
+					// curated provenance as a quiet sans word, never a bordered chip
+					<span className="ml-2 font-ui text-[11px] not-italic text-faint">curated</span>
+				)}
+			</h3>
+			{!expanded ? (
+				<ul className="mt-1 list-none">
+					{cards.slice(0, 3).map((x) => (
+						<CrossRefRow
+							key={`${x.direction}-${x.verse_id}`}
+							card={x}
+							onNavigate={onNavigate}
+							className="border-t border-rule first:border-t-0"
+						/>
+					))}
+					{cards.length > 3 && (
+						<li className="border-t border-rule">
+							<button
+								ref={seeAllRef}
+								type="button"
+								onClick={() => setExpanded(true)}
+								className="flex w-full py-2 text-left font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+							>
+								See all {total} →
+							</button>
+						</li>
+					)}
+				</ul>
+			) : (
+				<div className="mt-1">
+					<button
+						type="button"
+						onClick={collapse}
+						className="flex w-full py-2 text-left font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+					>
+						Show fewer ↑
+					</button>
+					{references.length > 0 && (
+						<>
+							<span className="block border-t border-rule pb-0.5 pt-3 font-reading text-[12.5px] italic text-faint">
+								Cites · {panel.totals.outgoing}
+							</span>
+							<ul className="list-none">
+								{references.map((x) => (
+									<CrossRefRow
+										key={`${x.direction}-${x.verse_id}`}
+										card={x}
+										onNavigate={onNavigate}
+										className="border-t border-rule"
+									/>
+								))}
+							</ul>
+						</>
+					)}
+					{referencedBy.length > 0 && (
+						<>
+							<span className="block border-t border-rule pb-0.5 pt-3 font-reading text-[12.5px] italic text-faint">
+								Cited by · {panel.totals.incoming}
+							</span>
+							<ul className="list-none">
+								{referencedBy.map((x) => (
+									<CrossRefRow
+										key={`${x.direction}-${x.verse_id}`}
+										card={x}
+										onNavigate={onNavigate}
+										className="border-t border-rule"
+									/>
+								))}
+							</ul>
+						</>
+					)}
+				</div>
+			)}
+			{credit}
 		</div>
 	);
 }
 
-function EntityChips({
+function Connections({ panel }: { panel: VersePanelData }) {
+	// degraded renders as absence (Plate II·b) — never an error box
+	if (panel.degraded) return null;
+	if (panel.principles.length === 0 && panel.people.length === 0) return null;
+
+	return (
+		// the live region belongs HERE — this is the block that arrives late
+		// (streamed via Await); the cross-ref rows below render synchronously (CUX-1)
+		<div
+			aria-live="polite"
+			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
+		>
+			<EntityRows title="Teaches" dotClass="bg-selbar/70" chips={panel.principles} nodeType="principles" />
+			<EntityRows title="Mentions" dotClass="bg-people/70" chips={panel.people} nodeType="people" />
+		</div>
+	);
+}
+
+/** Typed ruled rows (Plate II·b): full-width, hairline-ruled between rows,
+ * a 5px type dot and the serif name. Each row is a door to the node page. */
+function EntityRows({
 	title,
-	accent,
+	dotClass,
 	chips,
 	nodeType,
 }: {
 	title: string;
-	accent: string;
+	dotClass: string;
 	chips: VerseEntityRef[];
 	/** Typed node-page slug (the type is the slug); rows navigate to the node
 	 * page — the graph is an opt-in view THERE, not the row's destination. */
@@ -1590,20 +1669,20 @@ function EntityChips({
 	if (chips.length === 0) return null;
 	return (
 		<div className="mt-5">
-			<h3 className={`font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
-				{title} · {chips.length}
-			</h3>
-			<ul className="mt-1 flex flex-wrap gap-y-0.5">
+			<h3 className="font-reading text-sm font-normal italic text-faint">{title}</h3>
+			<ul className="mt-1 list-none">
 				{chips.map((c) => (
-					<li key={c.id}>
-						<RefRow
+					<li key={c.id} className="border-t border-rule first:border-t-0">
+						<Link
 							to={`/${nodeType}/${encodeURIComponent(c.id)}`}
-							ariaLabel={`About ${c.name}`}
-							fit
-							arrow={false}
+							aria-label={`About ${c.name}`}
+							className="group flex items-baseline gap-2 py-2"
 						>
-							<span className="font-reading text-sm text-ink">{c.name}</span>
-						</RefRow>
+							<span aria-hidden className={`relative -top-[3px] size-[5px] shrink-0 rounded-full ${dotClass}`} />
+							<span className="font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+								{c.name}
+							</span>
+						</Link>
 					</li>
 				))}
 			</ul>
@@ -1621,97 +1700,49 @@ function verseIdToTarget(verseId: string): { href: string; verse: number } | nul
 	};
 }
 
-const CURATED_SOURCE_LABELS: Record<string, string> = {
-	"anthropic-batch": "AI-suggested",
-	curated: "Curated",
-	"lds-doc-project": "LDS Documentation Project",
-};
-
-function CrossRefAccordionItem({
-	value,
-	title,
-	accent,
-	cards,
-	total,
-	curated,
+/** One ruled reference row: the serif reference (the accessible name carries
+ * the full range, A11Y-3) over a one-line sans gloss built from the card —
+ * direction ("cites ·" / "cited by ·"), curated provenance where the source
+ * isn't OpenBible, and the target's text. */
+function CrossRefRow({
+	card,
 	onNavigate,
-	credit,
+	className = "",
 }: {
-	value: string;
-	title: string;
-	accent: string;
-	cards: CrossRefCard[];
-	total: number;
-	curated: boolean;
+	card: CrossRefCard;
 	onNavigate: (verse: number) => void;
-	credit?: React.ReactNode;
+	className?: string;
 }) {
-	if (cards.length === 0) return null;
-	// Truncation is disclosed, not silent (UX-2/A11Y-1) — but only when rows
-	// were actually cut by the limit: the SQL total counts pre-dedup rows, so
-	// "N of M" with untruncated cards would misread duplicates as hidden refs.
-	const truncated = cards.length >= 200 && total > cards.length;
-	const count = truncated ? `${cards.length} of ${total}` : `${cards.length}`;
+	const target = verseIdToTarget(card.verse_id);
+	const gloss = card.direction === "outgoing" ? "cites" : "cited by";
+	// provenance stays visible on curated-source rows (trust signal kept from
+	// the old panel) — as a quiet word in the gloss, never a bordered chip
+	const curatedRow = card.source !== null && card.source !== "openbible";
+	const body = (
+		<>
+			<span className="block font-reading text-sm text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+				{card.label}
+			</span>
+			<span className="block truncate font-ui text-[11px] text-faint">
+				{gloss} ·{curatedRow ? " curated ·" : ""} {card.text}
+			</span>
+		</>
+	);
 	return (
-		<AccordionItem value={value} className="border-rule2">
-			<AccordionTrigger className="py-3 hover:no-underline">
-				<span className={`flex items-baseline gap-2 font-ui text-[10px] font-bold uppercase tracking-[0.14em] ${accent}`}>
-					<span>
-						{title} · {count}
-					</span>
-					{curated && (
-						// real visible text at 12px, not a decorative micro-label (A11Y-4);
-						// "Curated", never "legacy" (UX-4)
-						<span className="rounded border border-rule2 px-1.5 py-0.5 font-ui text-xs font-medium normal-case tracking-normal text-muted-foreground">
-							Curated
-						</span>
-					)}
-				</span>
-			</AccordionTrigger>
-			<AccordionContent>
-			{/* CC-BY credit under the References header, per amendment 10 */}
-			{credit}
-			<ul className="mt-1 space-y-2">
-				{cards.map((x) => {
-					const target = verseIdToTarget(x.verse_id);
-					// provenance stays visible on curated-source cards (the old
-					// panel distinguished AI-suggested from human-curated; keep that
-					// trust signal on the merged cross-canon cards too)
-					const showSource = x.source !== null && x.source !== "openbible";
-					const body = (
-						<>
-							{/* label carries the full range ("Psalm 148:4–5") — also the accessible name (A11Y-3) */}
-							<p className="font-ui text-xs font-semibold text-ink">{x.label}</p>
-							<p className="mt-1 line-clamp-3 font-reading text-[13px] leading-snug text-muted-foreground">
-								{x.text}
-							</p>
-							{showSource && (
-								<p className="mt-1.5 font-ui text-[10px] font-semibold uppercase tracking-wide text-faint">
-									{CURATED_SOURCE_LABELS[x.source!] ?? x.source}
-								</p>
-							)}
-						</>
-					);
-					return (
-						<li key={`${x.direction}-${x.verse_id}`}>
-							{target ? (
-								<Link
-									to={target.href}
-									preventScrollReset
-									onClick={() => onNavigate(target.verse)}
-									className="block rounded-lg border border-rule2 bg-surface p-3 transition-[border-color,transform] duration-150 ease-out hover:-translate-y-px hover:border-primary motion-reduce:transition-none motion-reduce:hover:translate-y-0"
-								>
-									{body}
-								</Link>
-							) : (
-								<div className="rounded-lg border border-rule2 bg-surface p-3">{body}</div>
-							)}
-						</li>
-					);
-				})}
-			</ul>
-			</AccordionContent>
-		</AccordionItem>
+		<li className={className}>
+			{target ? (
+				<Link
+					to={target.href}
+					preventScrollReset
+					onClick={() => onNavigate(target.verse)}
+					className="group block py-2"
+				>
+					{body}
+				</Link>
+			) : (
+				<div className="py-2">{body}</div>
+			)}
+		</li>
 	);
 }
 
