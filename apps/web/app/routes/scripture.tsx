@@ -984,10 +984,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												aria-hidden
 												className="absolute -right-[26px] top-[1.15rem] hidden items-center gap-[5px] lg:flex"
 											>
-												{signals.principles && <span className="size-[5px] rounded-full bg-selbar/70" />}
-												{signals.people && <span className="size-[5px] rounded-full bg-people/70" />}
-												{signals.xrefs && <span className="size-[5px] rounded-full bg-faint/55" />}
-												{signals.media && <span className="size-[5px] rounded-full bg-primary/70" />}
+												{signals.principles && <span className="size-[5px] rounded-full bg-dot-teaches" />}
+												{signals.people && <span className="size-[5px] rounded-full bg-dot-mentions" />}
+												{signals.xrefs && <span className="size-[5px] rounded-full bg-dot-xref" />}
+												{signals.media && <span className="size-[5px] rounded-full bg-dot-media" />}
 											</span>
 										)}
 									</Link>
@@ -1321,7 +1321,7 @@ function PanelBody({
 			{!isPending && mediaRefs !== null && !mediaRefs.degraded && mediaRefs.moments.length > 0 && (
 				<div className="mt-[18px]">
 					<h3 className="flex items-center gap-2 font-ui text-[11px] font-semibold text-muted-foreground">
-						<span aria-hidden className="size-[5px] rounded-full bg-primary/70" />
+						<span aria-hidden className="size-[5px] rounded-full bg-dot-media" />
 						Heard in
 					</h3>
 					{/* Plate II·b quiet ruled rows — RefRow's chip idiom stays the
@@ -1639,7 +1639,7 @@ function CrossRefsSection({
 			}}
 		>
 			<h3 className="flex items-center gap-2 font-ui text-[11px] font-semibold text-muted-foreground">
-				<span aria-hidden className="size-[5px] rounded-full bg-faint/55" />
+				<span aria-hidden className="size-[5px] rounded-full bg-dot-xref" />
 				{/* the disclosed state carries the count (plate: "Cross-references · 14") */}
 				{expanded ? `Cross-references · ${total}` : "Cross-references"}
 				{panel.curated && (
@@ -1740,8 +1740,8 @@ function Connections({ panel }: { panel: VersePanelData }) {
 			aria-live="polite"
 			className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200 motion-safe:ease-out"
 		>
-			<EntityRows title="Teaches" dotClass="bg-selbar/70" chips={panel.principles} nodeType="principles" />
-			<EntityRows title="Mentions" dotClass="bg-people/70" chips={panel.people} nodeType="people" />
+			<EntityRows title="Teaches" dotClass="bg-dot-teaches" chips={panel.principles} nodeType="principles" />
+			<EntityRows title="Mentions" dotClass="bg-dot-mentions" chips={panel.people} nodeType="people" />
 		</div>
 	);
 }

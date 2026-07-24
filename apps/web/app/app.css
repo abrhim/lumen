@@ -20,6 +20,14 @@
 	--color-cites: var(--t-cites);
 	--color-citedby: var(--t-citedby);
 	--color-people: var(--t-people);
+	/* Dot palette — small-mark colors for the margin dots and the rail-label
+	   legend. Deliberately higher-chroma than the text-entity tokens: a 5px
+	   field mutes whatever it's painted with, so text colors (selbar,
+	   people) converge to grey at dot size. Same hue families, dot-tuned. */
+	--color-dot-teaches: var(--t-dot-teaches);
+	--color-dot-mentions: var(--t-dot-mentions);
+	--color-dot-media: var(--t-dot-media);
+	--color-dot-xref: var(--t-dot-xref);
 
 	--font-display: "Fraunces", Georgia, serif;
 	--font-reading: "Newsreader", Georgia, serif;
@@ -50,6 +58,10 @@
 	--graph-era: #5a4a7a;
 	--graph-event: #8a3a3a;
 	--graph-other: #6b7280;
+	--t-dot-teaches: #3b63d6;
+	--t-dot-mentions: #17984d;
+	--t-dot-media: #d9820f;
+	--t-dot-xref: #9aa0a8;
 }
 
 /* ---- parchment: the original v11 study-surface look ---- */
@@ -158,6 +170,10 @@
 	--graph-era: #a99fd8;
 	--graph-event: #d88f8f;
 	--graph-other: #8f8a80;
+	--t-dot-teaches: #7fa0f2;
+	--t-dot-mentions: #4ecb8a;
+	--t-dot-media: #f0b13c;
+	--t-dot-xref: #7f858e;
 	--background: #17181c;
 	--card: #1e2025;
 	--popover: #1e2025;
