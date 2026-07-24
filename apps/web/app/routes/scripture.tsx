@@ -930,6 +930,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 									<Link
 										to={isActive ? chapterUrl : `${chapterUrl}?verse=${verse.verse_number}`}
 										preventScrollReset
+										viewTransition
 										aria-current={isActive ? "true" : undefined}
 										onClick={(e) => {
 											// Abram's click rules: an active text selection never
@@ -1042,7 +1043,14 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				    panel isn't reconciled twice; the CSS classes keep it hidden on
 				    mobile before hydration. */}
 				{!isMobile && (
-					<div className="hidden lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:block">
+					/* Empty rail aligns with the first verse (grid row 3, matching main's
+					   mt-8); a selection promotes it to the column top. The move animates
+					   via the view transition the verse links opt into (Abram's call);
+					   reduced-motion is stilled by the existing ::view-transition rules. */
+					<div
+						className={`hidden lg:col-start-2 lg:block ${selected ? "lg:row-start-1 lg:row-span-3" : "lg:row-start-3 lg:mt-8"}`}
+						style={{ viewTransitionName: "verse-rail" }}
+					>
 						{/* a DISTINCT card above the verse detail — the whole card is
 						    the link to the chapter gallery (Abram's design) */}
 						<ChapterArtStack
@@ -1065,6 +1073,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										<Link
 											to={chapterUrl}
 											preventScrollReset
+											viewTransition
 											aria-label="Close verse panel"
 											className="-m-2 p-2 font-reading text-lg leading-none text-muted-foreground transition-colors duration-150 hover:text-ink"
 										>
