@@ -187,7 +187,7 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: 1f2b979403752b16 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- plan-hash: c005047af05c10c4 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
 - harness-hash: 01234b4a4f09d84c (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
@@ -277,7 +277,14 @@ finding in panel-1.md):
   title-plate line + plain `Begin a note` door. `[[` is the universal
   insert door (all widths); Cmd+J is a desktop accelerator; "selection
   affordance" is cut from the plan's language.
-- **A10 (CF-12, CF-13, CF-14) — insert posture is a net-new mini-palette**
+- **A10 (CF-12, CF-13, CF-14) — insert posture is a net-new mini-palette.**
+  GATE-RATIFIED Shape C (Abram, 2026-07-30): ⌘K is the single summon chord
+  everywhere; context sets the verb. Outside the editor ⌘K = global search
+  (as shipped). Inside the editor ⌘K opens the palette in insert posture:
+  Enter INSERTS at the cursor; ⌘Enter NAVIGATES (autosave has flushed the
+  draft, so leaving is safe); foot line `Enter to insert · ⌘↵ to go`.
+  Cmd+J is retired from the spec (optional silent alias only). One
+  palette, one ARIA implementation, verb from context. Original spec:**
   (SearchModal's shell only; rows/combobox/§5 ARIA contract built here,
   client-side data source, no /api/search leg). Selection captured on
   open and restored on every close; pointer-blur exception does NOT
@@ -416,3 +423,14 @@ Harness gaps 1–53 (panel-1.md §Harness gaps) are adopted as the binding
 harness backlog: contract-level revisions land pre-baseline (this
 commit); integration-level pins land with their implementation steps;
 e2e flows 41–53 land with the Playwright infra (Q1).
+
+## Pipeline status (for session resumption)
+- Steps 0-7 COMPLETE as of 2026-07-30: pre-flight, tier (large), plan,
+  red-first harness, panel-1 (9 roles → 88 findings), panel-2 (9 adversarial
+  taggers), synthesis (56 canonical → A1-A19 + Decisions), human gate.
+- Gate rulings: all defaults ratified; G1 dots ratified + user-configurable
+  palette rider; G5 AUTOSAVE REQUIRED; G6 = Shape C (⌘K context verb,
+  Cmd+J retired). No open questions remain.
+- NEXT: step 8 — implement (3-attempt cap, verify hashes at exit vs
+  ## Drift baseline; tsc -b --force; pre-deploy git log HEAD..main check).
+- Branch: feature/personal-notes.
