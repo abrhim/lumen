@@ -187,7 +187,7 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: e37fd86c54d95011 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- plan-hash: f4e86d25ebc2c011 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
 - harness-hash: 606e646d2aac3583 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
@@ -451,10 +451,22 @@ e2e flows 41–53 land with the Playwright infra (Q1).
   minimal escape registry, mechanism-4 paste conversion, media `+ note`
   transcript capture, A11 manifest closure test (scripts/check-notes-bundle.mjs
   PASS with positive control).
-- STEP 8 REMAINING (next session, before step 9): Playwright e2e infra +
-  flows 41-53 (Q1 — committed scope); physical-device iOS checklist items
-  (Q6/UX-9); /search notes scope PILL deliberately not shipped (API contract
-  exists; UI restraint call — flag to panel).
+- STEP 8 COMPLETE (2026-07-30): Playwright layer authored and GREEN —
+  27/27 across desktop + mobile-CDP projects (signed-out sweep, zero-state,
+  capture round-trip + append-undo, delete-confirm focus, editor auto-link/
+  popup/autosave, noted-verse SR parity + ring, axe both themes, reduced
+  motion, mobile [[ door). e2e caught and fixed 5 real bugs: chapter-form
+  auto-link fired on ':' mid-verse-typing; Backspace-undo missed the
+  boundary-char cursor position; first-line-heading double-render (A14);
+  delete-then-revalidate 404 race (shouldRevalidate gate); text-faint
+  contrast on new surfaces (AA). Popup keys moved into the PM keymap;
+  create-redirect adopts the fresh LWW base. e2e infra notes: throwaway
+  users minted via @supabase/ssr's own cookie writer; workers=1 (session
+  pool); dev-server kills leave zombie lumen_read sessions — terminate
+  idle before runs. STILL MANUAL: physical-device iOS checklist (Q6/UX-9);
+  reader-page axe excludes PRE-EXISTING chrome contrast debt (.text-faint,
+  corner Lumen link) — flagged to panel; /search notes scope PILL
+  deliberately not shipped (API contract exists; UI restraint call).
 - FORMER BLOCKERS CLEARED (2026-07-30, Abram): exposed-schemas now includes
   lumen (dashboard step done; anon probe = 42501 schema-denied, the designed
   wall); SUPABASE_SERVICE_ROLE_KEY landed in root .env (gitignored).

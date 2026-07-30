@@ -80,17 +80,46 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	const note = await getNote(request, context.cloudflare.env, params.id);
 	if (!note) throw new Response(null, { status: 404, headers });
 
+	const title = deriveNoteTitle(note.body_md);
+	// A14/CF-45: the derived title owns the page h1 — when the first line IS
+	// a heading, the title consumes it (never double-rendered), and the
+	// remaining body headings demote one level.
+	let bodyForRender = note.body_md;
+	const firstLine = note.body_md.split("\n").find((l) => l.trim() !== "") ?? "";
+	if (/^#{1,3}\s/.test(firstLine) && deriveNoteTitle(firstLine) === title) {
+		bodyForRender = note.body_md.replace(firstLine, "").replace(/^\n+/, "");
+	}
+
 	return data(
 		{
 			mode: "read" as const,
 			note: { id: note.id, body_md: note.body_md, updated_at: note.updated_at },
-			title: deriveNoteTitle(note.body_md),
-			// A14: derived title owns the page h1, so body headings demote
-			html: renderNoteHtml(note.body_md, { demoteHeadings: true }),
+			title,
+			html: renderNoteHtml(bodyForRender, { demoteHeadings: true }),
 			anchor: null,
 		},
 		{ headers },
 	);
+}
+
+/** A successful delete leaves nothing to revalidate — the loader would 404
+ * before the client-side navigate to /notes runs (the delete-then-
+ * revalidate trap). The client owns the exit navigation (CF-47). */
+export function shouldRevalidate({
+	actionResult,
+	defaultShouldRevalidate,
+}: {
+	actionResult?: unknown;
+	defaultShouldRevalidate: boolean;
+}) {
+	if (
+		actionResult !== null &&
+		typeof actionResult === "object" &&
+		(actionResult as { deleted?: boolean }).deleted === true
+	) {
+		return false;
+	}
+	return defaultShouldRevalidate;
 }
 
 function readAnchors(form: FormData): { ok: true; anchors: AnchorRef[] } | { ok: false; ref: string } {
@@ -314,7 +343,8 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				}
 				const deleted = await softDeleteNote(request, env, params.id);
 				if (!deleted) return json({ error: "Not found", code: "not_found" }, 404, headers);
-				return json({ ok: true }, 200, headers);
+				// `deleted` marker gates shouldRevalidate above
+				return json({ ok: true, deleted: true }, 200, headers);
 			}
 
 			default:
@@ -334,7 +364,7 @@ const NoteEditor = lazy(() => import("~/components/editor/NoteEditor"));
 export default function NotePage({ loaderData }: Route.ComponentProps) {
 	const { mode, note, title, html, anchor } = loaderData;
 	const [editing, setEditing] = useState(mode === "new");
-	const deleteFetcher = useFetcher<{ ok?: boolean }>();
+	const deleteFetcher = useFetcher<{ ok?: boolean; deleted?: boolean }>();
 	const revalidator = useRevalidator();
 	const navigate = useNavigate();
 
@@ -436,7 +466,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			{note ? (
 				<time
 					dateTime={note.updated_at}
-					className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-faint"
+					className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
 				>
 					{new Intl.DateTimeFormat("en-GB", {
 						day: "numeric",

@@ -115,7 +115,7 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 									) : null}
 									<time
 										dateTime={note.updated_at}
-										className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-faint"
+										className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
 									>
 										{updatedFmt.format(new Date(note.updated_at))}
 									</time>
