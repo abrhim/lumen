@@ -211,14 +211,28 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 					baseUpdatedAt: base,
 				});
 				if (result.ok) {
-					// anchors ride the save, diffed not rewritten (A13/PERF-6)
+					// B3 (CP-3): the body is COMMITTED at this point — an anchor
+					// failure must never surface as a whole-save 500 (the client
+					// would keep a stale base and wedge into 409s). Anchors ride
+					// every save, so a missed sync self-heals on the next one.
+					let anchorsSynced = true;
 					if (form.get("sync_anchors") === "1") {
 						const anchors = readAnchors(form);
 						if (anchors.ok) {
-							await syncNoteAnchors(request, env, params.id, anchors.anchors);
+							try {
+								await syncNoteAnchors(request, env, params.id, anchors.anchors);
+							} catch {
+								anchorsSynced = false; // note_write_failed already logged
+							}
+						} else {
+							anchorsSynced = false; // note_anchor_invalid_ref already logged
 						}
 					}
-					return json({ ok: true, updated_at: result.note.updated_at }, 200, headers);
+					return json(
+						{ ok: true, updated_at: result.note.updated_at, anchors_synced: anchorsSynced },
+						200,
+						headers,
+					);
 				}
 				if (result.conflict) {
 					return json(
@@ -266,13 +280,20 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 						? json({ error: "Note changed elsewhere", code: "stale" }, 409, headers)
 						: json({ error: "Not found", code: "not_found" }, 404, headers);
 				}
-				const anchors = await getNoteAnchors(request, env, params.id);
-				const existed = anchors.some((a) => a.kind === resolved.kind && a.ref_id === resolved.ref);
-				if (!existed) {
-					await syncNoteAnchors(request, env, params.id, [
-						...anchors.map((a) => ({ kind: a.kind, ref: a.ref_id })),
-						resolved,
-					]);
+				// B3 (CP-3): body committed — anchor failure degrades, never 500s
+				// (the wikilink is in the body; the row heals on the next save)
+				let existed = true;
+				try {
+					const anchors = await getNoteAnchors(request, env, params.id);
+					existed = anchors.some((a) => a.kind === resolved.kind && a.ref_id === resolved.ref);
+					if (!existed) {
+						await syncNoteAnchors(request, env, params.id, [
+							...anchors.map((a) => ({ kind: a.kind, ref: a.ref_id })),
+							resolved,
+						]);
+					}
+				} catch {
+					existed = true; // undo must not delete a row we can't confirm we made
 				}
 				return json(
 					{

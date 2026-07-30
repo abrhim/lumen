@@ -299,6 +299,10 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 	const latestMdRef = useRef(initialBody);
 	const canaryRef = useRef<{ mismatch: boolean; reserialized: string } | null>(null);
 	const [dirty, setDirty] = useState(false);
+	// B3/CP-4: a 409 is a fork, not a dead end — the server's current row is
+	// held here and the writer picks a door (keep mine = LWW overwrite per
+	// D6; load theirs = adopt). Neither destroys the buffer silently.
+	const [stale, setStale] = useState<{ body_md: string; updated_at: string } | null>(null);
 	const [announce, setAnnounce] = useState<string | null>(null);
 	const [popup, setPopup] = useState<{
 		insertPosture: boolean;
@@ -600,12 +604,35 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 				// stays dirty and a follow-up save covers them promptly (CP-1)
 				armIdleTimer(800);
 			}
+		} else if (d.code === "stale" && d.current) {
+			// never auto-retry a stale base — that's the 409 loop (CP-4)
+			setStale(d.current);
 		} else if (d.code !== undefined && dirtyRef.current) {
 			// failed save: buffer preserved, loud state shown, and a real
 			// retry actually fires (the old machine never re-armed)
 			armIdleTimer(5000);
 		}
 	}, [fetcher.state, fetcher.data]);
+
+	const resolveStale = (keepMine: boolean) => {
+		if (!stale) return;
+		baseRef.current = stale.updated_at;
+		if (keepMine) {
+			setStale(null);
+			save(); // LWW: this editor becomes the last writer (D6)
+			return;
+		}
+		const view = viewRef.current;
+		if (view) {
+			const doc = parseNoteMarkdown(stale.body_md);
+			view.updateState(EditorState.create({ doc, plugins: view.state.plugins }));
+			latestMdRef.current = stale.body_md;
+			onMarkdown?.(stale.body_md);
+		}
+		dirtyRef.current = false;
+		setDirty(false);
+		setStale(null);
+	};
 
 	// escape registry: the popup is an escapable layer (A10)
 	useEffect(() => {
@@ -698,8 +725,8 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 
 	const failed =
 		fetcher.state === "idle" && fetcher.data !== undefined && fetcher.data.ok !== true &&
-		fetcher.data.updated_at === undefined && noteId !== null && fetcher.data.code !== undefined;
-	const stale = fetcher.data?.code === "stale";
+		fetcher.data.updated_at === undefined && noteId !== null && fetcher.data.code !== undefined &&
+		stale === null;
 
 	return (
 		<div>
@@ -805,13 +832,31 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 					{fetcher.state !== "idle"
 						? "Saving…"
 						: stale
-							? "Changed elsewhere — reload to merge"
+							? "Changed elsewhere"
 							: failed
 								? "Save failed — edits kept, retrying on next change"
 								: dirty
 									? "Unsaved"
 									: "Saved"}
 				</span>
+				{stale && (
+					<>
+						<button
+							type="button"
+							onClick={() => resolveStale(true)}
+							className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
+						>
+							Keep mine
+						</button>
+						<button
+							type="button"
+							onClick={() => resolveStale(false)}
+							className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
+						>
+							Load theirs
+						</button>
+					</>
+				)}
 				{failed && (
 					<button
 						type="button"

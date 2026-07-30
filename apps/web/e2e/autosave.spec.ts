@@ -101,3 +101,45 @@ test("keystrokes during an in-flight save stay dirty and are saved by a follow-u
 		)
 		.toContain("first second");
 });
+
+test("a 409 offers Keep mine / Load theirs — never a wedge, never a destroyed buffer", async ({
+	page,
+}) => {
+	const { data: note } = await user.client
+		.schema("lumen")
+		.rpc("create_note_with_anchors", { p_body_md: "Fork probe.\n", p_anchors: [] })
+		.single();
+	const id = (note as { id: string }).id;
+
+	await page.goto(`/notes/${id}`);
+	await page.getByRole("button", { name: "Edit", exact: true }).click();
+	const editor = page.locator(".note-editor");
+	await editor.click();
+
+	// another writer (same user, other tab) bumps the row under us
+	await user.client
+		.schema("lumen")
+		.from("notes")
+		.update({ body_md: "Fork probe — other tab.\n" })
+		.eq("id", id);
+
+	// our stale-base save must surface the fork, not silently clobber or wedge
+	await page.keyboard.type(" mine");
+	await page.keyboard.press("ControlOrMeta+s");
+	await expect(page.getByText("Changed elsewhere", { exact: true })).toBeVisible();
+
+	// Keep mine: LWW — this editor becomes the last writer and un-wedges
+	await page.getByRole("button", { name: "Keep mine" }).click();
+	await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 8000 });
+	await expect
+		.poll(async () => {
+			const { data } = await user.client
+				.schema("lumen")
+				.from("notes")
+				.select("body_md")
+				.eq("id", id)
+				.single();
+			return data?.body_md ?? "";
+		})
+		.toContain("mine");
+});
