@@ -1,4 +1,5 @@
-import { Link, data, redirect } from "react-router";
+import { useEffect, useRef } from "react";
+import { Link, data, redirect, useLocation } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
 import { notesEnabled } from "~/lib/notes-enabled";
 import { listNotes } from "~/lib/notes.server";
@@ -49,11 +50,27 @@ const updatedFmt = new Intl.DateTimeFormat("en-GB", {
 
 export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 	const { notes } = loaderData;
+	const location = useLocation();
+	const h1Ref = useRef<HTMLHeadingElement>(null);
+	const arrivedFromDelete = (location.state as { deleted?: boolean } | null)?.deleted === true;
+
+	// CF-47: after a delete confirm, focus lands here with an announcement
+	useEffect(() => {
+		if (arrivedFromDelete) h1Ref.current?.focus();
+	}, [arrivedFromDelete]);
+
 	return (
 		<main className="mx-auto max-w-2xl px-6 py-12">
-			<h1 className="font-display text-2xl font-medium tracking-tight" tabIndex={-1}>
+			<h1
+				ref={h1Ref}
+				className="font-display text-2xl font-medium tracking-tight outline-none"
+				tabIndex={-1}
+			>
 				Your notes
 			</h1>
+			<div aria-live="polite" className="sr-only">
+				{arrivedFromDelete ? "Note deleted" : ""}
+			</div>
 
 			{notes.length === 0 ? (
 				// A9/CF-20: empty /notes speaks once in type — one italic line and a

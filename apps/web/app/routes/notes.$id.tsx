@@ -1,5 +1,14 @@
 import { Suspense, lazy, useEffect, useState } from "react";
-import { Link, data, redirect, useFetcher, useRevalidator } from "react-router";
+import { Link, data, redirect, useFetcher, useNavigate, useRevalidator } from "react-router";
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "~/components/ui/alert-dialog";
 import { getSessionUser } from "~/lib/auth.server";
 import {
 	createNote,
@@ -148,12 +157,38 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				if (base === "") {
 					return json({ error: "base_updated_at required", code: "base_required" }, 400, headers);
 				}
+				const canonical = canonicalizeNoteMarkdown(rawBody);
+				// A19 round-trip canary: the client compared C(loaded) to loaded on
+				// open and reports once, hash-only — never a body in the log.
+				if (form.get("roundtrip_ok") === "false") {
+					const digest = await crypto.subtle.digest(
+						"SHA-256",
+						new TextEncoder().encode(canonical),
+					);
+					logEvent("note_roundtrip_violation", {
+						note_id: params.id,
+						body_sha256_16: [...new Uint8Array(digest)]
+							.slice(0, 8)
+							.map((b) => b.toString(16).padStart(2, "0"))
+							.join(""),
+						len_stored: Number(form.get("rt_len_stored")) || 0,
+						len_reserialized: Number(form.get("rt_len_reserialized")) || 0,
+						first_diff_offset: Number(form.get("rt_first_diff")) || 0,
+					});
+				}
 				const result = await updateNote(request, env, {
 					id: params.id,
-					body_md: canonicalizeNoteMarkdown(rawBody),
+					body_md: canonical,
 					baseUpdatedAt: base,
 				});
 				if (result.ok) {
+					// anchors ride the save, diffed not rewritten (A13/PERF-6)
+					if (form.get("sync_anchors") === "1") {
+						const anchors = readAnchors(form);
+						if (anchors.ok) {
+							await syncNoteAnchors(request, env, params.id, anchors.anchors);
+						}
+					}
 					return json({ ok: true, updated_at: result.note.updated_at }, 200, headers);
 				}
 				if (result.conflict) {
@@ -299,8 +334,17 @@ const NoteEditor = lazy(() => import("~/components/editor/NoteEditor"));
 export default function NotePage({ loaderData }: Route.ComponentProps) {
 	const { mode, note, title, html, anchor } = loaderData;
 	const [editing, setEditing] = useState(mode === "new");
-	const deleteFetcher = useFetcher();
+	const deleteFetcher = useFetcher<{ ok?: boolean }>();
 	const revalidator = useRevalidator();
+	const navigate = useNavigate();
+
+	// A19/CF-47: post-confirm the user lands on /notes with focus on its h1
+	// and an announcement — never a dead <body> focus (B5 class).
+	useEffect(() => {
+		if (deleteFetcher.state === "idle" && deleteFetcher.data?.ok === true) {
+			navigate("/notes", { state: { deleted: true } });
+		}
+	}, [deleteFetcher.state, deleteFetcher.data, navigate]);
 
 	// A9: this note becomes the reader capture's "last-touched" target
 	useEffect(() => {
@@ -356,6 +400,36 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 					>
 						Edit
 					</button>
+					<AlertDialog>
+						<AlertDialogTrigger
+							// B-U1 class: a pointer click must not leave the trigger focused
+							onMouseDown={(e) => e.preventDefault()}
+							className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:text-ink"
+						>
+							Delete
+						</AlertDialogTrigger>
+						<AlertDialogContent>
+							<AlertDialogTitle>Delete this note?</AlertDialogTitle>
+							<AlertDialogDescription>
+								It disappears from your notes, the reader, and search. Deleted notes may be
+								purged after 30 days.
+							</AlertDialogDescription>
+							<div className="mt-5 flex justify-end gap-3">
+								<AlertDialogCancel>Cancel</AlertDialogCancel>
+								<AlertDialogAction
+									onClick={() => {
+										if (!note) return;
+										deleteFetcher.submit(
+											{ intent: "delete" },
+											{ method: "post", action: `/notes/${note.id}` },
+										);
+									}}
+								>
+									Delete note
+								</AlertDialogAction>
+							</div>
+						</AlertDialogContent>
+					</AlertDialog>
 				</div>
 			</div>
 

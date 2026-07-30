@@ -187,7 +187,7 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: c005047af05c10c4 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- plan-hash: b547e33efd9cb35e (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
 - harness-hash: 01234b4a4f09d84c (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
@@ -431,6 +431,32 @@ e2e flows 41–53 land with the Playwright infra (Q1).
 - Gate rulings: all defaults ratified; G1 dots ratified + user-configurable
   palette rider; G5 AUTOSAVE REQUIRED; G6 = Shape C (⌘K context verb,
   Cmd+J retired). No open questions remain.
-- NEXT: step 8 — implement (3-attempt cap, verify hashes at exit vs
-  ## Drift baseline; tsc -b --force; pre-deploy git log HEAD..main check).
+- STEP 8 IMPLEMENT: SUBSTANTIALLY COMPLETE as of 2026-07-30 (attempt 1 of 3).
+  The full red harness is GREEN un-weakened (notes-harness 11, notes-markdown
+  33, notes-render 8, notes-search-merge 5, notes.routes 9; scripture 130,
+  web 294; tsc -b --force clean both workspaces). Drift verified at exit:
+  plan c005047af05c10c4 / harness 01234b4a4f09d84c both byte-exact BEFORE
+  this marker edit (this commit re-hashes plan only — step-8-exit sanctioned).
+  Landed: A1 (GROUP_KEYS frozen + SEARCH_RESPONSE_KEYS + searchAll canon
+  filter), A8 grammar (notes-refs.ts, live counts), A2/A3 markdown boundary
+  (C(md), shared zero-preset config), A12 detector, D4/A14 renderer,
+  A13 data layer + routes (append/append_undo capture intents added for A9 —
+  additive to the ratified enum), A18 redirect gate + login next=, A4 search
+  legs (deferred-scope byte freeze incl. validation order), A5 anchors fetch
+  (+ recorded deviation: bounded generated title_line column so rail titles
+  never ship bodies), A15 ring dot + clamp + sr parity, A9 rail register +
+  capture verbs + gloss-undo, A16 kill switch (4 gates) + migrate-notes.mjs
+  (applied, 14/14 invariants), A17 legend + beforeinput, A19 canary +
+  boundary + AlertDialog delete focus flow, A10 ⌘K Shape C + `[[` popup +
+  minimal escape registry, mechanism-4 paste conversion, media `+ note`
+  transcript capture, A11 manifest closure test (scripts/check-notes-bundle.mjs
+  PASS with positive control).
+- STEP 8 REMAINING (next session, before step 9): Playwright e2e infra +
+  flows 41-53 (Q1 — committed scope); physical-device iOS checklist items
+  (Q6/UX-9); /search notes scope PILL deliberately not shipped (API contract
+  exists; UI restraint call — flag to panel).
+- BLOCKED ON ABRAM (smoke + deploy): (1) Supabase dashboard exposed-schemas
+  += lumen (A6/A16 manual step; probe currently PGRST106); (2)
+  SUPABASE_SERVICE_ROLE_KEY for scripts/smoke-notes-rls.mjs (not on this
+  machine). Migration invariants cover the DB layer meanwhile.
 - Branch: feature/personal-notes.

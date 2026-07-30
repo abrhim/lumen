@@ -11,6 +11,7 @@ import {
 } from "~/components/ui/accordion";
 import { RefRow } from "~/components/RefRow";
 import { getSessionUser } from "~/lib/auth.server";
+import { notesEnabled } from "~/lib/notes-enabled";
 import { canViewCollection, getCollectionAccess } from "~/lib/collection-access.server";
 import type { Route } from "./+types/media";
 
@@ -219,6 +220,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 
 	return data(
 		{
+			// personal-notes A16/media capture: the affordance prints signed-in only
+			canCapture: user !== null && notesEnabled(context.cloudflare.env),
 			episodeId: id,
 			collectionId,
 			collectionName: collection ? String(collection.name) : collectionId,
@@ -475,10 +478,14 @@ interface ParaBlockProps {
 	showGap: boolean;
 	lensed: boolean;
 	onSeek: (t: number) => void;
+	/** personal-notes: transcript capture door — `episode@t_start_s` anchors
+	 * (A8: durable across re-windowing; never a seq). Empty string = signed
+	 * out, the affordance never prints (F2). */
+	captureEpisodeId: string;
 }
 
 const ParaBlock = memo(
-	function ParaBlock({ p, active, posT, showGap, lensed, onSeek }: ParaBlockProps) {
+	function ParaBlock({ p, active, posT, showGap, lensed, onSeek, captureEpisodeId }: ParaBlockProps) {
 		// The fragment the playhead is inside — last one started at-or-before posT.
 		const uIdx = active ? p.frags.reduce((acc, f, i) => (f.t <= posT ? i : acc), -1) : -1;
 		return (
@@ -518,6 +525,15 @@ const ParaBlock = memo(
 					>
 						{fmt(p.t)}
 					</button>
+					{captureEpisodeId !== "" && (
+						<Link
+							to={`/notes/new?anchor=${encodeURIComponent(`${captureEpisodeId}@${p.t}`)}`}
+							className="mr-3 align-baseline font-ui text-xs font-semibold text-faint opacity-0 transition-opacity hover:text-primary hover:underline group-hover:opacity-100 focus-visible:opacity-100"
+							aria-label={`New note at ${fmt(p.t)}`}
+						>
+							+ note
+						</Link>
+					)}
 					<span className="cursor-pointer font-reading text-[15px] leading-relaxed text-ink">
 						{p.frags.map((f, i) => (
 							<span
@@ -559,6 +575,7 @@ const ParaBlock = memo(
 		prev.showGap === next.showGap &&
 		prev.lensed === next.lensed &&
 		prev.onSeek === next.onSeek &&
+		prev.captureEpisodeId === next.captureEpisodeId &&
 		prev.active === next.active &&
 		(!next.active || prev.posT === next.posT),
 );
@@ -569,12 +586,14 @@ function Transcript({
 	posT,
 	onSeek,
 	lensSet,
+	captureEpisodeId,
 }: {
 	paras: Para[];
 	activeIdx: number;
 	posT: number;
 	onSeek: (t: number) => void;
 	lensSet: Set<number> | null;
+	captureEpisodeId: string;
 }) {
 	let prevShown = -1;
 	return (
@@ -593,6 +612,7 @@ function Transcript({
 						showGap={showGap}
 						lensed={lensSet !== null}
 						onSeek={onSeek}
+						captureEpisodeId={captureEpisodeId}
 					/>
 				);
 			})}
@@ -613,6 +633,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 		people,
 		principles,
 		lens,
+		canCapture,
 	} = loaderData;
 	const [searchParams] = useSearchParams();
 	const entryT = Number(searchParams.get("t"));
@@ -771,6 +792,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						posT={followT ?? -1}
 						onSeek={seek}
 						lensSet={lensSet}
+						captureEpisodeId={canCapture ? episodeId : ""}
 					/>
 				</div>
 				<aside className="mt-12 hidden lg:mt-0 lg:block">
