@@ -78,6 +78,36 @@ describe("harness F7 — anchor validation at the action boundary", () => {
 	});
 });
 
+describe("harness A13/A18 — contract pins from synthesis", () => {
+	it("CF-31: session rotation headers ride the signed-in index loader (B4 class)", async () => {
+		const headers = new Headers({ "Set-Cookie": "sb-sentinel=1" });
+		vi.mocked(getSessionUser).mockResolvedValue({ ...SIGNED_IN, headers });
+		const res = await notesIndexLoader(makeArgs("/notes"));
+		const outHeaders =
+			res instanceof Response ? res.headers : (res as any)?.init?.headers instanceof Headers ? (res as any).init.headers : new Headers((res as any)?.init?.headers);
+		expect(outHeaders.get("Set-Cookie")).toContain("sb-sentinel=1");
+	});
+
+	it("CF-29: /notes/new GET renders the create surface — never 404s through getNote", async () => {
+		vi.mocked(getSessionUser).mockResolvedValue(SIGNED_IN);
+		await expect(noteLoader(makeArgs("/notes/new"))).resolves.toBeTruthy();
+		expect(getNote).not.toHaveBeenCalled();
+	});
+
+	it("CF-27: a non-uuid :id 404s before any query — never a PG 22P02 500", async () => {
+		vi.mocked(getSessionUser).mockResolvedValue(SIGNED_IN);
+		await expect(noteLoader(makeArgs("/notes/not-a-uuid"))).rejects.toMatchObject({
+			status: 404,
+		});
+		expect(getNote).not.toHaveBeenCalled();
+	});
+
+	it("CF-41: the signed-out redirect carries a same-origin next param", async () => {
+		const res = (await notesIndexLoader(makeArgs("/notes"))) as Response;
+		expect(res.headers.get("Location")).toBe("/login?next=%2Fnotes");
+	});
+});
+
 describe("harness F8 — soft-deleted notes are gone from every surface", () => {
 	it("/notes/:id 404s a soft-deleted (or absent) note for its own owner", async () => {
 		vi.mocked(getSessionUser).mockResolvedValue(SIGNED_IN);
