@@ -187,7 +187,7 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: 25e7a879c93f0341 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- plan-hash: 1f2b979403752b16 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
 - harness-hash: 01234b4a4f09d84c (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
