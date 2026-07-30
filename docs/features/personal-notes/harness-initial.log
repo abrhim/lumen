@@ -1,0 +1,745 @@
+Scope: 2 of 4 workspace projects
+packages/scripture test$ vitest run
+packages/scripture test:  RUN  v3.2.6 /Users/abram/code/lumen/packages/scripture
+packages/scripture test:  ✓ src/__tests__/osis-map.test.ts (8 tests) 3ms
+packages/scripture test:  ✓ src/__tests__/slug-map.test.ts (16 tests) 3ms
+packages/scripture test:  ✓ src/__tests__/tokenize.test.ts (6 tests) 3ms
+packages/scripture test:  ✓ src/__tests__/get-neighborhood.test.ts (14 tests) 5ms
+packages/scripture test:  ✓ src/__tests__/graph.test.ts (17 tests) 5ms
+packages/scripture test:  ✓ src/__tests__/strongs-queries.test.ts (3 tests) 2ms
+packages/scripture test:  ✓ src/__tests__/crossref.test.ts (9 tests) 3ms
+packages/scripture test:  ✓ src/__tests__/spine-queries.test.ts (14 tests) 5ms
+packages/scripture test:  ✓ src/__tests__/search-cursor-harness.test.ts (9 tests) 3900ms
+packages/scripture test:    ✓ F1/F5/F15 — keyset continuity on the live verse corpus > page 2 continues exactly after page 1: no dup, no gap, order preserved (independent raw-SQL oracle)  440ms
+packages/scripture test:    ✓ F1/F5/F15 — keyset continuity on the live verse corpus > F15: pages cross the sub boundary (verses → jst) with no gap and no dup  396ms
+packages/scripture test:    ✓ B1/B30 — episodes-leg keyset continuity across a collation-divergent score tie > page 2 continues exactly after page 1 with mixed-case ref_ids: no dup, no gap (independent C-order oracle)  405ms
+packages/scripture test:    ✓ B11 — words leg payload carries render-ready original script (translit/original/lang/dir) > Hebrew (rtl) and Greek (ltr) strongs rows ship separate script fields, not a split title  315ms
+packages/scripture test:    ✓ B12 — book/volume reference lead headlines the canonical DB name, not the raw input > bare book/volume references resolve display from lumen.books / lumen.volumes  1077ms
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: {
+packages/scripture test:   severity_local: [32m'NOTICE'[39m,
+packages/scripture test:   severity: [32m'NOTICE'[39m,
+packages/scripture test:   code: [32m'00000'[39m,
+packages/scripture test:   message: [32m"text-search query contains only stop words or doesn't contain lexemes, ignored"[39m,
+packages/scripture test:   file: [32m'tsquery_cleanup.c'[39m,
+packages/scripture test:   line: [32m'408'[39m,
+packages/scripture test:   routine: [32m'cleanup_tsquery_stopwords'[39m
+packages/scripture test: }
+packages/scripture test: stdout | src/__tests__/search-harness.test.ts > M5 — searchAll contract > H12: federated search latency smoke (laptop→pooler < 1500ms; prod p95 is log-measured)
+packages/scripture test: H12 latency: 186ms
+packages/scripture test:  ✓ src/__tests__/search-harness.test.ts (23 tests) 10874ms
+packages/scripture test:    ✓ M2 — KJV delta-index (verses + entities) > H16: kjv_delta is empty on modern text; pinned pairs map to intended lexemes  966ms
+packages/scripture test:    ✓ M3 — transcript moments in search_index > H15: windows form an exact chain over each episode caption sequence (COR-7)  1450ms
+packages/scripture test:    ✓ M5 — searchAll contract > H8: visibility is a hard filter, fails closed, and gates the JST leg (SEC-3)  778ms
+packages/scripture test:    ✓ M5 — searchAll contract > H9: hostile inputs — contract shapes, never throw; wildcard metachars are literal (SEC-5)  1466ms
+packages/scripture test:    ✓ M5 — searchAll contract > H10: exact name outranks mentions; duplicate-name pages are deterministic (COR-4)  707ms
+packages/scripture test:    ✓ M5 — searchAll contract > H11: short-circuit only on RESOLVABLE refs; unresolvable falls through (COR-6)  712ms
+packages/scripture test:    ✓ M5 — searchAll contract > H12: federated search latency smoke (laptop→pooler < 1500ms; prod p95 is log-measured)  323ms
+packages/scripture test:    ✓ M5 — searchAll contract > H13b: per-kind payload contract — allowlisted keys, coerced numerics (decision 5)  645ms
+packages/scripture test:    ✓ M5 — searchAll contract > H17: a failing group degrades to empty results + meta.error — never a throw (COR-1)  553ms
+packages/scripture test:    ✓ M5 — searchAll contract > H19: a poisoned payload row degrades its own group, never the search (decision 7)  983ms
+packages/scripture test: ⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+packages/scripture test:  FAIL  src/__tests__/notes-harness.test.ts [ src/__tests__/notes-harness.test.ts ]
+packages/scripture test: Error: Cannot find module '../notes-refs' imported from '/Users/abram/code/lumen/packages/scripture/src/__tests__/notes-harness.test.ts'
+packages/scripture test:  ❯ src/__tests__/notes-harness.test.ts:4:1
+packages/scripture test:       2| import { GROUP_KEYS, GROUP_RESULT_TYPES } from "../search-types";
+packages/scripture test:       3| // Red until implemented: the anchor/link ref grammar (plan D2/D3, F7).
+packages/scripture test:       4| import { resolveAnchorRef } from "../notes-refs";
+packages/scripture test:        | ^
+packages/scripture test:       5| 
+packages/scripture test:       6| describe("harness F9/D3 — notes group in the search contract", () => {
+packages/scripture test: Caused by: Error: Failed to load url ../notes-refs (resolved id: ../notes-refs) in /Users/abram/code/lumen/packages/scripture/src/__tests__/notes-harness.test.ts. Does the file exist?
+packages/scripture test:  ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+packages/scripture test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+packages/scripture test:  Test Files  1 failed | 10 passed (11)
+packages/scripture test:       Tests  119 passed (119)
+packages/scripture test:    Start at  12:51:21
+packages/scripture test:    Duration  11.29s (transform 459ms, setup 0ms, collect 1.31s, tests 14.80s, environment 1ms, prepare 436ms)
+packages/scripture test: Failed
+apps/web test$ vitest run
+apps/web test:  RUN  v3.2.6 /Users/abram/code/lumen/apps/web
+apps/web test:  ✓ app/lib/__tests__/word-study.test.ts (11 tests) 3ms
+apps/web test: stderr | app/lib/__tests__/auth.server.test.ts > H5 getSessionUser — both directions (tske B2) > throwing client degrades to null, never throws
+apps/web test: {"event":"auth_user_degraded","message":"network sadness","elapsedMs":0}
+apps/web test: stderr | app/lib/__tests__/auth.server.test.ts > H5 getSessionUser — both directions (tske B2) > B6: a factory that throws synchronously (empty env) still degrades, never 500s
+apps/web test: {"event":"auth_user_degraded","message":"supabaseUrl is required","elapsedMs":0}
+apps/web test: stderr | app/lib/__tests__/auth.server.test.ts > H6 rotation commit (D5 — the silent-sign-out killer) > cookies written during getClaims ride the response EVEN when degrading to null
+apps/web test: {"event":"auth_user_degraded","message":"network sadness","elapsedMs":0}
+apps/web test:  ✓ app/lib/__tests__/auth.server.test.ts (14 tests) 7ms
+apps/web test: stderr | app/routes/__tests__/auth.routes.test.ts > H4 logout route > POST with hostile returnTo → /; signOut throwing still clears cookies (D6)
+apps/web test: {"event":"auth_signout_degraded","message":"gotrue down"}
+apps/web test:  ✓ app/routes/__tests__/auth.routes.test.ts (17 tests) 10ms
+apps/web test:  ✓ app/lib/__tests__/entitlements.test.ts (11 tests) 6ms
+apps/web test: stderr | app/lib/__tests__/cache.server.test.ts > cachedJson > kv.get throws: falls through to fetcher
+apps/web test: {"event":"kv_cache_error","op":"get","key":"k","message":"kv down"}
+apps/web test: stderr | app/lib/__tests__/cache.server.test.ts > cachedJson > kv.put throws: result still returned
+apps/web test: {"event":"kv_cache_error","op":"put","key":"k","message":"kv down"}
+apps/web test:  ✓ app/lib/__tests__/cache.server.test.ts (6 tests) 5ms
+apps/web test:  ✓ app/lib/__tests__/neo4j.server.test.ts (3 tests) 5ms
+apps/web test:  ✓ app/lib/__tests__/headers.server.test.ts (2 tests) 4ms
+apps/web test: stderr | app/lib/__tests__/db.server.test.ts > createDb (per-request — Workers forbids cross-request I/O reuse) > propagates construction failure (next request constructs fresh anyway)
+apps/web test: {"event":"pg_client_init_failed","message":"boom"}
+apps/web test:  ✓ app/lib/__tests__/db.server.test.ts (4 tests) 5ms
+apps/web test:  ✓ app/components/graph/__tests__/graph-model.test.ts (8 tests) 5ms
+apps/web test:  ✓ app/routes/__tests__/api-search-cursor.test.ts (16 tests) 9ms
+apps/web test: stderr | app/routes/__tests__/book.loader.test.ts > book loader > 301-redirects alias slugs to the canonical book URL
+apps/web test: {"event":"auth_user_degraded","message":"Your project's URL and Key are required to create a Supabase client!\n\nCheck your Supabase project's API settings to find these values\n\nhttps://supabase.com/dashboard/project/_/settings/api","elapsedMs":0}
+apps/web test:  ✓ app/routes/__tests__/api-search.test.ts (33 tests) 9ms
+apps/web test: stderr | app/routes/__tests__/book.loader.test.ts > book loader > 404s unknown books and books with no chapters
+apps/web test: {"event":"scripture_404","cause":"unknown_book","book":"narnia"}
+apps/web test: stderr | app/routes/__tests__/book.loader.test.ts > book loader > 404s unknown books and books with no chapters
+apps/web test: {"event":"scripture_404","cause":"empty_book","book":"1-ne"}
+apps/web test:  ✓ app/routes/__tests__/book.loader.test.ts (5 tests) 6ms
+apps/web test:  ✓ app/routes/__tests__/home.loader.test.ts (1 test) 2ms
+apps/web test: stderr | app/routes/__tests__/admin.users.test.ts > H4b — malformed cursors degrade to page 1, never throw > B3: a shape-VALID but value-invalid cursor (month 13) that only Postgres can reject → page 1, no throw
+apps/web test: {"event":"admin_cursor_rejected","code":"22007","sort":"created"}
+apps/web test:  ✓ app/routes/__tests__/admin.users.test.ts (31 tests) 13ms
+apps/web test:  ✓ app/routes/__tests__/search.loader.test.ts (32 tests) 28ms
+apps/web test: stderr | app/routes/__tests__/art.loader.test.ts > gallery loader (FM-6) > 404s an unknown book and a non-numeric chapter
+apps/web test: {"event":"art_gallery_404","cause":"unknown_book","book":"narnia"}
+apps/web test: stderr | app/routes/__tests__/art.loader.test.ts > gallery loader (FM-6) > 404s an unknown book and a non-numeric chapter
+apps/web test: {"event":"art_gallery_404","cause":"invalid_chapter","book":"luke","chapter":"abc"}
+apps/web test:  ✓ app/routes/__tests__/art.loader.test.ts (8 tests) 6ms
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > streams the neighborhood as an unawaited promise for ?graph=<id>
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > returns verses and summary for a valid chapter
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > returns graph:null when no ?graph param is present
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > accepts human-style book names in the URL slug (1-nephi is not valid; 1-ne is)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > clamps out-of-range depth to 1–3 before querying (FM-4)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > clamps out-of-range depth to 1–3 before querying (FM-4)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > clamps out-of-range depth to 1–3 before querying (FM-4)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > accepts dc even though it parses as a volume (D&C is a single-book volume)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"dc","chapter":4}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > streams connections for ?verse=7 as an unawaited promise
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > keeps the chapter fully usable alongside an unknown graph entity (FM-3)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > keeps the chapter fully usable alongside an unknown graph entity (FM-3)
+apps/web test: {"event":"graph_not_found","entityId":"nope","depth":1,"collections":"","elapsedMs":0}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > serves connections from cache without calling Neo4j
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > uses a versioned cache key including entity, depth, and collections (FM-7)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > uses the v3 versioned cache key (v2 = crossref move; v3 = 2026-07-21 spine sync, FM-9)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > composes with ?verse — both panel and graph promises stream independently
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: {"event":"crossref_degraded","name":"TypeError","message":"Cannot read properties of undefined (reading 'map')","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > exposes real chapter bounds so the last chapter has no next link (FM-10)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > charset-invalid ?graph resolves the overlay's not-found state without querying or caching (B8/B9)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > fetches cross-refs from Postgres in the CRITICAL PATH for the selected verse — openbible+cross-canon for Bible, legacy for BoM (FM-7/FM-8)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3,"verse":16,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3}
+apps/web test: {"event":"crossref_empty","verse":"john-3-16"}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > not-found results are never written to KV — junk ids can't burn the write budget (B9)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > not-found results are never written to KV — junk ids can't burn the write budget (B9)
+apps/web test: {"event":"graph_not_found","entityId":"stale-old-id","depth":1,"collections":"","elapsedMs":0}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > fetches cross-refs from Postgres in the CRITICAL PATH for the selected verse — openbible+cross-canon for Bible, legacy for BoM (FM-7/FM-8)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > resolves namespaced ids via metadata.neo4j_id on a miss (DATA-1 contract)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > delivers non-degraded cards for a Bible verse, keeping only CROSS-CANON legacy refs (CAPI-1 repro + merge)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3,"verse":16,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > no pointer → single query, stays not-found, never caches (art class)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > no pointer → single query, stays not-found, never caches (art class)
+apps/web test: {"event":"graph_not_found","entityId":"art:some-piece","depth":1,"collections":"","elapsedMs":1}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > a failing pointer lookup degrades to not-found, never rejects
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > a failing pointer lookup degrades to not-found, never rejects
+apps/web test: {"event":"graph_not_found","entityId":"person:moses-1","depth":1,"collections":"","elapsedMs":0}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > fetches word tags in the critical path for the selected BIBLE verse; happy path asserts real rows (strongs FM-6)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3,"verse":16,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.graph.loader.test.ts > scripture loader — ?graph param (graph-view harness) > found on first try never touches PG (hot path stays Neo4j+KV)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > fetches word tags in the critical path for the selected BIBLE verse; happy path asserts real rows (strongs FM-6)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > keeps the per-chapter query count bounded, like the home loader's guard (CPERF-6)
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > verse-selected Bible view stays bounded too — the word-tags 7th query participates exactly once (CS-6)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3,"verse":16,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"john","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — happy paths > includes reference on every verse in the loader data
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test:  ✓ app/routes/__tests__/scripture.graph.loader.test.ts (15 tests) 9ms
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — canonical URLs > 301-redirects a non-canonical book slug to the canonical URL, preserving query
+apps/web test: {"event":"auth_user_degraded","message":"Your project's URL and Key are required to create a Supabase client!\n\nCheck your Supabase project's API settings to find these values\n\nhttps://supabase.com/dashboard/project/_/settings/api","elapsedMs":0}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > 404s an unknown book slug
+apps/web test: {"event":"scripture_404","cause":"unknown_book","book":"narnia"}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > 404s a non-numeric chapter
+apps/web test: {"event":"scripture_404","cause":"invalid_chapter","book":"1-ne","chapter":"abc"}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > 404s a chapter with no verses
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":99}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > 404s a chapter with no verses
+apps/web test: {"event":"scripture_404","cause":"empty_chapter","book":"1-ne","chapter":99}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > treats invalid ?verse values as absent
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > treats invalid ?verse values as absent
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > treats invalid ?verse values as absent
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > treats a ?verse not present in the chapter as absent (no phantom panel)
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":999,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > missing summary renders as null, not an error
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test: stderr | app/routes/__tests__/scripture.loader.test.ts > scripture loader — failure modes > KV get failure still serves connections from live Neo4j
+apps/web test: {"event":"kv_cache_error","op":"get","key":"vconn:v3:1-ne-3-7","message":"kv down"}
+apps/web test: {"event":"mediarefs_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3,"verse":7,"elapsedMs":0}
+apps/web test: {"event":"verse_signals_degraded","name":"TypeError","message":"rows is not iterable","book":"1-ne","chapter":3}
+apps/web test:  ✓ app/routes/__tests__/scripture.loader.test.ts (22 tests) 12ms
+apps/web test: ⎯⎯⎯⎯⎯⎯ Failed Suites 4 ⎯⎯⎯⎯⎯⎯⎯
+apps/web test:  FAIL  app/lib/__tests__/notes-markdown.test.ts [ app/lib/__tests__/notes-markdown.test.ts ]
+apps/web test: Error: Cannot find module '../../components/editor/markdown' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/notes-markdown.test.ts'
+apps/web test:  ❯ app/lib/__tests__/notes-markdown.test.ts:3:1
+apps/web test:       1| import { describe, it, expect } from "vitest";
+apps/web test:       2| // Red until implemented: the editor's markdown boundary (plan F3/F4).
+apps/web test:       3| import { parseNoteMarkdown, serializeNoteDoc } from "../../components/…
+apps/web test:        | ^
+apps/web test:       4| import { findCanonReferences } from "../../components/editor/reference…
+apps/web test:       5| 
+apps/web test: Caused by: Error: Failed to load url ../../components/editor/markdown (resolved id: ../../components/editor/markdown) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/notes-markdown.test.ts. Does the file exist?
+apps/web test:  ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+apps/web test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+apps/web test:  FAIL  app/lib/__tests__/notes-render.test.ts [ app/lib/__tests__/notes-render.test.ts ]
+apps/web test: Error: Cannot find module '../notes-render.server' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/notes-render.test.ts'
+apps/web test:  ❯ app/lib/__tests__/notes-render.test.ts:3:1
+apps/web test:       1| import { describe, it, expect } from "vitest";
+apps/web test:       2| // Red until implemented: server-side constrained renderer (plan D4, F…
+apps/web test:       3| import { renderNoteHtml } from "../notes-render.server";
+apps/web test:        | ^
+apps/web test:       4| 
+apps/web test:       5| describe("harness F6 — XSS: every hostile construct is neutralized", (…
+apps/web test: Caused by: Error: Failed to load url ../notes-render.server (resolved id: ../notes-render.server) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/notes-render.test.ts. Does the file exist?
+apps/web test:  ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+apps/web test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+apps/web test:  FAIL  app/lib/__tests__/notes-search-merge.test.ts [ app/lib/__tests__/notes-search-merge.test.ts ]
+apps/web test: Error: Cannot find module '../notes.server' imported from '/Users/abram/code/lumen/apps/web/app/lib/__tests__/notes-search-merge.test.ts'
+apps/web test:  ❯ app/lib/__tests__/notes-search-merge.test.ts:3:1
+apps/web test:       1| import { describe, it, expect } from "vitest";
+apps/web test:       2| // Red until implemented: route-layer notes-group merge (plan D3, F9).
+apps/web test:       3| import { mergeNotesGroup } from "../notes.server";
+apps/web test:        | ^
+apps/web test:       4| 
+apps/web test:       5| const canonGroups = [
+apps/web test: Caused by: Error: Failed to load url ../notes.server (resolved id: ../notes.server) in /Users/abram/code/lumen/apps/web/app/lib/__tests__/notes-search-merge.test.ts. Does the file exist?
+apps/web test:  ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+apps/web test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+apps/web test:  FAIL  app/routes/__tests__/notes.routes.test.ts [ app/routes/__tests__/notes.routes.test.ts ]
+apps/web test: Error: Cannot find module '../notes' imported from '/Users/abram/code/lumen/apps/web/app/routes/__tests__/notes.routes.test.ts'
+apps/web test:  ❯ app/routes/__tests__/notes.routes.test.ts:23:1
+apps/web test:      21| import { getNote, createNote } from "~/lib/notes.server";
+apps/web test:      22| // Red until implemented: the notes routes (plan D5, F2/F7/F8).
+apps/web test:      23| import { loader as notesIndexLoader } from "../notes";
+apps/web test:        | ^
+apps/web test:      24| import { loader as noteLoader, action as noteAction } from "../notes.$…
+apps/web test:      25| 
+apps/web test: Caused by: Error: Failed to load url ../notes (resolved id: ../notes) in /Users/abram/code/lumen/apps/web/app/routes/__tests__/notes.routes.test.ts. Does the file exist?
+apps/web test:  ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.5_@types+node@25.9.2_jiti@2.7.0_lightningcss@1.30.2_tsx@4.22.4/node_modules/vite/dist/node/chunks/config.js:22739:33
+apps/web test: ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+apps/web test:  Test Files  4 failed | 18 passed (22)
+apps/web test:       Tests  239 passed (239)
+apps/web test:    Start at  12:51:32
+apps/web test:    Duration  877ms (transform 1.32s, setup 0ms, collect 6.86s, tests 144ms, environment 2ms, prepare 1.07s)
+apps/web test: Failed
+ ERR_PNPM_RECURSIVE_FAIL  
+
+
+Summary: 2 fails, 0 passes
+
+/Users/abram/code/lumen/packages/scripture:
+ ERROR  @lumen/scripture@0.1.0 test: `vitest run`
+Exit status 1
+
+/Users/abram/code/lumen/apps/web:
+ ERROR  @lumen/web@ test: `vitest run`
+Exit status 1
+VITEST_EXIT=1
+--- smoke-notes-rls (expected red) ---
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@supabase/supabase-js' imported from /Users/abram/code/lumen/scripts/smoke-notes-rls.mjs
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:784:25)
+    at moduleResolve (node:internal/modules/esm/resolve:873:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1006:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:704:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:724:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:762:56)
+    at #resolve (node:internal/modules/esm/loader:686:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:606:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:164:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v26.4.0
+SMOKE_EXIT=1
