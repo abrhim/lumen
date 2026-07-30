@@ -171,6 +171,12 @@ export function chapterUnit(bookId: string): 'Section' | 'Chapter' {
 
 export const VOLUME_ID_LIST = [...VOLUME_IDS];
 
+/** Alias → canonical book id pairs, for prefix/fuzzy book matching in the
+ * notes suggestion engine (read-only view over the same table
+ * parseReference consults — one vocabulary, two access patterns). */
+export const BOOK_ALIAS_ENTRIES: ReadonlyArray<readonly [alias: string, bookId: string]> =
+  Object.entries(BOOK_SLUGS);
+
 export const RELATIONSHIP_TYPES = [
   'TEACHES', 'CROSS_REF', 'MENTIONS', 'LOCATED_AT',
   'IN_CHAPTER', 'IN_BOOK', 'IN_VOLUME',

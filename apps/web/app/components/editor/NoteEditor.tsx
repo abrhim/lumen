@@ -680,6 +680,12 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		[popup, insertQuery],
 	);
 	useEffect(() => setHighlight(0), [suggestions.length]);
+	// the list scrolls (no result cap) — keep the active option in view
+	useEffect(() => {
+		document
+			.getElementById(`note-insert-opt-${highlight}`)
+			?.scrollIntoView({ block: "nearest" });
+	}, [highlight]);
 	suggestionsRef.current = suggestions;
 	highlightRef.current = highlight;
 	moveHighlightRef.current = (delta: number) =>
@@ -776,7 +782,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 								className="mb-1 h-9 w-full rounded border-0 bg-transparent px-2 font-reading text-[15px] text-ink outline-none"
 							/>
 						)}
-						<ul id="note-insert-listbox" role="listbox" className="list-none">
+						<ul id="note-insert-listbox" role="listbox" className="max-h-72 list-none overflow-y-auto">
 							{suggestions.length === 0 ? (
 								<li className="px-2 py-1.5 font-ui text-xs text-muted-foreground">
 									Type a reference — “Alma 32:21”

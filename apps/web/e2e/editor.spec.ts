@@ -89,3 +89,29 @@ test("save state: create lands on the note; edits autosave to Saved", async ({ p
 		page.getByRole("heading", { name: "Autosave probe grows", level: 1 }),
 	).toBeVisible();
 });
+
+test("suggestion drilling: chapter pins, verses follow; digits filter prefix-then-suffix", async ({
+	page,
+}) => {
+	await page.goto("/notes/new");
+	const editor = page.locator(".note-editor");
+	await editor.click();
+
+	// "alma 3" → chapter pinned first, then the chapter's verses
+	await page.keyboard.type("[[alma 3");
+	const options = page.getByRole("option");
+	await expect(options.first()).toContainText("Alma 3");
+	await expect(options.nth(1)).toContainText("Alma 3:1");
+	await expect(await options.count()).toBeGreaterThan(10);
+
+	// drill: "alma 3 2" → exact 3:2 first, then the 20s
+	await page.keyboard.type(" 2");
+	await expect(options.first()).toContainText("Alma 3:2");
+	await expect(options.nth(1)).toContainText("Alma 3:20");
+
+	// fuzzy book: fresh [[ with a partial name still resolves
+	await page.keyboard.press("Escape");
+	await page.keyboard.press("Enter");
+	await page.keyboard.type("[[alm 32:21");
+	await expect(page.getByRole("option").first()).toContainText("Alma 32:21");
+});
