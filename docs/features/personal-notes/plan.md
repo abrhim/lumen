@@ -187,7 +187,7 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: 813cef852f7d8e65 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- plan-hash: e37fd86c54d95011 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
 - harness-hash: 606e646d2aac3583 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
@@ -473,4 +473,8 @@ e2e flows 41–53 land with the Playwright infra (Q1).
   holds no EXECUTE (invariant-pinned); cross-user + anon probes verified
   live (0 rows / schema-denied). No invisibility assertion weakened.
   Retro item: this belongs in state/learnings.md as a Postgres-RLS gotcha.
+  RATIFIED (Abram, 2026-07-30, in-session): PG-level tombstone invisibility
+  + DEFINER soft-delete stands as the settled design ("pg level it is") —
+  human ruling, not open for panel re-litigation. Consequence accepted on
+  record: a future trash/restore feature needs its own privileged path.
 - Branch: feature/personal-notes.
