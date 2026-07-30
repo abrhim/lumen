@@ -1,7 +1,7 @@
 import { Form, Link, data, redirect } from "react-router";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import type { Route } from "./+types/auth.confirm";
-import { getAuth, getSessionUser } from "~/lib/auth.server";
+import { getAuth, getSessionUser, safeReturnTo } from "~/lib/auth.server";
 
 /**
  * Magic-link landing (plan D2/D3). Three arrival shapes:
@@ -67,18 +67,23 @@ export async function action({ request, context }: Route.ActionArgs) {
 	const code = form.get("code");
 	const { supabase, commitHeaders } = getAuth(request, context.cloudflare.env);
 
+	// B5 (CP-6/A18): honor the login gate's return trip. safeReturnTo
+	// resolve-and-compares (backslash-normalization open-redirect safe) and
+	// collapses anything off-origin to "/".
+	const next = safeReturnTo(new URL(request.url).searchParams.get("next"));
+
 	if (typeof token_hash === "string" && token_hash) {
 		const type = (typeof form.get("type") === "string" && form.get("type")
 			? form.get("type")
 			: "email") as EmailOtpType;
 		const { error } = await supabase.auth.verifyOtp({ type, token_hash });
-		if (!error) throw redirect("/", { headers: commitHeaders() });
+		if (!error) throw redirect(next, { headers: commitHeaders() });
 		return data({ error: mapVerifyError(error.code, error.message) }, { headers: commitHeaders() });
 	}
 
 	if (typeof code === "string" && code) {
 		const { error } = await supabase.auth.exchangeCodeForSession(code);
-		if (!error) throw redirect("/", { headers: commitHeaders() });
+		if (!error) throw redirect(next, { headers: commitHeaders() });
 		return data({ error: mapVerifyError(error.code, error.message) }, { headers: commitHeaders() });
 	}
 

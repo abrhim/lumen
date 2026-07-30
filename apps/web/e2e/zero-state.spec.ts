@@ -34,3 +34,13 @@ test("reader with zero notes: New note prints, no register rows", async ({ page 
 	await expect(page.getByRole("button", { name: "Add to note" })).toHaveCount(0);
 	await expect(page.getByRole("heading", { name: "Your notes" })).toHaveCount(0);
 });
+
+test("B5: signed-in /login?next= honors the same-origin return trip", async ({ page }) => {
+	await page.goto("/login?next=%2Fnotes");
+	await expect(page).toHaveURL(/\/notes$/);
+});
+
+test("B5: hostile next collapses to home, never off-origin", async ({ page }) => {
+	await page.goto("/login?next=//evil.example/steal");
+	await expect(page).toHaveURL(/localhost:4179\/$/);
+});

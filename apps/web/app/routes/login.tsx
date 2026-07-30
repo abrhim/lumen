@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
-import { getAuth, getSessionUser } from "~/lib/auth.server";
+import { getAuth, getSessionUser, safeReturnTo } from "~/lib/auth.server";
 
 export function meta(_args: Route.MetaArgs) {
 	return [{ title: "Sign in — Lumen" }];
@@ -9,7 +9,10 @@ export function meta(_args: Route.MetaArgs) {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
-	if (user) throw redirect("/", { headers });
+	// B5 (A18): already signed in → honor the gate's return trip
+	if (user) {
+		throw redirect(safeReturnTo(new URL(request.url).searchParams.get("next")), { headers });
+	}
 	return data(null, { headers });
 }
 
@@ -25,10 +28,16 @@ export async function action({ request, context }: Route.ActionArgs) {
 		return data({ sent: false as const, isResend, email, error: "Enter a valid email address." });
 	}
 	const { supabase, commitHeaders } = getAuth(request, context.cloudflare.env);
-	const origin = new URL(request.url).origin;
+	const url = new URL(request.url);
+	const origin = url.origin;
+	// B5 (A18): the Form posts to the current URL, so ?next= survives the
+	// submit — thread it into the email link's confirm destination
+	const next = safeReturnTo(url.searchParams.get("next"));
+	const confirmPath =
+		next !== "/" ? `/auth/confirm?next=${encodeURIComponent(next)}` : "/auth/confirm";
 	const { error } = await supabase.auth.signInWithOtp({
 		email,
-		options: { emailRedirectTo: `${origin}/auth/confirm`, shouldCreateUser: true },
+		options: { emailRedirectTo: `${origin}${confirmPath}`, shouldCreateUser: true },
 	});
 	// The PKCE code-verifier cookie is written during signInWithOtp — it MUST
 	// ride this response or the link fails even on this device (plan D4).
