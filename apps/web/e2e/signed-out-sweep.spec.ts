@@ -45,3 +45,13 @@ test.describe("signed-out: the notes feature does not exist", () => {
 		expect(body.error).not.toContain("notes");
 	});
 });
+
+test("B4: notes responses are never cacheable (redirects included)", async ({ request }) => {
+	const res = await request.get("/notes", { maxRedirects: 0 });
+	expect(res.status()).toBe(302);
+	expect(res.headers()["cache-control"]).toBe("private, no-store");
+	const res2 = await request.get("/notes/00000000-0000-0000-0000-000000000000", {
+		maxRedirects: 0,
+	});
+	expect(res2.headers()["cache-control"]).toBe("private, no-store");
+});

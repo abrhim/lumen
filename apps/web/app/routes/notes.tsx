@@ -23,12 +23,26 @@ export function loginRedirect(request: Request, headers: Headers): Response {
 	return redirect(`/login?next=${encodeURIComponent(url.pathname + url.search)}`, { headers });
 }
 
+/** B4 (CP-5): the most private bodies in the app — never heuristically
+ * cacheable, and rotation Set-Cookies must never be replayed (SECURITY-3;
+ * the B17/OC-4 single-fetch variant takes headers from THIS export). */
+export function headers({ loaderHeaders }: Route.HeadersArgs) {
+	const h = new Headers(loaderHeaders);
+	h.set("Cache-Control", "private, no-store");
+	return h;
+}
+
 export async function loader({ request, context }: Route.LoaderArgs) {
 	// A16 kill switch: off = the pre-feature shape (this route never existed)
 	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
-	if (!user) return loginRedirect(request, headers);
+	if (!user) {
+		const redirectRes = loginRedirect(request, headers);
+		redirectRes.headers.set("Cache-Control", "private, no-store");
+		return redirectRes;
+	}
 	const notes = await listNotes(request, context.cloudflare.env);
+	headers.set("Cache-Control", "private, no-store");
 	return data(
 		{
 			notes: notes.map((n) => ({

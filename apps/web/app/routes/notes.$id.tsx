@@ -60,10 +60,19 @@ export function meta({ data: loaderData }: Route.MetaArgs) {
 	return [{ title: `${title} · Lumen` }];
 }
 
+/** B4 (CP-5): private bodies + rotation cookies — never cacheable
+ * (SECURITY-3; covers the single-fetch .data variant per B17/OC-4). */
+export function headers({ loaderHeaders }: Route.HeadersArgs) {
+	const h = new Headers(loaderHeaders);
+	h.set("Cache-Control", "private, no-store");
+	return h;
+}
+
 export async function loader({ request, params, context }: Route.LoaderArgs) {
 	// A16 kill switch: off = the pre-feature shape (this route never existed)
 	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
+	headers.set("Cache-Control", "private, no-store");
 	if (!user) return loginRedirect(request, headers);
 
 	if (params.id === "new") {
