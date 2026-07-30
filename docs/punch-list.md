@@ -39,8 +39,9 @@ Add freely; strike when shipped.
   Postgres), dual-write reconciliation story (backfill re-run is the stopgap).
 - `getBooksByVolume` has the latent `od` (Official Declarations) trap — apply
   the getAllBooks UNION treatment when OD content ingests.
-- "Chapter N+1 →" dead-links on the last chapter of each book (plumb
-  chapter_count).
+- ~~"Chapter N+1 →" dead-links on the last chapter of each book (plumb
+  chapter_count).~~ Shipped 5315988 — header + foot nav both gate on
+  `maxChapter` (scripture.tsx).
 - Chapter nodes in Neo4j use `X-ch-N` ids and stay unstamped by the backfill
   (join miss, cosmetic today).
 - CI: needs `gh auth refresh -s workflow` (push blocked) + `CLOUDFLARE_API_TOKEN`
