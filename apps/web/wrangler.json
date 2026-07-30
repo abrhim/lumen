@@ -25,6 +25,7 @@
     "NEO4J_USER": "842e98b2",
     "NEO4J_DATABASE": "842e98b2",
     "SUPABASE_URL": "https://dsoekevnjqjfdntxhdhd.supabase.co",
-    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-"
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-",
+    "NOTES_ENABLED": "1"
   }
 }

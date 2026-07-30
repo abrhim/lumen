@@ -28,6 +28,31 @@ export function parseQ(rawQ: string | null): ParseResult<string> {
 	return { ok: true, value: q };
 }
 
+/**
+ * personal-notes A4 (CF-1/CF-7): `notes` never enters parseScope's
+ * vocabulary — signed-out validation bytes stay frozen. The routes split
+ * the raw scope FIRST; when `notes` is present the canon remainder is
+ * parsed normally and the session decides whether the original request was
+ * an error (signed-out: replay the frozen scope_unknown 400) or a notes
+ * request (signed-in: run the leg; notes-only NEVER calls searchAll — an
+ * empty scope array would search all seven groups).
+ */
+export function extractNotesScope(rawScope: string | null): {
+	canonRaw: string | null;
+	wantsNotes: boolean;
+	notesOnly: boolean;
+} {
+	if (rawScope === null) return { canonRaw: null, wantsNotes: false, notesOnly: false };
+	const parts = rawScope.split(",").map((s) => s.trim());
+	if (!parts.includes("notes")) return { canonRaw: rawScope, wantsNotes: false, notesOnly: false };
+	const rest = parts.filter((p) => p !== "notes");
+	return {
+		canonRaw: rest.length > 0 ? rest.join(",") : null,
+		wantsNotes: true,
+		notesOnly: rest.length === 0,
+	};
+}
+
 export function parseScope(rawScope: string | null): ParseResult<GroupKey[] | undefined> {
 	if (rawScope === null) {
 		return { ok: true, value: undefined };

@@ -28,6 +28,10 @@
 	--color-dot-mentions: var(--t-dot-mentions);
 	--color-dot-media: var(--t-dot-media);
 	--color-dot-xref: var(--t-dot-xref);
+	/* personal-notes A15: the 5th kind — a hollow RING (form carries "yours
+	   vs canon"), color still tokenized so the planned user-configurable
+	   palette is a token-source swap, never a refactor. */
+	--color-dot-note: var(--t-dot-note);
 
 	--font-display: "Fraunces", Georgia, serif;
 	--font-reading: "Newsreader", Georgia, serif;
@@ -62,6 +66,7 @@
 	--t-dot-mentions: #17984d;
 	--t-dot-media: #d9820f;
 	--t-dot-xref: #9aa0a8;
+	--t-dot-note: #b0483f;
 }
 
 /* ---- parchment: the original v11 study-surface look ---- */
@@ -174,6 +179,7 @@
 	--t-dot-mentions: #4ecb8a;
 	--t-dot-media: #f0b13c;
 	--t-dot-xref: #7f858e;
+	--t-dot-note: #e08a7f;
 	--background: #17181c;
 	--card: #1e2025;
 	--popover: #1e2025;

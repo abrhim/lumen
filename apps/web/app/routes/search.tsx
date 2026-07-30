@@ -16,6 +16,8 @@ import {
 	type ResultType,
 	type SearchGroup,
 	type SearchReference,
+	type SearchResponse,
+	type SearchResponseKey,
 	type SearchResult,
 } from "@lumen/scripture";
 import {
@@ -38,8 +40,10 @@ import {
 } from "lucide-react";
 import { getSessionUser } from "~/lib/auth.server";
 import { getCollectionAccessStrict } from "~/lib/collection-access.server";
+import { mergeNotesGroup, searchNotesLeg } from "~/lib/notes.server";
+import { notesEnabled } from "~/lib/notes-enabled";
 import { logSearchExecuted, logSearchFailed } from "~/lib/search-obs.server";
-import { parseQ, parseScope, Q_MIN } from "~/lib/search-request.server";
+import { extractNotesScope, parseQ, parseScope, Q_MIN } from "~/lib/search-request.server";
 import type { Route } from "./+types/search";
 
 /** /search — the reader's search page (search-ui plan). SSR via searchAll
@@ -230,11 +234,28 @@ function withNoStore(session?: Headers): Headers {
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const url = new URL(request.url);
 
-	const scopeResult = parseScope(url.searchParams.get("scope"));
+	// personal-notes A4 (CF-1/CF-7): same deferred scope ruling as
+	// api.search.tsx — `notes` splits out before parseScope so the canon
+	// vocabulary and every signed-out byte stay frozen; the session decides
+	// whether a notes scope was an error (signed-out) or a leg (signed-in).
+	const rawScope = url.searchParams.get("scope");
+	const scopeResult = parseScope(rawScope);
+	let scope = scopeResult.ok ? scopeResult.value : undefined;
+	let deferredScopeError: string | null = null;
+	let wantsNotes = false;
+	let notesOnly = false;
 	if (!scopeResult.ok) {
-		throw new Response(scopeResult.message, { status: 400, headers: withNoStore() });
+		const split = extractNotesScope(rawScope);
+		const rest = split.wantsNotes ? parseScope(split.canonRaw) : null;
+		if (rest?.ok) {
+			deferredScopeError = scopeResult.message;
+			wantsNotes = true;
+			notesOnly = split.notesOnly;
+			scope = rest.value;
+		} else {
+			throw new Response(scopeResult.message, { status: 400, headers: withNoStore() });
+		}
 	}
-	const scope = scopeResult.value;
 	const limitPerGroup = adaptiveLimit(scope?.length ?? GROUP_KEYS.length);
 
 	const base = {
@@ -249,20 +270,35 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const rawQ = url.searchParams.get("q");
 	const qResult = parseQ(rawQ);
 	if (!qResult.ok) {
+		// A deferred scope ruling outranks the q branches: pre-feature,
+		// /search?scope=notes with no q was a scope_unknown 400 — signed-out
+		// bytes must stay that way. Signed-in falls through to the designed
+		// empty/keepTyping states.
+		let earlyHeaders: Headers | undefined;
+		if (deferredScopeError !== null) {
+			const session = await getSessionUser(request, context.cloudflare.env);
+			earlyHeaders = session.headers;
+			if (!session.user || !notesEnabled(context.cloudflare.env)) {
+				throw new Response(deferredScopeError, {
+					status: 400,
+					headers: withNoStore(earlyHeaders),
+				});
+			}
+		}
 		if (qResult.code === "q_required") {
 			// Δ UU-2/F19: bare /search is a designed state, not a dead end.
 			return data({ ...base, state: "empty", q: "" } satisfies SearchLoaderData, {
-				headers: withNoStore(),
+				headers: withNoStore(earlyHeaders),
 			});
 		}
 		const trimmed = (rawQ ?? "").trim();
 		if (trimmed.length < Q_MIN) {
 			// Δ UU-9/F19: sub-Q_MIN issues no search at all.
 			return data({ ...base, state: "keepTyping", q: trimmed } satisfies SearchLoaderData, {
-				headers: withNoStore(),
+				headers: withNoStore(earlyHeaders),
 			});
 		}
-		throw new Response(qResult.message, { status: 400, headers: withNoStore() });
+		throw new Response(qResult.message, { status: 400, headers: withNoStore(earlyHeaders) });
 	}
 	const q = qResult.value;
 
@@ -274,39 +310,79 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		const session = await getSessionUser(request, context.cloudflare.env);
 		const user = session.user;
 		sessionHeaders = session.headers;
-		const access = await getCollectionAccessStrict(context.db, user?.id ?? null);
-		let visibleCollections = access.publicIds;
-		if (access.entitled) {
-			const rows = (await context.db.execute(
-				sql`SELECT id FROM lumen.collections`,
-			)) as Array<{ id: string }>;
-			visibleCollections = rows.map((r) => r.id);
-			visibility = "admin";
+
+		const notesOn = notesEnabled(context.cloudflare.env);
+		if (deferredScopeError !== null && (!user || !notesOn)) {
+			throw new Response(deferredScopeError, {
+				status: 400,
+				headers: withNoStore(sessionHeaders),
+			});
+		}
+		const runNotesLeg = user !== null && notesOn && (rawScope === null || wantsNotes);
+		const notesLegPromise = runNotesLeg
+			? searchNotesLeg(request, context.cloudflare.env, q, limitPerGroup)
+			: Promise.resolve(null);
+
+		let results: SearchResponse;
+		if (notesOnly) {
+			// notes-only scope skips searchAll — never searchAll([]) (CF-7)
+			results = {
+				query: q,
+				reference: null,
+				groups: [],
+				meta: { perGroup: {}, totalMs: 0, mode: "none" },
+			};
+		} else {
+			const access = await getCollectionAccessStrict(context.db, user?.id ?? null);
+			let visibleCollections = access.publicIds;
+			if (access.entitled) {
+				const rows = (await context.db.execute(
+					sql`SELECT id FROM lumen.collections`,
+				)) as Array<{ id: string }>;
+				visibleCollections = rows.map((r) => r.id);
+				visibility = "admin";
+			}
+			results = await searchAll(context.db, { q, visibleCollections, scope, limitPerGroup });
 		}
 
-		const results = await searchAll(context.db, { q, visibleCollections, scope, limitPerGroup });
+		const notesGroup = await notesLegPromise;
+		const shortCircuit =
+			results.reference?.found === true && isShortCircuitReference(results.reference);
+		const groups = shortCircuit ? results.groups : mergeNotesGroup(results.groups, notesGroup);
 
 		// B16: this surface is the page loader (a URL navigation), distinct from the
 		// /api/search fetcher — so Enter-after-debounce isn't double-counted.
-		logSearchExecuted(results, { q, scope, visibility, userId: user?.id, surface: "page" });
+		logSearchExecuted(results, {
+			q,
+			scope,
+			visibility,
+			userId: user?.id,
+			surface: "page",
+			...(notesGroup
+				? {
+						extraGroups: {
+							notes: { hits: notesGroup.results.length, degraded: notesGroup.degraded === true },
+						},
+					}
+				: {}),
+		});
 
 		const referenceHref = results.reference?.found ? referencePath(results.reference) : null;
 		return data(
 			{
 				...base,
-				state:
-					results.reference?.found && isShortCircuitReference(results.reference)
-						? "reference"
-						: "results",
+				state: shortCircuit ? "reference" : "results",
 				q,
 				// B10: strip `meta` (raw DB combinedError/error strings) — the client
 				// reads only these three, exactly like api.search.tsx.
-				results: { query: results.query, reference: results.reference, groups: results.groups },
+				results: { query: results.query, reference: results.reference, groups },
 				referenceHref,
 			} satisfies SearchLoaderData,
 			{ headers: withNoStore(sessionHeaders) },
 		);
 	} catch (err) {
+		// deliberate 400s from the deferred scope ruling pass through untouched
+		if (err instanceof Response) throw err;
 		logSearchFailed(err, { q, scope, visibility, surface: "page" });
 		throw new Response("Search failed", { status: 500, headers: withNoStore(sessionHeaders) });
 	}
@@ -412,6 +488,8 @@ function artRefDisplay(ref: ArtRef): string {
 
 function resultHref(r: SearchResult): string | null {
 	switch (r.type) {
+		case "note":
+			return `/notes/${encodeURIComponent(r.id)}`;
 		case "verse":
 		case "jst": {
 			const m = String(r.payload.verse_id ?? "").match(/^(.*)-(\d+)-(\d+)$/);
@@ -470,7 +548,7 @@ export function wordParts(r: SearchResult): {
 	return { name: translit || r.title, original, lang, dir };
 }
 
-function RowBody({ groupKey, r }: { groupKey: GroupKey; r: SearchResult }) {
+function RowBody({ groupKey, r }: { groupKey: SearchResponseKey; r: SearchResult }) {
 	if (groupKey === "scripture") {
 		return (
 			<>
@@ -595,7 +673,7 @@ function ResultRow({
 	tabStop,
 	onFocus,
 }: {
-	groupKey: GroupKey;
+	groupKey: SearchResponseKey;
 	r: SearchResult;
 	tabStop: boolean;
 	onFocus: () => void;
@@ -1281,6 +1359,61 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 					a book and chapter — “alma 32”.
 				</p>
 			)}
+
+			{/* personal-notes A4/A15: the personal layer leads. Signed-out
+			    responses never contain this key, so nothing here can render.
+			    A degraded leg keeps the section with one plain line — absence
+			    would read as "no matching notes" (CF-4). */}
+			{view === "results" &&
+				display &&
+				(() => {
+					const g = display.groups.find((x) => x.key === "notes");
+					if (!g) return null;
+					const degraded = (g as { degraded?: boolean }).degraded === true;
+					if (g.results.length === 0 && !degraded) return null;
+					return (
+						<section className="mt-11">
+							<h2 className="flex items-center gap-2.5 pb-1">
+								<NotebookPenIcon
+									aria-hidden="true"
+									strokeWidth={1.8}
+									className="size-[1.05rem] flex-none text-faint"
+								/>
+								<span className="font-display text-xl font-medium tracking-tight text-ink">
+									Your notes
+								</span>
+								{!degraded && (
+									<span className="font-ui text-xs font-medium tabular-nums text-faint">
+										{g.results.length}
+									</span>
+								)}
+								<Link
+									to="/notes"
+									className="relative ml-auto flex-none py-1 font-ui text-xs font-semibold text-primary transition-colors duration-150 after:absolute after:-inset-2 after:content-[''] hover:underline hover:underline-offset-4"
+								>
+									All notes →
+								</Link>
+							</h2>
+							{degraded ? (
+								<p className="mt-2 max-w-prose font-reading text-[15px] leading-relaxed text-muted-foreground">
+									Your notes are unavailable right now.
+								</p>
+							) : (
+								<ol className="mt-2 max-w-prose list-none space-y-0.5 p-0">
+									{g.results.map((r) => (
+										<ResultRow
+											key={rowKey(r)}
+											groupKey="notes"
+											r={r}
+											tabStop={rowKey(r) === activeRowKey}
+											onFocus={() => setRovingKey(rowKey(r))}
+										/>
+									))}
+								</ol>
+							)}
+						</section>
+					);
+				})()}
 
 			{view === "results" &&
 				display &&

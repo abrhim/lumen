@@ -22,12 +22,16 @@ export interface SearchLogContext {
 	surface: "page" | "api";
 	userId?: string;
 	after?: string;
+	/** personal-notes A4 (CF-4): route-layer groups merged OUTSIDE searchAll
+	 * (today: notes). Logged as a separate field so `zeroResult` and
+	 * `groups` stay pure canon-engine signals; absent signed-out. */
+	extraGroups?: Record<string, { hits: number; degraded: boolean }>;
 }
 
 /** OBS-1: the one structured line the relevance-tuning loop feeds on.
  * ms is null in combined mode — per-group time is unmeasurable there (B24). */
 export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext): void {
-	const { q, scope, visibility, userId, after, surface } = ctx;
+	const { q, scope, visibility, userId, after, surface, extraGroups } = ctx;
 	const perGroupMs: Record<string, number | null> = {};
 	const groupHits: Record<string, number> = {};
 	let degraded = false;
@@ -65,6 +69,7 @@ export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext)
 		...(result.meta.combinedError ? { combinedError: result.meta.combinedError } : {}),
 		visibility,
 		...(visibility === "admin" ? { userId } : {}),
+		...(extraGroups ? { extraGroups } : {}),
 	});
 }
 

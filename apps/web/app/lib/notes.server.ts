@@ -45,7 +45,11 @@ export interface NoteAnchorRow {
 	note_id: string;
 	kind: "verse" | "chapter" | "entity" | "transcript";
 	ref_id: string;
-	updated_at?: string;
+	/** anchors are immutable (A6/CF-53) — creation time is the only time */
+	created_at?: string;
+	/** chapter-anchors embed only: the note's bounded generated first line
+	 * (≤120 chars, raw markdown — strip client-side). Never the body. */
+	notes?: { title_line: string | null } | null;
 }
 
 export type NoteWriteCause =
@@ -163,16 +167,18 @@ export async function getChapterNoteAnchors(
 	let query = notesClient(request, env)
 		.schema("lumen")
 		.from("note_anchors")
-		.select("note_id, kind, ref_id, updated_at")
+		// projection + the bounded title_line embed — never note bodies (CF-52)
+		.select("note_id, kind, ref_id, created_at, notes(title_line)")
 		.or(
 			`and(kind.eq.chapter,ref_id.eq.${chapterRef}),and(kind.eq.verse,ref_id.like.${chapterRef}-*)`,
 		)
-		.order("updated_at", { ascending: false })
+		.order("created_at", { ascending: false })
 		.limit(CHAPTER_ANCHORS_LIMIT);
 	if (signal) query = query.abortSignal(signal);
 	const { data, error } = await query;
 	if (error) failWrite("chapter_anchors", error);
-	return (data ?? []) as NoteAnchorRow[];
+	// the to-one embed types as an array but returns an object at runtime
+	return (data ?? []) as unknown as NoteAnchorRow[];
 }
 
 /* ─── validation ─── */

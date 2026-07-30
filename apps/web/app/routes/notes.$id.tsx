@@ -1,14 +1,17 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Link, data, redirect, useFetcher, useRevalidator } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
 import {
 	createNote,
 	getNote,
+	getNoteAnchors,
 	softDeleteNote,
+	syncNoteAnchors,
 	updateNote,
 } from "~/lib/notes.server";
+import { notesEnabled } from "~/lib/notes-enabled";
 import { renderNoteHtml } from "~/lib/notes-render.server";
-import { canonicalizeNoteMarkdown } from "~/lib/notes-canonical.server";
+import { canonicalizeNoteMarkdown, sanitizeWikilinkLabel } from "~/lib/notes-canonical.server";
 import { deriveNoteTitle, NOTE_BODY_MAX_BYTES, UNTITLED_NOTE } from "~/lib/notes-derive";
 import { resolveAnchorRef, type AnchorRef } from "@lumen/scripture/notes-refs";
 import { logEvent } from "~/lib/log.server";
@@ -49,6 +52,8 @@ export function meta({ data: loaderData }: Route.MetaArgs) {
 }
 
 export async function loader({ request, params, context }: Route.LoaderArgs) {
+	// A16 kill switch: off = the pre-feature shape (this route never existed)
+	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	if (!user) return loginRedirect(request, headers);
 
@@ -97,6 +102,7 @@ function readAnchors(form: FormData): { ok: true; anchors: AnchorRef[] } | { ok:
 
 export async function action({ request, params, context }: Route.ActionArgs) {
 	const env = context.cloudflare.env;
+	if (!notesEnabled(env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, env);
 	if (!user) return json({ error: "Sign in required", code: "unauthenticated" }, 401, headers);
 
@@ -164,6 +170,109 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				return json({ error: "Not found", code: "not_found" }, 404, headers);
 			}
 
+			// A9 reader capture: append `[[ref|label]]` + anchor row to an
+			// existing note WITHOUT navigation. The response feeds the rail's
+			// one-line gloss confirmation, which doubles as the undo window.
+			case "append": {
+				if (!UUID_RE.test(params.id)) {
+					return json({ error: "Not found", code: "not_found" }, 404, headers);
+				}
+				const ref = String(form.get("anchor") ?? "");
+				const resolved = resolveAnchorRef(ref);
+				if (!resolved) {
+					logEvent("note_anchor_invalid_ref", { ref_id: ref.slice(0, 160) });
+					return json({ error: "Unknown reference", code: "anchor_invalid" }, 400, headers);
+				}
+				const label = sanitizeWikilinkLabel(String(form.get("label") ?? ""));
+				const line = label !== "" && label !== ref ? `[[${ref}|${label}]]` : `[[${ref}]]`;
+				const note = await getNote(request, env, params.id);
+				if (!note) return json({ error: "Not found", code: "not_found" }, 404, headers);
+				// stored bodies are canonical (end with exactly one \n); a canonical
+				// paragraph append keeps C a fixed point — asserted by re-canonicalizing
+				const body = canonicalizeNoteMarkdown(
+					note.body_md === "" ? `${line}\n` : `${note.body_md}\n${line}\n`,
+				);
+				const result = await updateNote(request, env, {
+					id: params.id,
+					body_md: body,
+					baseUpdatedAt: note.updated_at,
+				});
+				if (!result.ok) {
+					return result.conflict
+						? json({ error: "Note changed elsewhere", code: "stale" }, 409, headers)
+						: json({ error: "Not found", code: "not_found" }, 404, headers);
+				}
+				const anchors = await getNoteAnchors(request, env, params.id);
+				const existed = anchors.some((a) => a.kind === resolved.kind && a.ref_id === resolved.ref);
+				if (!existed) {
+					await syncNoteAnchors(request, env, params.id, [
+						...anchors.map((a) => ({ kind: a.kind, ref: a.ref_id })),
+						resolved,
+					]);
+				}
+				return json(
+					{
+						ok: true,
+						note_id: params.id,
+						title: deriveNoteTitle(body),
+						updated_at: result.note.updated_at,
+						appended_line: line,
+						anchor_was_new: !existed,
+					},
+					200,
+					headers,
+				);
+			}
+
+			// The undo half of the capture gloss: strip the exact appended
+			// paragraph (byte-identical restore) and remove the anchor row if
+			// the capture created it. 409 if anything else touched the note.
+			case "append_undo": {
+				if (!UUID_RE.test(params.id)) {
+					return json({ error: "Not found", code: "not_found" }, 404, headers);
+				}
+				const line = String(form.get("appended_line") ?? "");
+				const base = String(form.get("base_updated_at") ?? "");
+				const ref = String(form.get("anchor") ?? "");
+				const resolved = resolveAnchorRef(ref);
+				if (line === "" || base === "" || !resolved || !line.includes(ref)) {
+					return json({ error: "Invalid undo", code: "undo_invalid" }, 400, headers);
+				}
+				const note = await getNote(request, env, params.id);
+				if (!note) return json({ error: "Not found", code: "not_found" }, 404, headers);
+				if (note.updated_at !== base) {
+					return json({ error: "Note changed since capture", code: "stale" }, 409, headers);
+				}
+				let prev: string | null = null;
+				if (note.body_md === `${line}\n`) prev = "";
+				else if (note.body_md.endsWith(`\n${line}\n`)) {
+					prev = note.body_md.slice(0, -(line.length + 2));
+				}
+				if (prev === null) {
+					return json({ error: "Note changed since capture", code: "stale" }, 409, headers);
+				}
+				const result = await updateNote(request, env, {
+					id: params.id,
+					body_md: prev,
+					baseUpdatedAt: base,
+				});
+				if (!result.ok) {
+					return json({ error: "Note changed since capture", code: "stale" }, 409, headers);
+				}
+				if (form.get("anchor_was_new") === "1") {
+					const anchors = await getNoteAnchors(request, env, params.id);
+					await syncNoteAnchors(
+						request,
+						env,
+						params.id,
+						anchors
+							.filter((a) => !(a.kind === resolved.kind && a.ref_id === resolved.ref))
+							.map((a) => ({ kind: a.kind, ref: a.ref_id })),
+					);
+				}
+				return json({ ok: true, undone: true, updated_at: result.note.updated_at }, 200, headers);
+			}
+
 			case "delete": {
 				if (!UUID_RE.test(params.id)) {
 					return json({ error: "Not found", code: "not_found" }, 404, headers);
@@ -192,6 +301,16 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 	const [editing, setEditing] = useState(mode === "new");
 	const deleteFetcher = useFetcher();
 	const revalidator = useRevalidator();
+
+	// A9: this note becomes the reader capture's "last-touched" target
+	useEffect(() => {
+		if (!note) return;
+		try {
+			localStorage.setItem("lumen:last-note", JSON.stringify({ id: note.id, title }));
+		} catch {
+			// storage unavailable — capture degrades to "New note" only
+		}
+	}, [note?.id, title]);
 
 	if (editing || mode === "new") {
 		return (

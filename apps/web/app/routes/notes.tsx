@@ -1,5 +1,6 @@
 import { Link, data, redirect } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
+import { notesEnabled } from "~/lib/notes-enabled";
 import { listNotes } from "~/lib/notes.server";
 import { deriveNoteTitle, deriveNoteSnippet, UNTITLED_NOTE } from "~/lib/notes-derive";
 import type { Route } from "./+types/notes";
@@ -22,6 +23,8 @@ export function loginRedirect(request: Request, headers: Headers): Response {
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
+	// A16 kill switch: off = the pre-feature shape (this route never existed)
+	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	if (!user) return loginRedirect(request, headers);
 	const notes = await listNotes(request, context.cloudflare.env);

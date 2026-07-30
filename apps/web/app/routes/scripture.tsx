@@ -3,11 +3,12 @@ import {
 	Await,
 	Link,
 	isRouteErrorResponse,
+	useFetcher,
 	useNavigate,
 	useNavigation,
 	useNavigationType,
 } from "react-router";
-import { ArrowLeftIcon, HeadphonesIcon, ImageIcon, LightbulbIcon, Link2Icon, UsersIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, HeadphonesIcon, ImageIcon, LightbulbIcon, Link2Icon, NotebookPenIcon, UsersIcon, XIcon } from "lucide-react";
 import { sql } from "drizzle-orm";
 import {
 	parseReference,
@@ -46,7 +47,10 @@ import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
 import { cachedJson } from "../lib/cache.server";
-import { getSessionUser } from "../lib/auth.server";
+import { getSessionUser, hasAuthCookie } from "../lib/auth.server";
+import { getChapterNoteAnchors } from "../lib/notes.server";
+import { notesEnabled } from "../lib/notes-enabled";
+import { stripNoteMarkdownLine, UNTITLED_NOTE } from "../lib/notes-derive";
 import { logEvent } from "../lib/log.server";
 import type { Route } from "./+types/scripture";
 
@@ -303,6 +307,68 @@ async function loadVerseSignals(
 	}
 }
 
+/** personal-notes A5 — the chapter's note anchors, shaped for the rail. */
+interface ChapterNoteAnchor {
+	note_id: string;
+	kind: "verse" | "chapter";
+	ref_id: string;
+	title: string;
+}
+
+/**
+ * personal-notes A5 (CF-5): degraded-as-value, self-contained
+ * session→PostgREST chain with a hard 750ms abort — never a throw, joined
+ * into the loader's existing parallel window as a SEPARATE additive field
+ * (verseSignals stays untouched: the media-gate mutates that object in
+ * place). Signed-out cost is zero via hasAuthCookie; the failure event
+ * carries no userId and no verse list. SSR'd with the chapter, never
+ * streamed. Known accepted regression: this route is no longer session-free
+ * on its signed-in hot path — getSessionUser is request-memoized, and an
+ * expired-token inline refresh here rides the root loader's headers.
+ */
+async function loadChapterNoteAnchors(
+	request: Request,
+	env: Route.LoaderArgs["context"]["cloudflare"]["env"],
+	bookId: string,
+	chapter: number,
+): Promise<{ canCapture: boolean; anchors: ChapterNoteAnchor[] | null }> {
+	if (!notesEnabled(env) || !hasAuthCookie(request)) {
+		return { canCapture: false, anchors: null };
+	}
+	try {
+		const { user } = await getSessionUser(request, env);
+		if (!user) return { canCapture: false, anchors: null };
+		const rows = await getChapterNoteAnchors(
+			request,
+			env,
+			bookId,
+			chapter,
+			AbortSignal.timeout(750),
+		);
+		return {
+			canCapture: true,
+			anchors: rows
+				.filter((r) => r.kind === "verse" || r.kind === "chapter")
+				.map((r) => ({
+					note_id: r.note_id,
+					kind: r.kind as "verse" | "chapter",
+					ref_id: r.ref_id,
+					title: stripNoteMarkdownLine(r.notes?.title_line ?? "") || UNTITLED_NOTE,
+				})),
+		};
+	} catch (error) {
+		logEvent("note_anchors_degraded", {
+			name: error instanceof Error ? error.name : "unknown",
+			message: error instanceof Error ? error.message.slice(0, 200) : String(error),
+			book: bookId,
+			chapter,
+		});
+		// signed-in but degraded: the capture verbs still print (they are the
+		// feature's scent — CF-20); the register quietly doesn't.
+		return { canCapture: true, anchors: null };
+	}
+}
+
 /** seconds → "1:23:45" / "8:58" for media moment rows */
 function fmtTimestamp(s: number) {
 	const h = Math.floor(s / 3600);
@@ -536,7 +602,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals, noteCapture] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		// always fetched now (cheap, 8 rows): the graph filter AND the media-
@@ -579,7 +645,10 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			: Promise.resolve(null),
 		// per-verse margin-dot signals (dots experiment); never throws
 		loadVerseSignals(context.db, bookId, chapter),
-	]);
+		// personal-notes A5: the user's anchors for this chapter (PostgREST,
+		// not db.execute — CPERF-6 counts it separately); degraded-as-value
+		loadChapterNoteAnchors(request, context.cloudflare.env, bookId, chapter),
+	] as const);
 
 	if (verses.length === 0) {
 		logEvent("scripture_404", { cause: "empty_chapter", book: bookId, chapter });
@@ -639,6 +708,9 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		wordTags,
 		mediaRefs,
 		verseSignals,
+		// A5: separate additive fields — never merged into verseSignals
+		noteAnchors: noteCapture.anchors,
+		canCapture: noteCapture.canCapture,
 		graphId,
 		graphDepth,
 		graph,
@@ -652,8 +724,15 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, noteAnchors, canCapture, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
+	// A15: which verses carry the user's note dot (verse-kind anchors only)
+	const notedVerses = new Set<number>();
+	for (const a of noteAnchors ?? []) {
+		if (a.kind !== "verse") continue;
+		const n = Number(a.ref_id.match(/-(\d+)$/)?.[1]);
+		if (Number.isFinite(n)) notedVerses.add(n);
+	}
 	const unit = chapterUnit(bookId);
 	const navigation = useNavigation();
 	const navigationType = useNavigationType();
@@ -795,6 +874,25 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					),
 				);
 
+	// A9/A15: the rail's personal layer — register rows for this verse (plus
+	// chapter-anchored notes), deduped per note; null when nothing may print.
+	const noteRowsFor = (verse: VerseRow) => {
+		if (noteAnchors === null) return [];
+		const seen = new Set<string>();
+		const rows: Array<{ note_id: string; title: string; gloss: string }> = [];
+		for (const a of noteAnchors) {
+			const match = (a.kind === "verse" && a.ref_id === verse.id) || a.kind === "chapter";
+			if (!match || seen.has(a.note_id)) continue;
+			seen.add(a.note_id);
+			rows.push({
+				note_id: a.note_id,
+				title: a.title,
+				gloss: a.kind === "verse" ? "this verse" : "this chapter",
+			});
+		}
+		return rows;
+	};
+
 	const panelFor = (verse: VerseRow) => (
 		<PanelBody
 			// key: disclosure state (cross-refs "see all") must not leak across verses
@@ -806,6 +904,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			mediaRefs={mediaRefs}
 			art={verseArt}
 			onCrossRefNavigate={onCrossRefNavigate}
+			noteRows={noteRowsFor(verse)}
+			canCapture={canCapture}
+			captureVerseId={verse.id}
+			captureVerseRef={verse.reference}
 		/>
 	);
 
@@ -924,7 +1026,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							// number's ink and adds a hairline tick — weight + tick
 							// carry it at every width, never color alone.
 							const signals = verseSignals?.[verse.verse_number];
-							const hasDepth = signals !== undefined && Object.values(signals).some(Boolean);
+							const hasNote = notedVerses.has(verse.verse_number);
+							const hasDepth =
+								hasNote || (signals !== undefined && Object.values(signals).some(Boolean));
 							return (
 								<li key={verse.id} id={`v${verse.verse_number}`}>
 									<Link
@@ -973,27 +1077,55 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												aria-hidden
 												className="absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] lg:hidden"
 											>
-												{signals?.principles && <span className="size-[4px] rounded-full bg-dot-teaches" />}
-												{signals?.people && <span className="size-[4px] rounded-full bg-dot-mentions" />}
-												{signals?.xrefs && <span className="size-[4px] rounded-full bg-dot-xref" />}
-												{signals?.media && <span className="size-[4px] rounded-full bg-dot-media" />}
+												{/* A15 (gate-ratified): the note RING takes the first slot;
+												    the stack clamps at 4 visible — never scrolls, never "+1".
+												    Hollow form = "yours vs canon" without color (CF-21). */}
+												{(
+													[
+														hasNote && (
+															<span
+																key="note"
+																className="box-border size-[5px] rounded-full border-[1.5px] border-dot-note bg-transparent"
+															/>
+														),
+														signals?.principles && (
+															<span key="t" className="size-[4px] rounded-full bg-dot-teaches" />
+														),
+														signals?.people && (
+															<span key="m" className="size-[4px] rounded-full bg-dot-mentions" />
+														),
+														signals?.xrefs && (
+															<span key="x" className="size-[4px] rounded-full bg-dot-xref" />
+														),
+														signals?.media && (
+															<span key="a" className="size-[4px] rounded-full bg-dot-media" />
+														),
+													].filter(Boolean) as React.ReactNode[]
+												).slice(0, 4)}
 											</span>
 										)}
 										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
 										{/* Margin dots (spike): one per KIND of reference behind the
 										    verse — stable order, first text line, outside the prose.
 										    Hinting, not data: no counts, no labels. */}
-										{signals && (
+										{(signals || hasNote) && (
 											<span
 												aria-hidden
 												className="absolute left-[calc(100%+10px)] top-[1.15rem] hidden items-center gap-[5px] lg:flex"
 											>
-												{signals.principles && <span className="size-[5px] rounded-full bg-dot-teaches" />}
-												{signals.people && <span className="size-[5px] rounded-full bg-dot-mentions" />}
-												{signals.xrefs && <span className="size-[5px] rounded-full bg-dot-xref" />}
-												{signals.media && <span className="size-[5px] rounded-full bg-dot-media" />}
+												{/* A15: ring first — the personal layer leads the cluster */}
+												{hasNote && (
+													<span className="box-border size-[6px] rounded-full border-[1.5px] border-dot-note bg-transparent" />
+												)}
+												{signals?.principles && <span className="size-[5px] rounded-full bg-dot-teaches" />}
+												{signals?.people && <span className="size-[5px] rounded-full bg-dot-mentions" />}
+												{signals?.xrefs && <span className="size-[5px] rounded-full bg-dot-xref" />}
+												{signals?.media && <span className="size-[5px] rounded-full bg-dot-media" />}
 											</span>
 										)}
+										{/* CF-21: SR parity — the dots are aria-hidden, so the noted
+										    verse says so in its accessible name */}
+										{hasNote && <span className="sr-only">, your note</span>}
 									</Link>
 									{showWordCard && (
 										<InlineWordCard
@@ -1258,6 +1390,111 @@ function ChapterArtStack({
 	);
 }
 
+interface AppendResponse {
+	ok?: boolean;
+	undone?: boolean;
+	note_id?: string;
+	title?: string;
+	updated_at?: string;
+	appended_line?: string;
+	anchor_was_new?: boolean;
+	code?: string;
+}
+
+/**
+ * personal-notes A9 — the rail's capture verbs. Capture is a rail act,
+ * composition is a route act: `Add to note` appends to the last-touched
+ * note via fetcher (no navigation; the one-line gloss confirmation IS the
+ * undo window — no toast); `New note` navigates with the anchor prefilled
+ * and Back restores `?verse=`. No last-touched note → only `New note`
+ * prints. Last-touched lives in localStorage, written by the note page.
+ */
+function NoteCaptureVerbs({ verseId, verseRef }: { verseId: string; verseRef: string }) {
+	const fetcher = useFetcher<AppendResponse>();
+	const [last, setLast] = useState<{ id: string; title: string } | null>(null);
+	useEffect(() => {
+		try {
+			const raw = localStorage.getItem("lumen:last-note");
+			if (raw) {
+				const parsed = JSON.parse(raw) as { id?: string; title?: string };
+				if (typeof parsed.id === "string") {
+					setLast({ id: parsed.id, title: parsed.title ?? "your note" });
+				}
+			}
+		} catch {
+			// storage unavailable → the New-note door still prints
+		}
+	}, []);
+
+	const appended =
+		fetcher.state === "idle" && fetcher.data?.ok === true && fetcher.data.undone !== true;
+	const failed = fetcher.state === "idle" && fetcher.data !== undefined && fetcher.data.ok !== true;
+
+	const verbClass =
+		"font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink";
+
+	return (
+		<div className="mt-2">
+			<div aria-live="polite">
+				{appended && fetcher.data?.note_id ? (
+					<p className="font-ui text-[11px] text-muted-foreground">
+						Added to “{fetcher.data.title}” —{" "}
+						<Link to={`/notes/${fetcher.data.note_id}`} className="underline decoration-dotted underline-offset-2 hover:text-ink">
+							open
+						</Link>{" "}
+						·{" "}
+						<button
+							type="button"
+							className="underline decoration-dotted underline-offset-2 hover:text-ink"
+							onClick={() => {
+								const d = fetcher.data!;
+								fetcher.submit(
+									{
+										intent: "append_undo",
+										anchor: verseId,
+										appended_line: d.appended_line ?? "",
+										base_updated_at: d.updated_at ?? "",
+										anchor_was_new: d.anchor_was_new ? "1" : "0",
+									},
+									{ method: "post", action: `/notes/${d.note_id}` },
+								);
+							}}
+						>
+							undo
+						</button>
+					</p>
+				) : null}
+				{failed ? (
+					<p className="font-ui text-[11px] text-muted-foreground">
+						That didn’t save — try again.
+					</p>
+				) : null}
+			</div>
+			{!appended && (
+				<p className="flex gap-4">
+					{last !== null && (
+						<button
+							type="button"
+							className={verbClass}
+							onClick={() =>
+								fetcher.submit(
+									{ intent: "append", anchor: verseId, label: verseRef },
+									{ method: "post", action: `/notes/${last.id}` },
+								)
+							}
+						>
+							{fetcher.state !== "idle" ? "Adding…" : "Add to note"}
+						</button>
+					)}
+					<Link to={`/notes/new?anchor=${verseId}`} className={verbClass}>
+						New note
+					</Link>
+				</p>
+			)}
+		</div>
+	);
+}
+
 function PanelBody({
 	verseText,
 	isPending,
@@ -1266,6 +1503,10 @@ function PanelBody({
 	mediaRefs,
 	art,
 	onCrossRefNavigate,
+	noteRows,
+	canCapture,
+	captureVerseId,
+	captureVerseRef,
 }: {
 	verseText: string;
 	isPending: boolean;
@@ -1274,12 +1515,61 @@ function PanelBody({
 	mediaRefs: MediaRefsPanel | null;
 	art: ArtItem[];
 	onCrossRefNavigate: (verse: number) => void;
+	noteRows: Array<{ note_id: string; title: string; gloss: string }>;
+	canCapture: boolean;
+	captureVerseId: string;
+	captureVerseRef: string;
 }) {
 	return (
 		<>
 			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
 				{verseText}
 			</blockquote>
+			{/* personal-notes A15 (gate-ratified): the personal register leads,
+			    above art. Rows print only when notes exist; the capture VERBS are
+			    affordances exempt from the print-nothing law — they are the scent
+			    (CF-20). Signed-out: neither prints (noteRows empty, canCapture
+			    false — F2). */}
+			{(noteRows.length > 0 || canCapture) && (
+				<div className="mt-[18px]">
+					{noteRows.length > 0 && (
+						<>
+							<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
+								<NotebookPenIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />
+								Your notes
+							</h3>
+							<ul className="mt-1 list-none">
+								{noteRows.slice(0, 20).map((r) => (
+									<li key={r.note_id} className="border-t border-rule first:border-t-0">
+										<Link
+											to={`/notes/${r.note_id}`}
+											className="group flex items-baseline justify-between gap-3 py-2"
+										>
+											<span className="min-w-0">
+												<span className="block truncate font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+													{r.title}
+												</span>
+												<span className="block truncate font-ui text-[11px] text-muted-foreground">
+													{r.gloss}
+												</span>
+											</span>
+										</Link>
+									</li>
+								))}
+							</ul>
+							{noteRows.length > 20 && (
+								<Link
+									to="/notes"
+									className="mt-1 block font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink"
+								>
+									See all →
+								</Link>
+							)}
+						</>
+					)}
+					{canCapture && <NoteCaptureVerbs verseId={captureVerseId} verseRef={captureVerseRef} />}
+				</div>
+			)}
 			{art.length > 0 && (
 				<div className="mt-[18px]">
 					<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
