@@ -312,17 +312,17 @@ export async function softDeleteNote(
 	env: AuthEnv,
 	id: string,
 ): Promise<boolean> {
-	// Never chain .select() here — the row becomes invisible to its own
-	// owner the moment deleted_at lands (A6), so a returning clause always
-	// reads as failure. count:'exact' rides the update itself.
-	const { error, count } = await notesClient(request, env)
+	// Soft delete goes through the INVOKER RPC (harness-revision, sanctioned
+	// 2026-07-30): PostgREST UPDATEs always carry RETURNING, and Postgres
+	// checks RETURNING rows against the SELECT policy — which hides
+	// tombstones by design, so a plain PATCH here can never succeed. The
+	// RPC's UPDATE has no RETURNING; RLS still fully applies (invoker), and
+	// the returned count preserves the 404-vs-ok distinction.
+	const { data, error } = await notesClient(request, env)
 		.schema("lumen")
-		.from("notes")
-		.update({ deleted_at: new Date().toISOString() }, { count: "exact" })
-		.eq("id", id)
-		.is("deleted_at", null);
+		.rpc("soft_delete_note", { p_id: id });
 	if (error) failWrite("delete", error);
-	const deleted = (count ?? 0) > 0;
+	const deleted = ((data as number | null) ?? 0) > 0;
 	if (deleted) logEvent("note_softdeleted", { note_id: id });
 	return deleted;
 }

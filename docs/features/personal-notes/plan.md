@@ -187,8 +187,8 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: b547e33efd9cb35e (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
-- harness-hash: 01234b4a4f09d84c (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
+- plan-hash: 813cef852f7d8e65 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- harness-hash: 606e646d2aac3583 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
 
@@ -455,8 +455,22 @@ e2e flows 41–53 land with the Playwright infra (Q1).
   flows 41-53 (Q1 — committed scope); physical-device iOS checklist items
   (Q6/UX-9); /search notes scope PILL deliberately not shipped (API contract
   exists; UI restraint call — flag to panel).
-- BLOCKED ON ABRAM (smoke + deploy): (1) Supabase dashboard exposed-schemas
-  += lumen (A6/A16 manual step; probe currently PGRST106); (2)
-  SUPABASE_SERVICE_ROLE_KEY for scripts/smoke-notes-rls.mjs (not on this
-  machine). Migration invariants cover the DB layer meanwhile.
+- FORMER BLOCKERS CLEARED (2026-07-30, Abram): exposed-schemas now includes
+  lumen (dashboard step done; anon probe = 42501 schema-denied, the designed
+  wall); SUPABASE_SERVICE_ROLE_KEY landed in root .env (gitignored).
+  smoke-notes-rls: PASS 19/19.
+- HARNESS REVISION 1 (narrow, Abram-sanctioned in-session 2026-07-30, no
+  panel re-run): smoke's CF-10 soft-delete statement shape changed from raw
+  `.update({deleted_at})` to `rpc('soft_delete_note')` + one NEW assertion
+  (RPC returns count 1). Cause — a design-level Postgres semantics finding
+  panel-1 missed: an UPDATE's NEW row is checked against SELECT policies
+  whenever the statement reads the table (any WHERE), so a SELECT policy
+  that hides tombstones makes same-role soft-delete UPDATEs impossible in
+  ANY client (PostgREST, invoker RPC, plain SQL — bisect-verified:
+  WITH CHECK (true) still rejects; relaxing SELECT alone accepts).
+  Resolution: lumen.soft_delete_note is SECURITY DEFINER (owner postgres,
+  BYPASSRLS) whose WHERE mirrors the notes_update policy verbatim; anon
+  holds no EXECUTE (invariant-pinned); cross-user + anon probes verified
+  live (0 rows / schema-denied). No invisibility assertion weakened.
+  Retro item: this belongs in state/learnings.md as a Postgres-RLS gotcha.
 - Branch: feature/personal-notes.

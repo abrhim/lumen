@@ -133,6 +133,35 @@ DROP POLICY IF EXISTS note_anchors_delete ON lumen.note_anchors;
 CREATE POLICY note_anchors_delete ON lumen.note_anchors FOR DELETE TO authenticated
   USING (owner_id = (SELECT auth.uid()));
 
+-- CF-10 under real Postgres semantics (harness-revision, sanctioned
+-- 2026-07-30): an UPDATE's NEW row is checked against the SELECT policies
+-- whenever the statement reads the table (any WHERE clause) — verified
+-- empirically here: WITH CHECK (true) still rejects, relaxing the SELECT
+-- policy alone accepts. Since our SELECT policy hides tombstones BY
+-- DESIGN, no same-role UPDATE (PostgREST, RPC-invoker, or plain SQL) can
+-- ever create one. Soft delete is therefore SECURITY DEFINER (owner:
+-- postgres, BYPASSRLS): the explicit owner/live predicate below carries
+-- the entire security boundary — it mirrors the notes_update policy
+-- verbatim. anon/PUBLIC hold no EXECUTE; auth.uid() IS NULL matches
+-- nothing (owner_id is NOT NULL).
+CREATE OR REPLACE FUNCTION lumen.soft_delete_note(p_id uuid)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+  v_count integer;
+BEGIN
+  UPDATE lumen.notes SET deleted_at = now()
+  WHERE id = p_id
+    AND owner_id = auth.uid()
+    AND deleted_at IS NULL;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END
+$fn$;
+
 -- A7 (CF-25): create is ONE transaction. SECURITY INVOKER — RLS applies in
 -- full; owner_id is auth.uid() via column default, never caller-supplied.
 -- Anchor inserts are idempotent (double-capture safe).
@@ -179,6 +208,8 @@ REVOKE ALL ON lumen.app_users, lumen.user_roles, lumen.roles, lumen.migration_st
 ALTER DEFAULT PRIVILEGES IN SCHEMA lumen REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION lumen.create_note_with_anchors(text, jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION lumen.create_note_with_anchors(text, jsonb) TO authenticated;
+REVOKE EXECUTE ON FUNCTION lumen.soft_delete_note(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION lumen.soft_delete_note(uuid) TO authenticated;
 REVOKE EXECUTE ON FUNCTION lumen.set_updated_at() FROM PUBLIC, anon, authenticated;
 `;
 
@@ -280,6 +311,18 @@ const INVARIANTS = [
       SELECT 1 FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid
       WHERE n.nspname = 'lumen' AND p.proname = 'create_note_with_anchors'
         AND NOT p.prosecdef
+    ) AS pass`,
+	},
+	{
+		// DEFINER by necessity (see the DDL comment): its WHERE mirrors the
+		// notes_update policy; also pin that anon holds no EXECUTE on it.
+		name: 'soft_delete_rpc_definer_and_anon_locked',
+		sql: `SELECT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid
+      WHERE n.nspname = 'lumen' AND p.proname = 'soft_delete_note'
+        AND p.prosecdef
+        AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+        AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
     ) AS pass`,
 	},
 ];

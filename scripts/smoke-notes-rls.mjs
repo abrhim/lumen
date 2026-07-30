@@ -146,7 +146,12 @@ try {
 
 		// Gap 7 (CF-10): soft-delete is RLS-enforced — after A soft-deletes,
 		// A's own SELECT of note AND anchors returns 0 rows; update affects 0.
-		await a.client.schema("lumen").from("notes").update({ deleted_at: new Date().toISOString() }).eq("id", note.id);
+		// harness-revision (narrow, Abram-sanctioned 2026-07-30): the app's
+		// soft-delete statement shape is the INVOKER RPC — PostgREST UPDATEs
+		// always carry RETURNING, which Postgres checks against the
+		// tombstone-hiding SELECT policy, so a raw PATCH can never succeed.
+		const { data: sdCount, error: sdErr } = await a.client.schema("lumen").rpc("soft_delete_note", { p_id: note.id });
+		check("CF-10: owner soft-delete succeeds via soft_delete_note RPC (1 row)", !sdErr && sdCount === 1, sdErr?.message);
 		const { data: aDead } = await a.client.schema("lumen").from("notes").select("*").eq("id", note.id);
 		const { data: aDeadAnchors } = await a.client.schema("lumen").from("note_anchors").select("*").eq("note_id", note.id);
 		const { data: tombUpd } = await a.client.schema("lumen").from("notes").update({ body_md: "zombie" }).eq("id", note.id).select();
