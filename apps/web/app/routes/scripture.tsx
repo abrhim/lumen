@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useId, useRef, useState } from "react";
 import {
 	Await,
 	Link,
+	data,
 	isRouteErrorResponse,
 	useFetcher,
 	useNavigate,
@@ -331,13 +332,19 @@ async function loadChapterNoteAnchors(
 	env: Route.LoaderArgs["context"]["cloudflare"]["env"],
 	bookId: string,
 	chapter: number,
-): Promise<{ canCapture: boolean; anchors: ChapterNoteAnchor[] | null }> {
+): Promise<{ canCapture: boolean; anchors: ChapterNoteAnchor[] | null; headers: Headers }> {
 	if (!notesEnabled(env) || !hasAuthCookie(request)) {
-		return { canCapture: false, anchors: null };
+		return { canCapture: false, anchors: null, headers: new Headers() };
 	}
+	// B7 (CP-8): this session read can mint rotation Set-Cookies, and on a
+	// chapter→chapter CLIENT nav the root loader does NOT re-run — so the
+	// rotation must ride THIS loader's response or the refresh token goes
+	// stale and the family gets revoked (silent sign-out, the B4 class).
+	let sessionHeaders = new Headers();
 	try {
-		const { user } = await getSessionUser(request, env);
-		if (!user) return { canCapture: false, anchors: null };
+		const { user, headers } = await getSessionUser(request, env);
+		sessionHeaders = headers;
+		if (!user) return { canCapture: false, anchors: null, headers: sessionHeaders };
 		const rows = await getChapterNoteAnchors(
 			request,
 			env,
@@ -355,6 +362,7 @@ async function loadChapterNoteAnchors(
 					ref_id: r.ref_id,
 					title: stripNoteMarkdownLine(r.notes?.title_line ?? "") || UNTITLED_NOTE,
 				})),
+			headers: sessionHeaders,
 		};
 	} catch (error) {
 		logEvent("note_anchors_degraded", {
@@ -365,7 +373,7 @@ async function loadChapterNoteAnchors(
 		});
 		// signed-in but degraded: the capture verbs still print (they are the
 		// feature's scent — CF-20); the register quietly doesn't.
-		return { canCapture: true, anchors: null };
+		return { canCapture: true, anchors: null, headers: sessionHeaders };
 	}
 }
 
@@ -690,7 +698,11 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// "1 Nephi 3:1" → "1 Nephi 3"
 	const reference = verses[0].reference.replace(/:\d+$/, "");
 
-	return {
+	// B7 (CP-8): the anchors leg's session read can rotate tokens, and on a
+	// chapter→chapter client nav the root loader does not re-run — the
+	// rotation Set-Cookie must ride THIS response (data() carries it on the
+	// single-fetch path; the headers export forwards it on documents).
+	return data({
 		bookId,
 		chapter,
 		reference,
@@ -716,7 +728,12 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		graph,
 		art: (artRows ?? []).map(toArtItem),
 		maxChapter: chapterRows.length > 0 ? Math.max(...chapterRows.map((c) => c.chapter_number)) : null,
-	};
+	}, { headers: noteCapture.headers });
+}
+
+/** B7: forward loader headers (rotation Set-Cookie) to document responses. */
+export function headers({ loaderHeaders }: Route.HeadersArgs) {
+	return loaderHeaders;
 }
 
 export function meta({ data }: Route.MetaArgs) {
