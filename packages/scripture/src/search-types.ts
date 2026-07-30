@@ -21,6 +21,18 @@ export const GROUP_KEYS = [
 ] as const;
 export type GroupKey = (typeof GROUP_KEYS)[number];
 
+/**
+ * personal-notes A1 (CF-1): GROUP_KEYS is FROZEN — it is the signed-out/SQL
+ * engine contract (searchAll leg dispatch, parseScope vocabulary, cursor
+ * binding). `notes` is a ROUTE-LAYER key: the signed-in api.search/search
+ * loaders run a PostgREST leg under the user's JWT and merge it in
+ * SEARCH_RESPONSE_KEYS order. It must never enter the engine vocabulary.
+ */
+export const NOTES_GROUP_KEY = 'notes' as const;
+export type SearchResponseKey = GroupKey | typeof NOTES_GROUP_KEY;
+/** Signed-in response order: personal layer leads, then canon order. */
+export const SEARCH_RESPONSE_KEYS = [NOTES_GROUP_KEY, ...GROUP_KEYS] as const;
+
 export type ResultType =
 	| 'verse'
 	| 'jst'
@@ -35,10 +47,11 @@ export type ResultType =
 	| 'episode'
 	| 'moment'
 	| 'artwork'
-	| 'strongs';
+	| 'strongs'
+	| 'note';
 
 /** Which result types each group may contain (API-4: two enums, exported). */
-export const GROUP_RESULT_TYPES: Record<GroupKey, ResultType[]> = {
+export const GROUP_RESULT_TYPES: Record<SearchResponseKey, ResultType[]> = {
 	scripture: ['verse', 'jst'],
 	people: ['person'],
 	places: ['place'],
@@ -46,6 +59,7 @@ export const GROUP_RESULT_TYPES: Record<GroupKey, ResultType[]> = {
 	episodes: ['episode', 'moment'],
 	art: ['artwork'],
 	words: ['strongs'],
+	notes: ['note'],
 };
 
 export interface SearchOptions {
@@ -75,7 +89,7 @@ export interface SearchResult {
 }
 
 export interface SearchGroup {
-	key: GroupKey;
+	key: SearchResponseKey;
 	results: SearchResult[];
 	/** Present ONLY when this page is full (`results.length === limitPerGroup`)
 	 * — a short or empty page is the end of the set (F5). */

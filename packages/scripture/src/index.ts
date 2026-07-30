@@ -11,3 +11,4 @@ export * from './osis-map';
 export * from './crossrefs';
 export * from './strongs';
 export * from './search';
+export * from './notes-refs';

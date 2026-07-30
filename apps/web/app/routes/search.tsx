@@ -28,6 +28,7 @@ import {
 	LanguagesIcon,
 	LightbulbIcon,
 	MapPinIcon,
+	NotebookPenIcon,
 	PlayIcon,
 	ShapesIcon,
 	TagIcon,
@@ -362,6 +363,8 @@ const TYPE_ICONS: Record<ResultType, LucideIcon> = {
 	moment: PlayIcon,
 	artwork: ImageIcon,
 	strongs: LanguagesIcon,
+	// personal-notes A15: the personal layer's mark (register + result rows)
+	note: NotebookPenIcon,
 };
 
 /** entity_type -> typed node route (media.tsx precedent — the type is the slug). */

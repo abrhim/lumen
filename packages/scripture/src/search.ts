@@ -657,7 +657,7 @@ function sortResults(results: SearchResult[]): SearchResult[] {
 /** F5/Δ UU-1: a full page — and ONLY a full page — mints the continuation
  * cursor from its last row's sort key. Short and empty pages are the end of
  * the set; degraded groups arrive here empty and mint nothing. */
-function mintNextCursor(g: SearchGroup, q: string, limit: number): void {
+function mintNextCursor(g: SearchGroup & { key: GroupKey }, q: string, limit: number): void {
 	if (g.results.length !== limit) return;
 	const last = g.results[g.results.length - 1];
 	g.nextCursor = encodeSearchCursor({
@@ -676,7 +676,23 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 	const t0 = Date.now();
 	const q = (opts.q ?? '').trim().slice(0, 200);
 	const limit = clampLimit(opts.limitPerGroup);
-	const scope: GroupKey[] = opts.scope?.length ? opts.scope : [...GROUP_KEYS];
+	// personal-notes A1 (CF-1): the engine only ever dispatches canon keys.
+	// Non-canon keys (`notes` or anything else smuggled past the types) are
+	// structurally filtered so buildLegs can never see them; a scope that
+	// filters to empty stays empty — widening [] back to all groups is the
+	// CF-7 trap (a notes-only scope must be handled at the route layer).
+	const requestedScope = opts.scope?.length
+		? opts.scope.filter((k): k is GroupKey => (GROUP_KEYS as readonly string[]).includes(k))
+		: null;
+	if (opts.scope?.length && requestedScope!.length === 0) {
+		return {
+			query: q,
+			reference: null,
+			groups: [],
+			meta: { perGroup: {}, totalMs: Date.now() - t0, mode: 'none' },
+		};
+	}
+	const scope: GroupKey[] = requestedScope ?? [...GROUP_KEYS];
 	const visible = opts.visibleCollections ?? [];
 
 	// Continuation only ever composes with a single leg (the route 400s
@@ -687,7 +703,10 @@ export async function searchAll(db: Db, opts: SearchOptions): Promise<SearchResp
 			? decodeSearchCursor(opts.after, { q, scope: scope[0] })
 			: undefined;
 
-	const groups: SearchGroup[] = scope.map((key) => ({ key, results: [] }));
+	const groups: Array<SearchGroup & { key: GroupKey }> = scope.map((key) => ({
+		key,
+		results: [],
+	}));
 	const meta: SearchMeta = { perGroup: {}, totalMs: 0, mode: 'none' };
 	const byKey = new Map(groups.map((g) => [g.key, g]));
 
