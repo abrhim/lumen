@@ -303,9 +303,17 @@ finding in panel-1.md):
 - **A13 (CF-29, CF-37, CF-26, CF-49, CF-31) — action contract.** Intents
   `create | update | delete` (unknown → 400); `/notes/new` = create
   surface (GET editor, POST 302 → /notes/:id); update/delete =
-  fetcher JSON; **explicit save v1** (autosave deferred as one line);
-  save state saved/saving/failed-with-retry, failed save preserves the
-  buffer; LWW with base-echo conditional update (`WHERE ... AND
+  fetcher JSON; **autosave REQUIRED (Abram gate ruling, 2026-07-30** — supersedes the
+  explicit-save default)**: ≥3s idle debounce, flush on blur/navigation/
+  visibilitychange, anchors diffed not rewritten (PERF-6 shape); ⌘S forces
+  an immediate flush; save state saved/saving/failed-with-retry always
+  visible while dirty; a FAILED autosave is loud (persistent failed state
+  + retry affordance — silent autosave failure is the worst outcome, OBS-8)
+  and always preserves the buffer; update/delete stay fetcher-JSON (no
+  redirect), which the autosave cadence requires anyway. If implementation
+  runs long, autosave may ship as the IMMEDIATE follow-up — but the v1
+  action contract must be autosave-shaped from day one (harness gap 38
+  activates: debounce wiring + anchors-diffed assertions); LWW with base-echo conditional update (`WHERE ... AND
   updated_at = :base`) → 409 + current row on staleness; events
   `note_created/note_updated/note_softdeleted` (ids+sizes only, no
   owner_id, no bodies, no ref_ids) + `note_write_failed {op, cause,
@@ -320,7 +328,13 @@ finding in panel-1.md):
   derived title, first-line heading not double-rendered; wikilinks get
   dotted underline + composed aria-label; unresolvable refs render
   `<span>`, no link semantics; non-uuid :id → 404 pre-query.
-- **A15 (CF-21, CF-16) — the note dot.** Distinct FORM: hollow ring
+- **A15 (CF-21, CF-16) — the note dot.** GATE-RATIFIED (Abram, 2026-07-30):
+  register first above art; hollow ring, first slot; mobile clamps at 4
+  visible. Rider (Abram): dot colors become a USER-CONFIGURED palette in a
+  future feature — v1 keeps tokens but every dot color must flow through
+  the theme-token layer (no inline hex, no per-component color logic) so
+  per-user override later is a token-source swap, not a refactor.
+  Original spec: Distinct FORM: hollow ring
   (2px stroke) at dot size — "yours vs canon" without color; noted
   verses append visually-hidden ", your note" to the verse link name;
   register label = real h3. Geometry: gate ruling required (defaults:
