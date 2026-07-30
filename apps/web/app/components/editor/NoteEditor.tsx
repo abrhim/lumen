@@ -316,6 +316,18 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 	});
 	const dirtyRef = useRef(false);
 	const savingRef = useRef(false);
+	// B1 (CP-1): the autosave state machine. Every doc change bumps the edit
+	// generation and re-arms the idle timer (true ≥3s-idle debounce, G5); a
+	// save snapshots the generation it covers, and success only clears dirty
+	// when no keystrokes landed mid-flight — otherwise a follow-up save is
+	// scheduled. The buffer can never be marked clean unseen.
+	const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const editGenRef = useRef(0);
+	const inflightGenRef = useRef(0);
+	const armIdleTimer = (ms: number) => {
+		if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+		idleTimerRef.current = setTimeout(() => saveRef.current(), ms);
+	};
 	// PM keymap handlers run outside React — they read the popup state
 	// through refs kept current on every render.
 	const suggestionsRef = useRef<InsertSuggestion[]>([]);
@@ -348,6 +360,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 
 	const save = () => {
 		if (savingRef.current) return;
+		inflightGenRef.current = editGenRef.current;
 		const body = currentMarkdown();
 		latestMdRef.current = body;
 		const form = new FormData();
@@ -502,8 +515,11 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 				if (tr.docChanged) {
 					dirtyRef.current = true;
 					setDirty(true);
+					editGenRef.current += 1;
 					latestMdRef.current = serializeNoteDoc(newState.doc);
 					onMarkdown?.(latestMdRef.current);
+					// idle-based debounce: every keystroke re-arms the window
+					armIdleTimer(3000);
 				}
 				const al = autoLinkKey.getState(newState);
 				if (al?.announce) setAnnounce(al.announce);
@@ -541,12 +557,14 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// autosave: ≥3s idle debounce (G5)
+	// (idle-debounce autosave is armed imperatively in dispatchTransaction —
+	// a ref in a dep array is inert and setDirty(true→true) bails, which is
+	// exactly the CP-1 bug this replaces)
 	useEffect(() => {
-		if (!dirty || noteId === null) return;
-		const t = setTimeout(() => saveRef.current(), 3000);
-		return () => clearTimeout(t);
-	}, [dirty, latestMdRef.current, noteId]);
+		return () => {
+			if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+		};
+	}, []);
 
 	// flush on blur/navigation/visibilitychange (G5)
 	useEffect(() => {
@@ -574,8 +592,18 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		if (d.updated_at) {
 			baseRef.current = d.updated_at;
 			canaryRef.current = null; // canary reports once
-			dirtyRef.current = false;
-			setDirty(false);
+			if (editGenRef.current === inflightGenRef.current) {
+				dirtyRef.current = false;
+				setDirty(false);
+			} else {
+				// keystrokes landed while the save was in flight — the buffer
+				// stays dirty and a follow-up save covers them promptly (CP-1)
+				armIdleTimer(800);
+			}
+		} else if (d.code !== undefined && dirtyRef.current) {
+			// failed save: buffer preserved, loud state shown, and a real
+			// retry actually fires (the old machine never re-armed)
+			armIdleTimer(5000);
 		}
 	}, [fetcher.state, fetcher.data]);
 
