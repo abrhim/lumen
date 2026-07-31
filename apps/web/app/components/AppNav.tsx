@@ -17,7 +17,6 @@ const SECTIONS = [
 	{ to: "/", label: "Scripture", match: /^\/($|scripture|word)/ },
 	{ to: "/notes", label: "Notes", match: /^\/notes/ },
 	{ to: "/collections", label: "Collections", match: /^\/(collections|media|strongs|art)/ },
-	{ to: "/me", label: "Me", match: /^\/me/ },
 	{ to: "/about", label: "About", match: /^\/about/ },
 	{ to: "/roadmap", label: "Roadmap", match: /^\/roadmap/ },
 ] as const;
@@ -80,6 +79,17 @@ function items(pathname: string, itemClass: string, masthead: boolean) {
 				className={`${itemClass} text-muted-foreground hover:text-ink`}
 			>
 				Search <span className="font-normal text-[11px] text-muted-foreground">⌘K</span>
+			</Link>
+			<Link
+				to="/me"
+				aria-current={/^\/me/.test(pathname) ? "page" : undefined}
+				className={`${itemClass} ${
+					/^\/me/.test(pathname)
+						? "text-ink underline decoration-dotted underline-offset-4"
+						: "text-muted-foreground hover:text-ink"
+				}`}
+			>
+				Me
 			</Link>
 		</>
 	);
