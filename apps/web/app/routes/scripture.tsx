@@ -1019,14 +1019,14 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				</nav>
 			</header>
 
-			{/* Mobile only — desktop's stack lives at the top of the verse-detail
-			    rail (Abram's placement call); mobile has no rail, so discovery
-			    stays near the header. */}
+			{/* Chapter art rides the reading flow at every width (Abram,
+			    2026-07-31): below the summary, above the text. Prints nothing
+			    when a chapter has none. */}
 			<ChapterArtStack
 				art={art}
 				reference={reference}
 				galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
-				className="mt-6 lg:hidden"
+				className="mt-6 lg:col-start-1"
 			/>
 
 				<main className="mt-8 lg:col-start-1 lg:row-start-2">
@@ -1226,15 +1226,6 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 						className={`hidden lg:col-start-2 lg:block ${selected ? "lg:row-start-1 lg:row-span-2" : "lg:row-start-2 lg:mt-8"}`}
 						style={{ viewTransitionName: "verse-rail" }}
 					>
-						{/* a DISTINCT card above the verse detail — the whole card is
-						    the link to the chapter gallery (Abram's design) */}
-						<ChapterArtStack
-							art={art}
-							reference={reference}
-							galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
-							variant="card"
-							className="mb-4"
-						/>
 						<section
 							aria-label="Verse connections"
 							className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[22px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
