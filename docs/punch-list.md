@@ -63,7 +63,10 @@ Add freely; strike when shipped.
    in the rail, read it in a right-hand detail pane.
 6. **The detail pane reads the ref IN ITS ENTIRETY** — full chapter/talk/
    entry, not a snippet.
-7. **Notes need tags — with colors.**
+7. **Notes need tags — with colors.** Design (Abram, 2026-07-31): a new
+   table; each tag RLS'd to its creator (FK to the user, visible only to
+   them); a set of PLATFORM tags exists globally and users consume those
+   too. Colors on the tag row.
 
 ### Reader
 8. **Scripture stays CENTERED until a verse is clicked**; the verse detail
@@ -92,3 +95,29 @@ Add freely; strike when shipped.
     references and URLs.
 20. **Domain: scripture.study?** (Abram's own caveat: "not a normal
     domain" — undecided.)
+
+## Today's picks (2026-07-31) — lowest-hanging, zero external services
+
+In order:
+- **Layout consistency sweep** (already queued first) — width canon,
+  vertical rhythm, header anatomy; folds in item 8's centered-until-click
+  reader layout.
+- **Mobile verse detail: verse-only + no italics** (item 9) — small
+  conditional render + style fix in the reader rail.
+- **About page** (item 16) — static type.
+- **Roadmap page** (item 17) — static type; seed it from this punch list.
+- **Feedback form** (item 18) — internal sink: a `lumen.feedback` table,
+  RLS insert-only (signed-in or anon-with-honeypot), read by admin. No
+  external service.
+- **Priests of Noah node** (item 12) — author the entity + edges via the
+  admin DSN.
+- **Duplicate-name audit** (item 11, first half) — the report of duped
+  nodes; merges follow review.
+- **Stretch: tags v1** (item 7) — table + RLS + platform seed + chips on
+  the note page. Internal-only but the largest of the batch; runs as its
+  own small feature if the day has room.
+
+Deliberately NOT today: OAuth/Resend (external, queued), SCI + TSK
+ingests (datasets to source), GC links collection (content sourcing),
+MCP server (own feature), references-workspace redesign (the Panes era,
+its own feature-workflow run), domain (a purchase).
