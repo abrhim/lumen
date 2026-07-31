@@ -8,6 +8,9 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
 	testDir: "./e2e",
+	// pool hygiene: terminate zombie idle lumen_read sessions before the run
+	// (dev-server kills leak them; cap 15 — see support/global-setup.ts)
+	globalSetup: "./e2e/support/global-setup.ts",
 	fullyParallel: false,
 	workers: 1, // shared dev DB + session-pool cap 15 — never fan out
 	timeout: 30_000,

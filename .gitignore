@@ -22,3 +22,6 @@ data/podcasts/*/*
 
 # whisper-vs-deepgram eval: raw whisper outputs (large JSON), keep out of git
 docs/ops/whisper-vs-deepgram/out/
+
+# playwright artifacts
+apps/web/test-results/
