@@ -1090,10 +1090,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{hasDepth && (
 											<span
 												aria-hidden
-												className={`absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] rounded-[6px] p-[3px] -m-[3px] transition-colors duration-150 lg:hidden ${
+												className={`absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] rounded-[6px] p-[3px] -m-[3px] transition-[background-color,box-shadow] duration-150 group-hover:bg-paper lg:hidden ${
 													isActive
-														? "bg-paper ring-1 ring-selbar/40"
-														: "group-hover:bg-paper"
+														? "bg-paper ring-1 ring-selbar/40 group-hover:ring-0"
+														: ""
 												}`}
 											>
 												{/* A15 (gate-ratified): the note RING takes the first slot;
@@ -1130,18 +1130,18 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{(signals || hasNote) && (
 											<span
 												aria-hidden
-												className={`absolute bottom-0 left-full top-0 hidden w-[72px] rounded-r-lg transition-colors duration-150 lg:block ${
-													isActive ? "bg-sel" : "bg-transparent group-hover:bg-sel/40"
+												className={`absolute bottom-0 left-full top-0 hidden w-[72px] rounded-r-lg transition-colors duration-150 group-hover:bg-sel/40 lg:block ${
+													isActive ? "bg-sel" : "bg-transparent"
 												}`}
 											/>
 										)}
 										{(signals || hasNote) && (
 											<span
 												aria-hidden
-												className={`absolute left-[calc(100%+10px)] top-[1.15rem] hidden items-center gap-[5px] rounded-full px-[6px] py-[5px] -my-[5px] -mx-[6px] transition-colors duration-150 lg:flex ${
+												className={`absolute left-[calc(100%+10px)] top-[1.15rem] hidden items-center gap-[5px] rounded-full px-[6px] py-[5px] -my-[5px] -mx-[6px] transition-[background-color,box-shadow] duration-150 group-hover:bg-paper lg:flex ${
 													isActive
-														? "bg-paper ring-1 ring-selbar/40"
-														: "group-hover:bg-paper"
+														? "bg-paper ring-1 ring-selbar/40 group-hover:ring-0"
+														: ""
 												}`}
 											>
 												{/* A15: ring first — the personal layer leads the cluster */}
