@@ -45,6 +45,16 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		throw new Response(`No chapters found for "${bookId}".`, { status: 404 });
 	}
 
+	// A one-chapter book has no contents page worth showing (Abram,
+	// 2026-07-31) — land in the reading. Same self-carried session headers
+	// as the alias 301 above; 302 because the list URL stays legitimate.
+	if (chapters.length === 1) {
+		const { headers } = await getSessionUser(request, context.cloudflare.env);
+		headers.set("Location", `/scripture/${bookId}/${chapters[0].chapter_number}`);
+		headers.set("Cache-Control", "private, no-store");
+		throw new Response(null, { status: 302, headers });
+	}
+
 	return {
 		bookId,
 		name: book?.name ?? bookId,

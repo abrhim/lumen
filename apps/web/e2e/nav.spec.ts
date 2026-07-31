@@ -122,3 +122,11 @@ test("the top-right cluster is gone; Search lives in the nav and summons the pal
 	await page.keyboard.press("Enter");
 	await expect(page).toHaveURL(/\/search\?q=faith/);
 });
+
+test("a one-chapter book lands in the reading, not a contents page", async ({ page }) => {
+	await page.goto("/scripture/enos");
+	await expect(page).toHaveURL("/scripture/enos/1");
+	// a many-chapter book keeps its contents page
+	await page.goto("/scripture/alma");
+	await expect(page).toHaveURL("/scripture/alma");
+});
