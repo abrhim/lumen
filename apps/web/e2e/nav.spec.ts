@@ -80,3 +80,21 @@ test("Me opens settings; theme applies and survives reload", async ({ page }) =>
 	// signed-in account register shows the address and a sign-out door
 	await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 });
+
+test("the top-right cluster is gone; Search lives in the nav and summons the palette", async ({
+	page,
+}) => {
+	await page.goto("/notes");
+	// no orb button, no menu button in the fixed chrome
+	expect(await page.locator(".fixed.right-4.top-4").count()).toBe(0);
+	await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
+
+	await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: /^Search/ }).click();
+	// the palette opens in place — no navigation
+	await expect(page.getByRole("searchbox", { name: "Search the library" })).toBeVisible();
+	await expect(page).toHaveURL("/notes");
+	// Esc closes; typing + Enter navigates to /search
+	await page.keyboard.type("faith");
+	await page.keyboard.press("Enter");
+	await expect(page).toHaveURL(/\/search\?q=faith/);
+});

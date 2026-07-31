@@ -8,7 +8,6 @@ import {
 	ScrollRestoration,
 	data,
 } from "react-router";
-import { AppMenu } from "~/components/AppMenu";
 import { AppNav } from "~/components/AppNav";
 import { SearchModal, SearchOrbAnchor } from "~/components/SearchModal";
 import { getSessionUser } from "~/lib/auth.server";
@@ -93,12 +92,11 @@ class SearchChromeBoundary extends Component<{ children: ReactNode }, { failed: 
 export default function App() {
 	return (
 		<>
-			<div className="fixed right-4 top-4 z-40 flex items-center gap-2">
-				<SearchChromeBoundary>
-					<SearchModal />
-				</SearchChromeBoundary>
-				<AppMenu />
-			</div>
+			{/* triggerless: the nav's Search word (and / + ⌘K) summon it; a
+			    crashed chrome degrades to the plain orb anchor, in flow */}
+			<SearchChromeBoundary>
+				<SearchModal hideTrigger />
+			</SearchChromeBoundary>
 			<AppNav />
 			<Outlet />
 		</>

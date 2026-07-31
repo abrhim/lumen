@@ -20,6 +20,15 @@ const SECTIONS = [
 	{ to: "/me", label: "Me", match: /^\/me/ },
 ] as const;
 
+function summonSearch(e: { preventDefault: () => void }) {
+	// the modal claims the summon by cancelling the event; if search chrome
+	// ever crashes, nothing claims it and the word degrades to plain
+	// navigation to /search — still a door (BRRU-3 posture)
+	const ev = new CustomEvent("lumen:open-search", { cancelable: true });
+	window.dispatchEvent(ev);
+	if (ev.defaultPrevented) e.preventDefault();
+}
+
 function items(pathname: string, itemClass: string) {
 	return (
 		<>
@@ -46,6 +55,13 @@ function items(pathname: string, itemClass: string) {
 					</Link>
 				);
 			})}
+			<Link
+				to="/search"
+				onClick={summonSearch}
+				className={`${itemClass} text-muted-foreground hover:text-ink`}
+			>
+				Search <span className="font-normal text-[11px] text-muted-foreground">⌘K</span>
+			</Link>
 		</>
 	);
 }

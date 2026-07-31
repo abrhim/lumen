@@ -43,7 +43,7 @@ export function SearchOrbAnchor() {
  * plain link — the modal never stacks over the page (F9). Focus-trap and
  * return-focus come from the house Radix Dialog/Sheet (Δ AU-3); which root
  * mounts is the matchMedia gate, same as AppMenu (Δ UU-5). */
-export function SearchModal() {
+export function SearchModal({ hideTrigger = false }: { hideTrigger?: boolean } = {}) {
 	// B19: mount the interactive modal client-only. SSR + first paint render the
 	// static anchor (unthrowable), so a render throw in the Radix/use-mobile
 	// subtree can only reach SearchChromeBoundary on the CLIENT, never reject the
@@ -58,11 +58,11 @@ export function SearchModal() {
 	// proxy-vs-source class as B-U2).
 	const onSearchPage = location.pathname.replace(/\/+$/, "") === "/search";
 
-	if (!mounted || onSearchPage) return <SearchOrbAnchor />;
-	return <SearchModalInteractive />;
+	if (!mounted || onSearchPage) return hideTrigger ? null : <SearchOrbAnchor />;
+	return <SearchModalInteractive hideTrigger={hideTrigger} />;
 }
 
-function SearchModalInteractive() {
+function SearchModalInteractive({ hideTrigger = false }: { hideTrigger?: boolean }) {
 	const [open, setOpen] = useState(false);
 	const [q, setQ] = useState("");
 	// B-U1 (Abram, live test) + B21: a pointer-opened modal must NOT return focus
@@ -76,6 +76,16 @@ function SearchModalInteractive() {
 	const navigate = useNavigate();
 	// B13: keyboard-avoidance offset for the fixed bottom Sheet (see effect below).
 	const [kbInset, setKbInset] = useState(0);
+
+	useEffect(() => {
+		const onSummon = (e: Event) => {
+			e.preventDefault();
+			openedByPointer.current = false;
+			setOpen(true);
+		};
+		window.addEventListener("lumen:open-search", onSummon);
+		return () => window.removeEventListener("lumen:open-search", onSummon);
+	}, []);
 
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -176,7 +186,7 @@ function SearchModalInteractive() {
 
 	return isMobile ? (
 		<Sheet open={open} onOpenChange={setOpen}>
-			<SheetTrigger asChild>{trigger}</SheetTrigger>
+			{!hideTrigger && <SheetTrigger asChild>{trigger}</SheetTrigger>}
 			<SheetContent
 				side="bottom"
 				className="px-6 pb-8"
@@ -204,7 +214,7 @@ function SearchModalInteractive() {
 		</Sheet>
 	) : (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger asChild>{trigger}</DialogTrigger>
+			{!hideTrigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
 			<DialogContent
 				showCloseButton={false}
 				aria-describedby={undefined}
