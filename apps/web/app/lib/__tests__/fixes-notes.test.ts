@@ -214,3 +214,21 @@ describe("B15/CP-16 — the anchor set is bounded and its deletes are batched", 
 		expect(order.indexOf("delete")).toBeGreaterThan(order.indexOf("upsert"));
 	});
 });
+
+// ─── note meta line (Abram, 2026-07-30): word + link counts ───
+
+import { countNoteWords } from "../notes-derive";
+
+describe("countNoteWords", () => {
+	it("counts plain words across lines", () => {
+		expect(countNoteWords("# Faith\n\nis a seed planted.\n")).toBe(5);
+	});
+	it("counts a wikilink as its label, never its syntax", () => {
+		expect(countNoteWords("see [[alma-32-21|Alma 32:21]] today")).toBe(4);
+		expect(countNoteWords("[[alma-32-21]]")).toBe(1); // label-less counts the ref as one token
+	});
+	it("empty and syntax-only bodies count zero", () => {
+		expect(countNoteWords("")).toBe(0);
+		expect(countNoteWords("\n\n**__**\n")).toBe(0);
+	});
+});

@@ -61,6 +61,18 @@ export function extractWikilinkRefs(bodyMd: string): string[] {
 	return refs;
 }
 
+/** Word count for the meta line: every line stripped to plain text first
+ * (wikilinks count as their label, syntax never counts), then whitespace
+ * tokens summed. */
+export function countNoteWords(bodyMd: string): number {
+	let n = 0;
+	for (const line of bodyMd.split("\n")) {
+		const stripped = stripNoteMarkdownLine(line);
+		if (stripped) n += stripped.split(/\s+/).length;
+	}
+	return n;
+}
+
 function cap(text: string, max: number): string {
 	if (text.length <= max) return text;
 	return text.slice(0, max - 1).trimEnd() + "…";

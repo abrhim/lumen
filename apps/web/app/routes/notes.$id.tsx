@@ -23,6 +23,7 @@ import { renderNoteHtml } from "~/lib/notes-render.server";
 import { canonicalizeNoteMarkdown, sanitizeWikilinkLabel } from "~/lib/notes-canonical.server";
 import {
 	deriveNoteTitle,
+	countNoteWords,
 	extractWikilinkRefs,
 	NOTE_BODY_MAX_BYTES,
 	NOTE_MAX_ANCHORS,
@@ -96,7 +97,16 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 			logEvent("note_anchor_invalid_ref", { ref_id: anchorParam.slice(0, 160) });
 		}
 		return data(
-			{ mode: "new" as const, note: null, title: null, html: null, anchor, linked: null },
+			{
+				mode: "new" as const,
+				note: null,
+				title: null,
+				html: null,
+				anchor,
+				linked: null,
+				words: 0,
+				linkCount: 0,
+			},
 			{ headers },
 		);
 	}
@@ -140,6 +150,10 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 			html: renderNoteHtml(bodyForRender, { demoteHeadings: true }),
 			anchor: null,
 			linked,
+			words: countNoteWords(note.body_md),
+			// body wikilinks only (deduped) — the count a writer can check by
+			// reading; anchors surface in the rail, not here
+			linkCount: extractWikilinkRefs(note.body_md).length,
 		},
 		{ headers },
 	);
@@ -652,7 +666,7 @@ function LinkedRegister({ label, items }: { label: string; items: LinkedItem[] }
 }
 
 export default function NotePage({ loaderData }: Route.ComponentProps) {
-	const { mode, note, title, html, anchor, linked } = loaderData;
+	const { mode, note, title, html, anchor, linked, words, linkCount } = loaderData;
 	const [editing, setEditing] = useState(mode === "new");
 	// wikilink hover/focus hint (aria-hidden — links already carry composed
 	// aria-labels; this is a sighted-reader enhancement)
@@ -784,6 +798,14 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 				}
 			>
 				<div className={hasRail ? "mx-auto w-full max-w-2xl lg:mx-0 lg:max-w-none" : undefined}>
+					<nav className="mb-6">
+						<Link
+							to="/notes"
+							className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:text-ink"
+						>
+							All notes
+						</Link>
+					</nav>
 					<EditorChunkBoundary onDismiss={note ? () => setEditing(false) : null}>
 						<Suspense
 							fallback={
@@ -827,6 +849,14 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			}
 		>
 			<div className={hasRail ? "mx-auto w-full max-w-2xl lg:mx-0 lg:max-w-none" : undefined}>
+			<nav className="mb-6">
+				<Link
+					to="/notes"
+					className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:text-ink"
+				>
+					All notes
+				</Link>
+			</nav>
 			<div className="flex items-baseline justify-between gap-4">
 				<h1
 					ref={h1Ref}
@@ -880,16 +910,17 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			</div>
 
 			{note ? (
-				<time
-					dateTime={note.updated_at}
-					className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
-				>
-					{new Intl.DateTimeFormat("en-GB", {
-						day: "numeric",
-						month: "short",
-						year: "numeric",
-					}).format(new Date(note.updated_at))}
-				</time>
+				<p className="mt-1 font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+					<time dateTime={note.updated_at}>
+						{new Intl.DateTimeFormat("en-GB", {
+							day: "numeric",
+							month: "short",
+							year: "numeric",
+						}).format(new Date(note.updated_at))}
+					</time>
+					{` · ${words} ${words === 1 ? "word" : "words"}`}
+					{linkCount > 0 ? ` · ${linkCount} ${linkCount === 1 ? "link" : "links"}` : null}
+				</p>
 			) : null}
 
 			{html ? (
@@ -905,14 +936,6 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 				/>
 			) : null}
 
-			<nav className="mt-12 border-t border-rule pt-4">
-				<Link
-					to="/notes"
-					className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:text-ink"
-				>
-					All notes
-				</Link>
-			</nav>
 			{deleteFetcher.data ? null : null}
 			</div>
 
