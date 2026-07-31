@@ -13,3 +13,4 @@ export * from './strongs';
 export * from './search';
 export * from './notes-refs';
 export * from './verse-counts';
+export * from './episode-index';

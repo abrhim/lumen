@@ -5,6 +5,7 @@ import {
 	anchorRefToPath,
 } from "@lumen/scripture/notes-refs";
 import { CHAPTER_VERSE_COUNTS } from "@lumen/scripture/verse-counts";
+import { EPISODE_INDEX } from "@lumen/scripture/episode-index";
 
 /**
  * personal-notes — the destination engine behind `[[` and ⌘K (v2, Abram's
@@ -166,6 +167,24 @@ export function suggestDestinations(rawQuery: string): InsertSuggestion[] {
 		for (const book of books.slice(0, 4)) {
 			const chapterCount = BOOK_CHAPTER_COUNTS[book] ?? 0;
 			for (let c = 1; c <= chapterCount; c++) push(chapterSuggestion(book, c));
+		}
+	}
+
+	// podcast episodes by NAME (Abram: "how does one reference unshaken?") —
+	// every query word must appear; the whole-episode ref is `id@0` (episode
+	// ids carry uppercase, which only the transcript shape admits)
+	if (query.length >= 3) {
+		const words = query.split(/\s+/).filter(Boolean);
+		for (const [id, name] of EPISODE_INDEX) {
+			const hay = name.toLowerCase();
+			if (words.every((w) => hay.includes(w))) {
+				push({
+					ref: `${id}@0`,
+					display: name.replace(/^Come Follow Me - /, ""),
+					kind: "transcript",
+					path: `/media/${encodeURIComponent(id)}`,
+				});
+			}
 		}
 	}
 

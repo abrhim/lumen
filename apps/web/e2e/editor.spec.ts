@@ -124,3 +124,15 @@ test("suggestion drilling: chapter pins, verses follow; digits filter prefix-the
 	await page.keyboard.type(" 2");
 	await expect(page.getByRole("option").first()).toContainText("Alma 63:2");
 });
+
+test("episodes match by name: [[elijah suggests the Unshaken episode", async ({ page }) => {
+	await page.goto("/notes/new");
+	await page.locator(".note-editor").click();
+	await page.keyboard.type("[[elijah");
+	const option = page.getByRole("option", { name: /Elijah's Ministry/ });
+	await expect(option).toBeVisible();
+	await option.click();
+	await expect(
+		page.locator(".note-editor [data-wikilink-ref='unshaken-RLirbnj-kGk@0']"),
+	).toHaveCount(1);
+});
