@@ -54,7 +54,7 @@ function items(pathname: string, itemClass: string, masthead: boolean) {
 						: `${itemClass} flex items-center gap-1.5 font-semibold tracking-tight text-ink hover:text-primary`
 				}
 			>
-				<LintelMark className={masthead ? "h-[22px] w-[27px] self-center translate-y-[1px]" : "h-[13px] w-[16px] self-center translate-y-[1px]"} />
+				<LintelMark className={masthead ? "h-[26px] w-[32px]" : "h-[15px] w-[18px]"} />
 				Lintel
 			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
