@@ -21,9 +21,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	headers.set("Content-Type", "application/json; charset=utf-8");
 	headers.set("Cache-Control", "private, no-store");
-	if (!user) {
-		return new Response(JSON.stringify({ error: "Sign in required" }), { status: 401, headers });
-	}
+	// guest posture (Abram, 2026-07-31): canon is public data — a signed-out
+	// composer's rail resolves verses/chapters/entities/episodes; NOTE refs
+	// still require the session (RLS) and are simply absent for guests.
 	const raw = new URL(request.url).searchParams.get("refs") ?? "";
 	// refs never contain commas (slugs, spaces, @timestamps only)
 	const refs = raw
@@ -33,7 +33,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		.slice(0, REFS_MAX);
 	const linked = await resolveLinkedCanon(context.db, refs);
 	// note links: USER session (RLS) — foreign/deleted uuids are absence
-	const noteRefs = refs.filter((r) => resolveAnchorRef(r)?.kind === "note");
+	const noteRefs = user ? refs.filter((r) => resolveAnchorRef(r)?.kind === "note") : [];
 	if (noteRefs.length > 0) {
 		const rows = await getNotesByIds(
 			request,

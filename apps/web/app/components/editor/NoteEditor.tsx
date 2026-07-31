@@ -62,7 +62,13 @@ export interface NoteEditorProps {
 	/** `[id, title]` of the writer's OWN notes (current note excluded) —
 	 * sources the `[[` notes leg and paste-a-note-URL labels */
 	noteIndex?: ReadonlyArray<readonly [string, string]>;
+	/** signed-out composing (Abram, 2026-07-31): everything works except
+	 * SAVE — the buffer rides localStorage and survives the sign-in trip */
+	guest?: boolean;
 }
+
+/** where a guest draft waits out the sign-in round trip */
+export const GUEST_DRAFT_KEY = "lumen-guest-draft";
 
 /* ─── mark input rules (**bold**, *italic*) ─── */
 
@@ -361,6 +367,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		onMarkdown,
 		onRefsChange,
 		noteIndex,
+		guest = false,
 	} = props;
 	// the mount-effect closure (handlePaste) reads the CURRENT index
 	const noteIndexRef = useRef(noteIndex);
@@ -478,7 +485,12 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		return view ? serializeNoteDoc(view.state.doc) : latestMdRef.current;
 	};
 
-	const save = () => {
+	const save = (explicit?: unknown) => {
+		if (guest) {
+			// only DELIBERATE saves speak; blur/visibility flushes stay silent
+			if (explicit) say("Sign in to save — your draft is kept on this device");
+			return;
+		}
 		if (savingRef.current) return;
 		inflightGenRef.current = editGenRef.current;
 		const body = currentMarkdown();
@@ -520,9 +532,26 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 
 	// mount the PM view once
 	useEffect(() => {
+		let startBody = initialBody;
+		if (noteId === null && initialBody === "") {
+			// a draft waiting out the sign-in trip (or a guest mid-compose)
+			try {
+				startBody = localStorage.getItem(GUEST_DRAFT_KEY) ?? "";
+			} catch {
+				startBody = "";
+			}
+		}
 		const doc = parseNoteMarkdown(
-			prefillAnchor && initialBody === "" ? `[[${prefillAnchor}]]\n` : initialBody,
+			prefillAnchor && startBody === "" ? `[[${prefillAnchor}]]\n` : startBody,
 		);
+		if (startBody !== initialBody) {
+			latestMdRef.current = startBody;
+			onMarkdown?.(startBody);
+			reportRefs(startBody);
+			dirtyRef.current = true;
+			// the signed-in return leg: the restored draft saves itself
+			if (!guest) armIdleTimer(1500);
+		}
 		// A19: the canary — compare C(loaded) to loaded, report on next save
 		const reserialized = canonicalizeNoteMarkdown(initialBody);
 		canaryRef.current = {
@@ -574,7 +603,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 					"Mod-z": undo,
 					"Shift-Mod-z": redo,
 					"Mod-s": () => {
-						saveRef.current();
+						saveRef.current(true);
 						return true;
 					},
 					// popup keys live in the PM keymap — a React handler on the
@@ -685,8 +714,17 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 					latestMdRef.current = serializeNoteDoc(newState.doc);
 					onMarkdown?.(latestMdRef.current);
 					reportRefs(latestMdRef.current);
-					// idle-based debounce: every keystroke re-arms the window
-					armIdleTimer(3000);
+					if (guest) {
+						// the draft IS the persistence layer for a guest
+						try {
+							localStorage.setItem(GUEST_DRAFT_KEY, latestMdRef.current);
+						} catch {
+							/* private mode — the buffer still lives in memory */
+						}
+					} else {
+						// idle-based debounce: every keystroke re-arms the window
+						armIdleTimer(3000);
+					}
 				}
 				const al = autoLinkKey.getState(newState);
 				if (al?.announce) say(al.announce);
@@ -759,6 +797,11 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		const d = fetcher.data;
 		if (!d) return;
 		if (d.updated_at) {
+			try {
+				localStorage.removeItem(GUEST_DRAFT_KEY);
+			} catch {
+				/* private mode */
+			}
 			baseRef.current = d.updated_at;
 			// (the canary's own `sent` flag is what makes it report once — it is
 			// set at submit time, so a failed save can never re-fire it: B49)
@@ -1080,7 +1123,19 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 			{/* B10: the combobox ARIA lives on the contenteditable PM mounts
 			    inside here (the focused element) — never on this wrapper. */}
 			<div className="mb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-rule pb-3">
-				{noteId !== null ? (
+				{guest ? (
+					<>
+						<a
+							href="/login?next=%2Fnotes%2Fnew"
+							className="font-ui text-sm text-ink underline decoration-dotted underline-offset-4 hover:text-primary"
+						>
+							Sign in to save
+						</a>
+						<span className="font-ui text-[12px] text-muted-foreground">
+							{dirty ? "Draft kept on this device" : "Nothing written yet"}
+						</span>
+					</>
+				) : noteId !== null ? (
 					<button
 						type="button"
 						onClick={onClose}
@@ -1097,6 +1152,8 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 						Save
 					</button>
 				)}
+				{!guest && (
+				<>
 				<span aria-live="polite" className="font-ui text-[12px] text-muted-foreground">
 					{fetcher.state !== "idle"
 						? "Saving…"
@@ -1125,6 +1182,8 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 							Load theirs
 						</button>
 					</>
+				)}
+				</>
 				)}
 				{failed && (
 					<button

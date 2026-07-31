@@ -187,8 +187,8 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: 6b6726b258b12fe0 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
-- harness-hash: d1f1d5f0d467cfa5 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
+- plan-hash: 9193dee25bf01234 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- harness-hash: e52ea24b241cb553 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
 
@@ -548,4 +548,14 @@ e2e flows 41–53 land with the Playwright infra (Q1).
   entries), episode/podcast references by name, linked-material side rail
   on the note page in BOTH postures with hover hints, live rail updates
   while typing (400ms-debounced api.notes-linked resource route).
+- HARNESS REVISION 3 (Abram-directed, 2026-07-31): guest posture — "Do as
+  much as possible until we *need* them to be signed in." F2's signed-out
+  contract re-ruled: /notes renders a guest invitation (notes: null),
+  /notes/new composes as guest (draft in localStorage GUEST_DRAFT_KEY,
+  live rail resolves CANON refs sessionless — note refs stay RLS-gated),
+  sign-in demanded only at save, the draft restores + self-saves on the
+  signed-in return leg. /notes/:id (real data) keeps the login redirect;
+  CF-41's next-param pin moved to that path; B4's cacheability pin now
+  expects 200 + private,no-store on /notes. notes.routes.test.ts revised
+  accordingly; e2e signed-out-sweep revised; guest-notes.spec.ts added.
 - Branch: feature/personal-notes.

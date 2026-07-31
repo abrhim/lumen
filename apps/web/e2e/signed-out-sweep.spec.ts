@@ -5,10 +5,17 @@ import { test, expect } from "@playwright/test";
  * The cheapest, highest-value spec in the layer (blast-radius).
  */
 
-test.describe("signed-out: the notes feature does not exist", () => {
-	test("/notes redirects to /login with a same-origin next", async ({ page }) => {
+test.describe("signed-out: private note DATA does not exist; composing does (guest posture, Abram 2026-07-31)", () => {
+	test("/notes shows the guest invitation, never a listing", async ({ page }) => {
 		await page.goto("/notes");
-		await expect(page).toHaveURL(/\/login\?next=%2Fnotes$/);
+		await expect(page).toHaveURL("/notes");
+		await expect(page.getByRole("link", { name: "Try writing one" })).toBeVisible();
+	});
+
+	test("/notes/new composes as guest with a sign-in-to-save door", async ({ page }) => {
+		await page.goto("/notes/new");
+		await expect(page.locator(".note-editor")).toBeVisible();
+		await expect(page.getByRole("link", { name: "Sign in to save" })).toBeVisible();
 	});
 
 	test("/notes/:id redirects without leaking existence", async ({ page }) => {
@@ -47,8 +54,9 @@ test.describe("signed-out: the notes feature does not exist", () => {
 });
 
 test("B4: notes responses are never cacheable (redirects included)", async ({ request }) => {
+	// guest posture: /notes renders (200) — still never cacheable
 	const res = await request.get("/notes", { maxRedirects: 0 });
-	expect(res.status()).toBe(302);
+	expect(res.status()).toBe(200);
 	expect(res.headers()["cache-control"]).toBe("private, no-store");
 	const res2 = await request.get("/notes/00000000-0000-0000-0000-000000000000", {
 		maxRedirects: 0,

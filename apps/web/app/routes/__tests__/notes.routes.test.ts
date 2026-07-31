@@ -41,14 +41,24 @@ beforeEach(() => {
 	vi.mocked(getSessionUser).mockResolvedValue(SIGNED_OUT);
 });
 
-describe("harness F2 — signed-out users never meet the notes surface", () => {
-	it("/notes redirects to /login", async () => {
-		const res = (await notesIndexLoader(makeArgs("/notes"))) as Response;
-		expect(res.status).toBe(302);
-		expect(res.headers.get("Location")).toMatch(/^\/login/);
+describe("harness F2 (revised: guest posture, Abram 2026-07-31) — private DATA stays gated; composing does not", () => {
+	it("/notes signed-out renders the guest invitation (notes: null), never a listing", async () => {
+		const res = (await notesIndexLoader(makeArgs("/notes"))) as unknown as {
+			data: { notes: unknown };
+		};
+		expect(res.data.notes).toBeNull();
 	});
 
-	it("/notes/:id redirects to /login without leaking existence", async () => {
+	it("/notes/new signed-out composes as guest — no redirect, no note index", async () => {
+		const res = (await noteLoader(makeArgs("/notes/new"))) as unknown as {
+			data: { mode: string; guest: boolean; noteIndex: unknown[] };
+		};
+		expect(res.data.mode).toBe("new");
+		expect(res.data.guest).toBe(true);
+		expect(res.data.noteIndex).toEqual([]);
+	});
+
+	it("/notes/:id (real data) still redirects to /login without leaking existence", async () => {
 		const res = (await noteLoader(makeArgs("/notes/some-uuid"))) as Response;
 		expect(res.status).toBe(302);
 		expect(res.headers.get("Location")).toMatch(/^\/login/);
@@ -103,8 +113,8 @@ describe("harness A13/A18 — contract pins from synthesis", () => {
 	});
 
 	it("CF-41: the signed-out redirect carries a same-origin next param", async () => {
-		const res = (await notesIndexLoader(makeArgs("/notes"))) as Response;
-		expect(res.headers.get("Location")).toBe("/login?next=%2Fnotes");
+		const res = (await noteLoader(makeArgs("/notes/some-uuid"))) as Response;
+		expect(res.headers.get("Location")).toBe("/login?next=%2Fnotes%2Fsome-uuid");
 	});
 });
 

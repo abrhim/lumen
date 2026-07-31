@@ -120,7 +120,9 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	headers.set("Cache-Control", "private, no-store");
-	if (!user) return loginRedirect(request, headers);
+	// guest posture (Abram, 2026-07-31): composing needs no account — only
+	// SAVING does. Real note ids stay behind the redirect (private data).
+	if (!user && params.id !== "new") return loginRedirect(request, headers);
 
 	if (params.id === "new") {
 		// prefilled anchor from reader capture (A9): ?anchor=alma-32-21
@@ -133,10 +135,11 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		if (anchorParam && !anchor) {
 			logEvent("note_anchor_invalid_ref", { ref_id: anchorParam.slice(0, 160) });
 		}
-		const noteIndex = await loadNoteIndex(request, context.cloudflare.env, null);
+		const noteIndex = user ? await loadNoteIndex(request, context.cloudflare.env, null) : [];
 		return data(
 			{
 				mode: "new" as const,
+				guest: !user,
 				note: null,
 				title: null,
 				html: null,
@@ -208,6 +211,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 	return data(
 		{
 			mode: "read" as const,
+			guest: false,
 			note: { id: note.id, body_md: note.body_md, updated_at: note.updated_at },
 			title,
 			html: renderNoteHtml(bodyForRender, { demoteHeadings: true }),
@@ -764,7 +768,8 @@ const NoteArticle = memo(function NoteArticle({
 });
 
 export default function NotePage({ loaderData }: Route.ComponentProps) {
-	const { mode, note, title, html, anchor, linked, words, linkCount, noteIndex } = loaderData;
+	const { mode, note, title, html, anchor, linked, words, linkCount, noteIndex, guest } =
+		loaderData;
 	const [editing, setEditing] = useState(mode === "new");
 	// wikilink hover/focus hint (aria-hidden — links already carry composed
 	// aria-labels; this is a sighted-reader enhancement)
@@ -921,6 +926,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 							}
 						>
 							<NoteEditor
+								guest={guest}
 								noteIndex={noteIndex}
 								noteId={note?.id ?? null}
 								initialBody={note?.body_md ?? ""}

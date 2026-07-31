@@ -37,9 +37,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	if (!user) {
-		const redirectRes = loginRedirect(request, headers);
-		redirectRes.headers.set("Cache-Control", "private, no-store");
-		return redirectRes;
+		// guest posture (Abram, 2026-07-31): the section shows itself and
+		// invites a first note — sign-in is required only at SAVE
+		headers.set("Cache-Control", "private, no-store");
+		return data({ notes: null }, { headers });
 	}
 	const notes = await listNotes(request, context.cloudflare.env);
 	headers.set("Cache-Control", "private, no-store");
@@ -102,7 +103,24 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 				{announcement}
 			</div>
 
-			{notes.length === 0 ? (
+			{notes === null ? (
+				// guest posture: try first, sign in only to keep it
+				<div className="mt-10">
+					<p className="font-reading text-[17px] leading-relaxed text-muted-foreground">
+						Write alongside the text — notes link verses, people, episodes, and
+						each other.
+					</p>
+					<Link
+						to="/notes/new"
+						className="mt-2 inline-block font-reading text-[17px] leading-relaxed text-ink underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:decoration-solid"
+					>
+						Try writing one
+					</Link>
+					<p className="mt-4 font-ui text-[12px] text-muted-foreground">
+						Saving asks you to sign in; your draft survives the trip.
+					</p>
+				</div>
+			) : notes.length === 0 ? (
 				// A9/CF-20: empty /notes speaks once in type — one italic line and a
 				// plain door. No empty-state card, no illustration.
 				<div className="mt-10">
