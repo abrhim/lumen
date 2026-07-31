@@ -27,7 +27,7 @@ export interface InsertSuggestion {
 	ref: string;
 	/** human display, e.g. "Alma 32:21" — also the inserted link's label */
 	display: string;
-	kind: "verse" | "chapter" | "entity" | "transcript" | "book";
+	kind: "verse" | "chapter" | "entity" | "transcript" | "book" | "note";
 	/** reader path when navigable (⌘↵ door) */
 	path: string | null;
 	/** row chip; falls back to kind */
@@ -109,7 +109,14 @@ function verseSuggestion(book: string, chapter: number, verse: number): InsertSu
 	};
 }
 
-export function suggestDestinations(rawQuery: string): InsertSuggestion[] {
+/** `[id, title]` rows of the writer's OWN notes (RLS-scoped upstream);
+ * the current note is excluded by the caller (no self-links offered). */
+export type NoteIndexEntry = readonly [string, string];
+
+export function suggestDestinations(
+	rawQuery: string,
+	noteIndex?: readonly NoteIndexEntry[],
+): InsertSuggestion[] {
 	const query = rawQuery.trim().toLowerCase().replace(/\./g, "");
 	if (query === "") return [];
 	const out: InsertSuggestion[] = [];
@@ -171,6 +178,27 @@ export function suggestDestinations(rawQuery: string): InsertSuggestion[] {
 			const chapterCount = BOOK_CHAPTER_COUNTS[book] ?? 0;
 			for (let c = 1; c <= chapterCount; c++) push(chapterSuggestion(book, c));
 		}
+	}
+
+	// the writer's own notes by TITLE (note-to-note links, Abram 2026-07-31)
+	// — every query word must appear; title-prefix matches rank first
+	if (noteIndex && query.length >= 2 && chapterNum === null) {
+		const words = query.split(/\s+/).filter(Boolean);
+		const prefix: InsertSuggestion[] = [];
+		const contains: InsertSuggestion[] = [];
+		for (const [id, title] of noteIndex) {
+			const hay = title.toLowerCase();
+			if (!words.every((w) => hay.includes(w))) continue;
+			const item: InsertSuggestion = {
+				ref: `note:${id}`,
+				display: title,
+				kind: "note",
+				path: `/notes/${id}`,
+				gloss: "note",
+			};
+			(hay.startsWith(words[0]) ? prefix : contains).push(item);
+		}
+		for (const item of [...prefix, ...contains].slice(0, 10)) push(item);
 	}
 
 	// entities by NAME — people, places, principles, events, symbols, eras,

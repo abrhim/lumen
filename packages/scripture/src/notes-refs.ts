@@ -19,7 +19,7 @@
  * (re-keyed by every M3 re-window) and must never be persisted (CF-18).
  */
 
-export type AnchorKind = 'verse' | 'chapter' | 'entity' | 'transcript';
+export type AnchorKind = 'verse' | 'chapter' | 'entity' | 'transcript' | 'note';
 
 export interface AnchorRef {
 	kind: AnchorKind;
@@ -62,6 +62,11 @@ const ENTITY_SHAPE = /^[a-z][a-z0-9]*(?:[ -][a-z0-9]+)*$/;
 const TRANSCRIPT_SHAPE = /^([A-Za-z0-9][A-Za-z0-9_-]*)@(\d+(?:\.\d+)?)$/;
 
 const ALL_DIGITS = /^\d+$/;
+/** Note-to-note links: `note:<uuid>` — the only ref shape carrying a colon.
+ * NOT an anchor kind in the DB (note_anchors CHECK excludes it); it lives
+ * in body wikilinks only, and every anchor write path filters it. Reads
+ * resolve through the user's RLS session, so a foreign uuid is absence. */
+const NOTE_SHAPE = /^note:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * Classify a stored anchor/wikilink ref. Returns null for anything outside
@@ -81,6 +86,11 @@ export function resolveAnchorRef(raw: string): AnchorRef | null {
 	// The volatile moment-id shape is rejected before anything else so a
 	// `#seq` capture can never be persisted by accident (CF-18).
 	if (ref.includes('#')) return null;
+
+	// `:` appears in exactly one shape — the note link (fail-closed otherwise)
+	if (ref.includes(':')) {
+		return NOTE_SHAPE.test(ref) ? { kind: 'note', ref } : null;
+	}
 
 	if (ref.includes('@')) {
 		const m = TRANSCRIPT_SHAPE.exec(ref);
@@ -156,5 +166,7 @@ export function anchorRefToPath(
 		}
 		case 'entity':
 			return resolveEntityPath?.(anchor.ref) ?? null;
+		case 'note':
+			return `/notes/${anchor.ref.slice(5)}`;
 	}
 }

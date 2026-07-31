@@ -1,4 +1,16 @@
-import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	Component,
+	Suspense,
+	lazy,
+	memo,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	type ReactNode,
+	type FocusEvent as ReactFocusEvent,
+	type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Link, data, redirect, useFetcher, useNavigate, useRevalidator } from "react-router";
 import {
 	AlertDialog,
@@ -15,6 +27,8 @@ import {
 	getNote,
 	getNoteAnchors,
 	softDeleteNote,
+	getNotesByIds,
+	listNotes,
 	syncNoteAnchors,
 	updateNote,
 } from "~/lib/notes.server";
@@ -24,12 +38,18 @@ import { canonicalizeNoteMarkdown, sanitizeWikilinkLabel } from "~/lib/notes-can
 import {
 	deriveNoteTitle,
 	countNoteWords,
+	deriveNoteSnippet,
 	extractWikilinkRefs,
 	NOTE_BODY_MAX_BYTES,
 	NOTE_MAX_ANCHORS,
 	UNTITLED_NOTE,
 } from "~/lib/notes-derive";
-import { resolveLinkedCanon, type LinkedCanon, type LinkedItem } from "~/lib/notes-linked.server";
+import {
+	resolveLinkedCanon,
+	mergeLinkedNotes,
+	type LinkedCanon,
+	type LinkedItem,
+} from "~/lib/notes-linked.server";
 import { resolveAnchorRef, type AnchorRef } from "@lumen/scripture/notes-refs";
 import { logEvent } from "~/lib/log.server";
 import type { Route } from "./+types/notes.$id";
@@ -78,6 +98,23 @@ export function headers({ loaderHeaders }: Route.HeadersArgs) {
 	return h;
 }
 
+/** `[id, title]` of the user's notes for the editor's `[[` notes leg —
+ * current note excluded (no self-links offered); absence on failure. */
+async function loadNoteIndex(
+	request: Request,
+	env: Parameters<typeof listNotes>[1],
+	excludeId: string | null,
+): Promise<Array<[string, string]>> {
+	try {
+		const rows = await listNotes(request, env);
+		return rows
+			.filter((r) => r.id !== excludeId)
+			.map((r): [string, string] => [r.id, r.title_line?.trim() || "Untitled note"]);
+	} catch {
+		return [];
+	}
+}
+
 export async function loader({ request, params, context }: Route.LoaderArgs) {
 	// A16 kill switch: off = the pre-feature shape (this route never existed)
 	if (!notesEnabled(context.cloudflare.env)) throw new Response(null, { status: 404 });
@@ -96,6 +133,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		if (anchorParam && !anchor) {
 			logEvent("note_anchor_invalid_ref", { ref_id: anchorParam.slice(0, 160) });
 		}
+		const noteIndex = await loadNoteIndex(request, context.cloudflare.env, null);
 		return data(
 			{
 				mode: "new" as const,
@@ -106,6 +144,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 				linked: null,
 				words: 0,
 				linkCount: 0,
+				noteIndex,
 			},
 			{ headers },
 		);
@@ -137,10 +176,34 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		const refs = [
 			...new Set([...anchors.map((a) => a.ref_id), ...extractWikilinkRefs(note.body_md)]),
 		];
-		if (refs.length > 0) linked = await resolveLinkedCanon(context.db, refs);
+		if (refs.length > 0) {
+			linked = await resolveLinkedCanon(context.db, refs);
+			// note links resolve through the USER session (RLS), never the
+			// canon connection — a foreign uuid is absence, not a leak
+			const noteRefs = refs.filter(
+				(r) => resolveAnchorRef(r)?.kind === "note" && r.slice(5) !== note.id,
+			);
+			if (noteRefs.length > 0) {
+				const rows = await getNotesByIds(
+					request,
+					context.cloudflare.env,
+					noteRefs.map((r) => r.slice(5)),
+				);
+				mergeLinkedNotes(
+					linked,
+					noteRefs,
+					rows.map((r) => ({
+						id: r.id,
+						title_line: r.title_line,
+						snippet: deriveNoteSnippet(r.body_md) || null,
+					})),
+				);
+			}
+		}
 	} catch {
 		linked = null;
 	}
+	const noteIndex = await loadNoteIndex(request, context.cloudflare.env, note.id);
 
 	return data(
 		{
@@ -150,6 +213,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 			html: renderNoteHtml(bodyForRender, { demoteHeadings: true }),
 			anchor: null,
 			linked,
+			noteIndex,
 			words: countNoteWords(note.body_md),
 			// body wikilinks only (deduped) — the count a writer can check by
 			// reading; anchors surface in the rail, not here
@@ -199,6 +263,8 @@ function readAnchors(form: FormData): AnchorsRead {
 			logEvent("note_anchor_invalid_ref", { ref_id: ref.slice(0, 160) });
 			return { ok: false, code: "anchor_invalid" };
 		}
+		// note links are body content, never anchors (DB kind CHECK)
+		if (resolved.kind === "note") continue;
 		anchors.push(resolved);
 	}
 	return { ok: true, anchors };
@@ -222,6 +288,7 @@ function unionBodyRefs(formAnchors: AnchorRef[], bodyMd: string): AnchorRef[] {
 			}
 			continue;
 		}
+		if (resolved.kind === "note") continue;
 		const key = `${resolved.kind} ${resolved.ref}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
@@ -665,12 +732,48 @@ function LinkedRegister({ label, items }: { label: string; items: LinkedItem[] }
 	);
 }
 
+/** The rendered body is MEMOIZED with stable handler identities: every
+ * re-render that re-commits dangerouslySetInnerHTML replaces the DOM
+ * children, and a press straddling the swap never becomes a click (the
+ * dead-wikilink bug). Hint-state renders skip this subtree entirely. */
+const NoteArticle = memo(function NoteArticle({
+	html,
+	onOver,
+	onOut,
+	onFocusCap,
+	onBlurCap,
+}: {
+	html: string;
+	onOver: (e: ReactMouseEvent) => void;
+	onOut: (e: ReactMouseEvent) => void;
+	onFocusCap: (e: ReactFocusEvent) => void;
+	onBlurCap: () => void;
+}) {
+	return (
+		<article
+			className="note-body mt-8 font-reading text-[17px] leading-relaxed text-ink"
+			// server-rendered by the constrained, escaping renderer (D4/F6);
+			// hover/focus hints delegate off the wikilinks' data-ref
+			onMouseOver={onOver}
+			onMouseOut={onOut}
+			onFocusCapture={onFocusCap}
+			onBlurCapture={onBlurCap}
+			dangerouslySetInnerHTML={{ __html: html }}
+		/>
+	);
+});
+
 export default function NotePage({ loaderData }: Route.ComponentProps) {
-	const { mode, note, title, html, anchor, linked, words, linkCount } = loaderData;
+	const { mode, note, title, html, anchor, linked, words, linkCount, noteIndex } = loaderData;
 	const [editing, setEditing] = useState(mode === "new");
 	// wikilink hover/focus hint (aria-hidden — links already carry composed
 	// aria-labels; this is a sighted-reader enhancement)
 	const [hint, setHint] = useState<{ ref: string; top: number; left: number } | null>(null);
+	const showHintForRef = useRef<(t: EventTarget | null) => void>(() => {});
+	const artOver = useCallback((e: ReactMouseEvent) => showHintForRef.current(e.target), []);
+	const artOut = useCallback((e: ReactMouseEvent) => showHintForRef.current(e.relatedTarget), []);
+	const artFocus = useCallback((e: ReactFocusEvent) => showHintForRef.current(e.target), []);
+	const artBlur = useCallback(() => setHint(null), []);
 	const showHintFor = (target: EventTarget | null) => {
 		const el = (target as HTMLElement | null)?.closest?.("[data-ref]");
 		const ref = el?.getAttribute("data-ref");
@@ -685,6 +788,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			setHint(null);
 		}
 	};
+	showHintForRef.current = showHintFor;
 	// belt: while a hint is open, ANY pointer entry outside a wikilink or
 	// the hint itself dismisses it (delegated events over injected HTML
 	// don't reliably cover every exit path)
@@ -767,7 +871,8 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 		activeLinked.verses.length +
 			activeLinked.chapters.length +
 			activeLinked.entities.length +
-			activeLinked.media.length >
+			activeLinked.media.length +
+			(activeLinked.notes?.length ?? 0) >
 			0;
 	const preview = hint ? activeLinked?.previews[hint.ref] : null;
 
@@ -784,6 +889,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 				<LinkedRegister label="Chapters" items={activeLinked.chapters} />
 				<LinkedRegister label="People & topics" items={activeLinked.entities} />
 				<LinkedRegister label="Heard in" items={activeLinked.media} />
+				<LinkedRegister label="Notes" items={activeLinked.notes ?? []} />
 			</section>
 		</aside>
 	);
@@ -815,6 +921,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 							}
 						>
 							<NoteEditor
+								noteIndex={noteIndex}
 								noteId={note?.id ?? null}
 								initialBody={note?.body_md ?? ""}
 								initialUpdatedAt={note?.updated_at ?? null}
@@ -912,10 +1019,14 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			{note ? (
 				<p className="mt-1 font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
 					<time dateTime={note.updated_at}>
+						{/* timeZone pinned: SSR (UTC worker) and the client must
+						    print the SAME text or hydration replaces the article —
+						    which kills any in-flight click on its links */}
 						{new Intl.DateTimeFormat("en-GB", {
 							day: "numeric",
 							month: "short",
 							year: "numeric",
+							timeZone: "UTC",
 						}).format(new Date(note.updated_at))}
 					</time>
 					{` · ${words} ${words === 1 ? "word" : "words"}`}
@@ -924,15 +1035,12 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			) : null}
 
 			{html ? (
-				<article
-					className="note-body mt-8 font-reading text-[17px] leading-relaxed text-ink"
-					// server-rendered by the constrained, escaping renderer (D4/F6);
-					// hover/focus hints delegate off the wikilinks' data-ref
-					onMouseOver={(e) => showHintFor(e.target)}
-					onMouseOut={(e) => showHintFor(e.relatedTarget)}
-					onFocusCapture={(e) => showHintFor(e.target)}
-					onBlurCapture={() => setHint(null)}
-					dangerouslySetInnerHTML={{ __html: html }}
+				<NoteArticle
+					html={html}
+					onOver={artOver}
+					onOut={artOut}
+					onFocusCap={artFocus}
+					onBlurCap={artBlur}
 				/>
 			) : null}
 

@@ -67,6 +67,10 @@ export function lumenUrlToRef(raw: string, origin?: string | null): string | nul
 		const ref = `${segs[1]}-${segs[2]}${verse ? `-${verse}` : ""}`;
 		return resolveAnchorRef(ref) ? ref : null;
 	}
+	if (segs[0] === "notes" && segs.length === 2) {
+		const ref = `note:${segs[1]}`;
+		return resolveAnchorRef(ref) ? ref : null;
+	}
 	if (segs[0] === "media" && segs.length === 2) {
 		const t = url.searchParams.get("t");
 		if (t !== null && /^\d+(\.\d+)?$/.test(t)) {

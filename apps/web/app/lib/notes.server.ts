@@ -254,9 +254,35 @@ export function validateAnchorRefs(
 			logEvent("note_anchor_invalid_ref", { ref_id: ref.slice(0, 160) });
 			return { ok: false, ref };
 		}
+		// note links are valid body content but never anchors (DB kind CHECK)
+		if (resolved.kind === "note") continue;
 		anchors.push(resolved);
 	}
 	return { ok: true, anchors };
+}
+
+/** Batch-read the user's own notes by id for note-link resolution (rail
+ * rows + hover previews). Rides the per-request session client, so RLS is
+ * the enforcement layer: a foreign or deleted uuid is simply absent — no
+ * existence signal leaks. Never throws (absence on failure). */
+export async function getNotesByIds(
+	request: Request,
+	env: AuthEnv,
+	ids: string[],
+): Promise<Array<{ id: string; title_line: string | null; body_md: string }>> {
+	if (ids.length === 0) return [];
+	try {
+		const db = notesClient(request, env);
+		const { data, error } = await db
+			.schema("lumen")
+			.from("notes")
+			.select("id, title_line, body_md")
+			.in("id", ids);
+		if (error) return [];
+		return (data ?? []) as Array<{ id: string; title_line: string | null; body_md: string }>;
+	} catch {
+		return [];
+	}
 }
 
 /* ─── writes ─── */

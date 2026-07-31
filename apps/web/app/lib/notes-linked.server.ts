@@ -25,6 +25,9 @@ export interface LinkedCanon {
 	chapters: LinkedItem[];
 	entities: LinkedItem[];
 	media: LinkedItem[];
+	/** the writer's own linked notes — resolved through the USER session
+	 * (RLS), never the canon connection; merged in by mergeLinkedNotes */
+	notes: LinkedItem[];
 	/** ref → hover-hint content for the body's wikilinks */
 	previews: Record<string, { title: string; snippet: string | null; href: string | null }>;
 }
@@ -70,7 +73,14 @@ type Db = { execute: (q: SQLWrapper) => Promise<unknown> };
  * throws — a failed leg just yields fewer rows (degradation is absence
  * here; the body text remains the source of truth). */
 export async function resolveLinkedCanon(db: Db, refs: string[]): Promise<LinkedCanon> {
-	const out: LinkedCanon = { verses: [], chapters: [], entities: [], media: [], previews: {} };
+	const out: LinkedCanon = {
+		verses: [],
+		chapters: [],
+		entities: [],
+		media: [],
+		notes: [],
+		previews: {},
+	};
 	const resolved = refs
 		.slice(0, LINKED_CAP)
 		.map((ref) => ({ ref, anchor: resolveAnchorRef(ref) }))
@@ -170,4 +180,29 @@ export async function resolveLinkedCanon(db: Db, refs: string[]): Promise<Linked
 	}
 
 	return out;
+}
+
+/** Merge user-note rows (fetched via the RLS session client — see
+ * notes.server.getNotesByIds) into a LinkedCanon, preserving the body's
+ * ref order. Unresolved ids (foreign, deleted) are absence, per the rail's
+ * degradation rule. */
+export function mergeLinkedNotes(
+	linked: LinkedCanon,
+	noteRefs: string[],
+	rows: Array<{ id: string; title_line: string | null; snippet: string | null }>,
+): void {
+	const byId = new Map(rows.map((r) => [r.id, r]));
+	for (const ref of noteRefs) {
+		const row = byId.get(ref.slice(5));
+		if (!row) continue;
+		const item: LinkedItem = {
+			ref,
+			title: row.title_line?.trim() || "Untitled note",
+			snippet: row.snippet,
+			href: `/notes/${row.id}`,
+			gloss: "note",
+		};
+		linked.notes.push(item);
+		linked.previews[item.ref] = { title: item.title, snippet: item.snippet, href: item.href };
+	}
 }

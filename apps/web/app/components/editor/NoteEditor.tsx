@@ -59,6 +59,9 @@ export interface NoteEditorProps {
 	/** fires whenever the doc's wikilink ref-set changes — feeds the live
 	 * composing rail (debounced upstream) */
 	onRefsChange?: (refs: string[]) => void;
+	/** `[id, title]` of the writer's OWN notes (current note excluded) —
+	 * sources the `[[` notes leg and paste-a-note-URL labels */
+	noteIndex?: ReadonlyArray<readonly [string, string]>;
 }
 
 /* ─── mark input rules (**bold**, *italic*) ─── */
@@ -349,8 +352,19 @@ class EditorBoundary extends Component<
 const FMT_COUNT_KEY = "lumen:fmt-count";
 
 function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }) {
-	const { noteId, initialBody, initialUpdatedAt, prefillAnchor, onClose, onMarkdown, onRefsChange } =
-		props;
+	const {
+		noteId,
+		initialBody,
+		initialUpdatedAt,
+		prefillAnchor,
+		onClose,
+		onMarkdown,
+		onRefsChange,
+		noteIndex,
+	} = props;
+	// the mount-effect closure (handlePaste) reads the CURRENT index
+	const noteIndexRef = useRef(noteIndex);
+	noteIndexRef.current = noteIndex;
 	const lastRefsKeyRef = useRef<string | null>(null);
 	const reportRefs = (md: string) => {
 		if (!onRefsChange) return;
@@ -628,7 +642,15 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 				const anchor = resolveAnchorRef(ref)!;
 				// B47/CP-52: the label the writer sees IS the label that gets
 				// stored — sanitize at the insert site, not only at serialize.
-				const label = insertLabel(selText.trim() !== "" ? selText : null, anchor.ref);
+				// A pasted note URL takes the note's TITLE (uuid labels are noise).
+				const noteTitle =
+					anchor.kind === "note"
+						? noteIndexRef.current?.find(([id]) => `note:${id}` === anchor.ref)?.[1]
+						: undefined;
+				const label = insertLabel(
+					selText.trim() !== "" ? selText : (noteTitle ?? null),
+					anchor.ref,
+				);
 				view.dispatch(
 					view.state.tr.replaceSelectionWith(
 						noteSchema.nodes.wikilink.create({ ref: anchor.ref, label }),
@@ -868,8 +890,11 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 	}, []);
 
 	const suggestions = useMemo(
-		() => (popup ? suggestDestinations(popup.insertPosture ? insertQuery : popup.query) : []),
-		[popup, insertQuery],
+		() =>
+			popup
+				? suggestDestinations(popup.insertPosture ? insertQuery : popup.query, noteIndex)
+				: [],
+		[popup, insertQuery, noteIndex],
 	);
 	// B48/CP-53: reset on list IDENTITY, not length — "alma 3" → "mosiah 3"
 	// yields equal-length lists with entirely different destinations, and a
@@ -1039,6 +1064,70 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 
 			{/* B10: the combobox ARIA lives on the contenteditable PM mounts
 			    inside here (the focused element) — never on this wrapper. */}
+			<div className="mb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-rule pb-3">
+				{noteId !== null ? (
+					<button
+						type="button"
+						onClick={onClose}
+						className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-ink"
+					>
+						Done
+					</button>
+				) : (
+					<button
+						type="button"
+						onClick={save}
+						className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-ink"
+					>
+						Save
+					</button>
+				)}
+				<span aria-live="polite" className="font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+					{fetcher.state !== "idle"
+						? "Saving…"
+						: stale
+							? "Changed elsewhere"
+							: failed
+								? "Save failed — edits kept, retrying on next change"
+								: dirty
+									? "Unsaved"
+									: "Saved"}
+				</span>
+				{stale && (
+					<>
+						<button
+							type="button"
+							onClick={() => resolveStale(true)}
+							className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
+						>
+							Keep mine
+						</button>
+						<button
+							type="button"
+							onClick={() => resolveStale(false)}
+							className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
+						>
+							Load theirs
+						</button>
+					</>
+				)}
+				{failed && (
+					<button
+						type="button"
+						onClick={save}
+						className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
+					>
+						Retry
+					</button>
+				)}
+				{/* A17: the one-line typographic legend, earned-quiet after ~3 formats */}
+				{fmtCount < 3 && (
+					<span className="ml-auto font-ui text-[11px] text-muted-foreground">
+						<strong className="font-semibold">⌘B</strong> bold · <em>⌘I italic</em> · # heading ·
+						- list · &gt; quote · [[ link
+					</span>
+				)}
+			</div>
 			<div ref={mountRef} />
 
 			{/* caret-anchored popup: zero-height relative wrapper right after the
@@ -1121,70 +1210,6 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 			)}
 			</div>
 
-			<div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-rule pt-3">
-				{noteId !== null ? (
-					<button
-						type="button"
-						onClick={onClose}
-						className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-ink"
-					>
-						Done
-					</button>
-				) : (
-					<button
-						type="button"
-						onClick={save}
-						className="font-ui text-sm text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-ink"
-					>
-						Save
-					</button>
-				)}
-				<span aria-live="polite" className="font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-					{fetcher.state !== "idle"
-						? "Saving…"
-						: stale
-							? "Changed elsewhere"
-							: failed
-								? "Save failed — edits kept, retrying on next change"
-								: dirty
-									? "Unsaved"
-									: "Saved"}
-				</span>
-				{stale && (
-					<>
-						<button
-							type="button"
-							onClick={() => resolveStale(true)}
-							className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
-						>
-							Keep mine
-						</button>
-						<button
-							type="button"
-							onClick={() => resolveStale(false)}
-							className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
-						>
-							Load theirs
-						</button>
-					</>
-				)}
-				{failed && (
-					<button
-						type="button"
-						onClick={save}
-						className="font-ui text-[11px] font-semibold text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink"
-					>
-						Retry
-					</button>
-				)}
-				{/* A17: the one-line typographic legend, earned-quiet after ~3 formats */}
-				{fmtCount < 3 && (
-					<span className="ml-auto font-ui text-[11px] text-muted-foreground">
-						<strong className="font-semibold">⌘B</strong> bold · <em>⌘I italic</em> · # heading ·
-						- list · &gt; quote · [[ link
-					</span>
-				)}
-			</div>
 		</div>
 	);
 }
@@ -1194,7 +1219,10 @@ function collectBodyRefs(body: string): string[] {
 	const refs = new Set<string>();
 	for (const m of body.matchAll(/\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g)) {
 		const ref = m[1].trim();
-		if (resolveAnchorRef(ref)) refs.add(ref);
+		const resolved = resolveAnchorRef(ref);
+		// note links are body content, never anchors (the DB kind CHECK
+		// excludes them; the rail resolves them from the body instead)
+		if (resolved && resolved.kind !== "note") refs.add(ref);
 	}
 	return [...refs];
 }

@@ -1,6 +1,9 @@
 import { getSessionUser } from "~/lib/auth.server";
 import { notesEnabled } from "~/lib/notes-enabled";
-import { resolveLinkedCanon } from "~/lib/notes-linked.server";
+import { resolveLinkedCanon, mergeLinkedNotes } from "~/lib/notes-linked.server";
+import { resolveAnchorRef } from "@lumen/scripture/notes-refs";
+import { getNotesByIds } from "~/lib/notes.server";
+import { deriveNoteSnippet } from "~/lib/notes-derive";
 import type { Route } from "./+types/api.notes-linked";
 
 /**
@@ -29,6 +32,24 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		.filter(Boolean)
 		.slice(0, REFS_MAX);
 	const linked = await resolveLinkedCanon(context.db, refs);
+	// note links: USER session (RLS) — foreign/deleted uuids are absence
+	const noteRefs = refs.filter((r) => resolveAnchorRef(r)?.kind === "note");
+	if (noteRefs.length > 0) {
+		const rows = await getNotesByIds(
+			request,
+			context.cloudflare.env,
+			noteRefs.map((r) => r.slice(5)),
+		);
+		mergeLinkedNotes(
+			linked,
+			noteRefs,
+			rows.map((r) => ({
+				id: r.id,
+				title_line: r.title_line,
+				snippet: deriveNoteSnippet(r.body_md) || null,
+			})),
+		);
+	}
 	return new Response(JSON.stringify(linked), { status: 200, headers });
 }
 

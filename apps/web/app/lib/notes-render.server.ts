@@ -85,8 +85,11 @@ md.renderer.rules.wikilink = (tokens, idx, _opts, env) => {
 		return `<span class="note-wikilink-dead"${refAttr}>${text}</span>`;
 	}
 	const display = displayRef(ref);
+	// note links: the label IS the name — "Label — note:<uuid>" is noise
 	const ariaLabel =
-		label !== display ? ` aria-label="${neutralize(escapeHtml(`${label} — ${display}`))}"` : "";
+		anchor?.kind !== "note" && label !== display
+			? ` aria-label="${neutralize(escapeHtml(`${label} — ${display}`))}"`
+			: "";
 	return `<a href="${escapeHtml(path)}" class="note-wikilink"${refAttr}${ariaLabel}>${text}</a>`;
 };
 
