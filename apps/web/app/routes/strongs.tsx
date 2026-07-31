@@ -83,7 +83,7 @@ export default function Strongs({ loaderData }: Route.ComponentProps) {
 						<li key={e.strongs_no}>
 							<Link
 								to={`/word/${e.strongs_no}`}
-								className="flex items-baseline gap-4 py-2.5 outline-none transition-colors duration-150 hover:bg-sel/50 focus-visible:bg-sel/50"
+								className="-mx-4 flex items-baseline gap-4 rounded-lg px-4 py-2.5 outline-none transition-colors duration-150 hover:bg-sel/50 focus-visible:bg-sel/50"
 							>
 								<span className="w-16 shrink-0 font-ui text-[12px] tabular-nums text-muted-foreground">
 									{e.strongs_no}

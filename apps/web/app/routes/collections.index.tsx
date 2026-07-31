@@ -82,7 +82,7 @@ export default function CollectionsIndex({ loaderData }: Route.ComponentProps) {
 					<li key={d.to}>
 						<Link
 							to={d.to}
-							className="block py-6 outline-none transition-colors duration-150 hover:bg-sel/50 focus-visible:bg-sel/50"
+							className="-mx-5 block rounded-xl px-5 py-6 outline-none transition-colors duration-150 hover:bg-sel/50 focus-visible:bg-sel/50"
 						>
 							<span className="flex items-baseline justify-between gap-4">
 								<span className="font-display text-lg font-medium text-ink">{d.name}</span>
