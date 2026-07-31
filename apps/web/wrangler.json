@@ -3,7 +3,9 @@
   "name": "lumen",
   "main": "./workers/app.ts",
   "compatibility_date": "2025-10-08",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "observability": {
     "enabled": true
   },
@@ -27,5 +29,15 @@
     "SUPABASE_URL": "https://dsoekevnjqjfdntxhdhd.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-",
     "NOTES_ENABLED": "1"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "studylintel.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.studylintel.com",
+      "custom_domain": true
+    }
+  ]
 }

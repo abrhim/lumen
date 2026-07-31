@@ -25,6 +25,13 @@ const requestHandler = createRequestHandler(
 
 export default {
 	async fetch(request, env, ctx) {
+		// One canonical origin (2026-07-31): workers.dev and www 301 to the
+		// apex before anything else runs — no DB connection on redirects.
+		const url = new URL(request.url);
+		if (url.hostname.endsWith(".workers.dev") || url.hostname === "www.studylintel.com") {
+			url.hostname = "studylintel.com";
+			return Response.redirect(url.toString(), 301);
+		}
 		// Per-request client (plan amendment 1): Workers forbids cross-request
 		// socket reuse; Hyperdrive makes per-request connections cheap.
 		const { db, end } = createDb(env);
