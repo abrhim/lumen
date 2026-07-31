@@ -211,10 +211,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			userId: user?.id,
 			after,
 			surface: "api",
+			// B14 (CP-15): a notes-only scope skipped the canon engine — mark it
+			// so the event never reads as an unscoped search.
+			...(notesOnly ? { notesOnly: true } : {}),
+			// B42 (CP-45): on the reference short-circuit the notes group was
+			// DROPPED from the response — the log must match what shipped, so the
+			// discarded hits are marked skipped with hits: 0.
 			...(notesGroup
 				? {
 						extraGroups: {
-							notes: { hits: notesGroup.results.length, degraded: notesGroup.degraded === true },
+							notes: shortCircuit
+								? { hits: 0, degraded: notesGroup.degraded === true, skipped: true }
+								: { hits: notesGroup.results.length, degraded: notesGroup.degraded === true },
 						},
 					}
 				: {}),

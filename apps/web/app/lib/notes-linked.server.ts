@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQLWrapper } from "drizzle-orm";
 import { resolveAnchorRef, anchorRefToPath } from "@lumen/scripture/notes-refs";
 
 /**
@@ -61,7 +61,10 @@ function clip(text: string, max: number): string {
 	return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + "…";
 }
 
-type Db = { execute: (q: unknown) => Promise<unknown> };
+/** Structural slice of the drizzle handle — the parameter must accept what
+ * `sql` produces (an SQLWrapper), not `unknown`, or the real handle is not
+ * assignable to it (parameter contravariance). */
+type Db = { execute: (q: SQLWrapper) => Promise<unknown> };
 
 /** Resolve up to LINKED_CAP refs into rail rows + hover previews. Never
  * throws — a failed leg just yields fewer rows (degradation is absence

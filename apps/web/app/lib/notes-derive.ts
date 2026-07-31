@@ -13,6 +13,14 @@
  * CHECK (octet_length ≤ 65536) is the real wall. */
 export const NOTE_BODY_MAX_BYTES = 65536;
 
+/** B15/CP-16 — the anchor set was capped NOWHERE while `body_md` was capped
+ * four times over: a 64 KiB body of wikilinks legitimately yields thousands
+ * of refs, and every one is a row plus (pre-batching) a round trip against a
+ * pool of 15 and the Workers subrequest ceiling. 64 anchors is far above any
+ * real note and far below the blast radius. Lives here (not notes.server) so
+ * the route boundary can refuse before any client is built. */
+export const NOTE_MAX_ANCHORS = 64;
+
 export const NOTE_TITLE_MAX = 80;
 export const NOTE_SNIPPET_MAX = 200;
 export const UNTITLED_NOTE = "Untitled note";

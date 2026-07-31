@@ -24,14 +24,22 @@ export interface SearchLogContext {
 	after?: string;
 	/** personal-notes A4 (CF-4): route-layer groups merged OUTSIDE searchAll
 	 * (today: notes). Logged as a separate field so `zeroResult` and
-	 * `groups` stay pure canon-engine signals; absent signed-out. */
-	extraGroups?: Record<string, { hits: number; degraded: boolean }>;
+	 * `groups` stay pure canon-engine signals; absent signed-out.
+	 * B42 (CP-45): `skipped: true` marks a group the route DROPPED from the
+	 * response (reference short-circuit) — the log must never claim hits the
+	 * user never received. */
+	extraGroups?: Record<string, { hits: number; degraded: boolean; skipped?: boolean }>;
+	/** B14 (CP-15): signed-in `scope=notes` skips the canon engine entirely
+	 * (synthetic `mode: "none"` response). Logged explicitly so notes-only
+	 * searches are identifiable in the stream instead of masquerading as
+	 * unscoped (`scope: null`) relevance failures. */
+	notesOnly?: boolean;
 }
 
 /** OBS-1: the one structured line the relevance-tuning loop feeds on.
  * ms is null in combined mode — per-group time is unmeasurable there (B24). */
 export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext): void {
-	const { q, scope, visibility, userId, after, surface, extraGroups } = ctx;
+	const { q, scope, visibility, userId, after, surface, extraGroups, notesOnly } = ctx;
 	const perGroupMs: Record<string, number | null> = {};
 	const groupHits: Record<string, number> = {};
 	let degraded = false;
@@ -55,8 +63,12 @@ export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext)
 		hasCursor: after !== undefined,
 		// OBS-2 again: a degraded request never counts as zeroResult. Δ OU-1:
 		// …and excluded from the zero-result denominator (page 2 of an
-		// exhausted group is not a relevance failure).
+		// exhausted group is not a relevance failure). B14 (CP-15): mode
+		// "none" means the canon engine never ran (notes-only scope's
+		// synthetic response, reference short-circuit) — a search that was
+		// never executed can't pollute the A4 zero-result denominator.
 		zeroResult:
+			result.meta.mode !== "none" &&
 			!degraded &&
 			after === undefined &&
 			result.groups.every((g) => g.results.length === 0) &&
@@ -70,6 +82,8 @@ export function logSearchExecuted(result: SearchResponse, ctx: SearchLogContext)
 		visibility,
 		...(visibility === "admin" ? { userId } : {}),
 		...(extraGroups ? { extraGroups } : {}),
+		// B14: the honest marker for the canon-engine-skipped scope.
+		...(notesOnly ? { notesOnly: true } : {}),
 	});
 }
 

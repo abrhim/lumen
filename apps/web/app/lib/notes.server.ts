@@ -6,7 +6,7 @@ import {
 } from "@lumen/scripture/search-types";
 import { resolveAnchorRef, type AnchorRef } from "@lumen/scripture/notes-refs";
 import { getAuth, type AuthEnv } from "./auth.server";
-import { deriveNoteSnippet, deriveNoteTitle } from "./notes-derive";
+import { deriveNoteSnippet, deriveNoteTitle, NOTE_MAX_ANCHORS } from "./notes-derive";
 import { logEvent } from "./log.server";
 
 /**
@@ -56,7 +56,13 @@ export type NoteWriteCause =
 	| "rls_denied"
 	| "not_found_or_forbidden"
 	| "constraint"
+	/** route-boundary refusals (oversized body, anchor cap) — emitted by the
+	 * action, never by failWrite; a permanently-failing autosave must be
+	 * visible to the operator (B26/CP-27a) */
 	| "validation"
+	/** PostgREST auth layer (PGRST3xx): expired/invalid JWT mid-write —
+	 * distinct from transport failure so session-expiry is actionable (B26b) */
+	| "auth"
 	| "network";
 
 export class NoteWriteError extends Error {
@@ -70,20 +76,39 @@ export class NoteWriteError extends Error {
 	}
 }
 
-/** PostgREST/PG error → one of five causes (CF-49). */
+/** PostgREST/PG error → one cause (CF-49). Codes are derived from THIS
+ * schema's DDL: 23xxx (check/fk/unique), 22001 (length), 22P02 (bad uuid /
+ * timestamptz literal — client-supplied `base_updated_at` lands here).
+ * PGRST116 is "no rows"; PGRST3xx is the auth layer (B26/CP-27). */
 export function classifyWriteError(error: { code?: string; message?: string }): {
 	cause: NoteWriteCause;
 	pgCode?: string;
 } {
 	const code = error.code ?? "";
 	if (code === "42501") return { cause: "rls_denied", pgCode: code };
-	if (/^23/.test(code) || code === "22001" || code === "22P02" || code === "2200N") {
+	if (/^23/.test(code) || code === "22001" || code === "22P02") {
 		return { cause: "constraint", pgCode: code };
 	}
 	if (code === "PGRST116") return { cause: "not_found_or_forbidden", pgCode: code };
+	if (/^PGRST3\d\d$/.test(code)) return { cause: "auth", pgCode: code };
 	if (code !== "") return { cause: "network", pgCode: code };
 	return { cause: "network" };
 }
+
+/** B13 (CP-14): the event carries NO free text from PG. Postgres renders the
+ * offending VALUE into its messages (22P02 echoes a client-supplied
+ * `base_updated_at` verbatim; PostgREST parse errors echo the filter string,
+ * which on the anchors path contains ref_ids) — so a non-allowlisted event
+ * would become a ref/user-value carrier. Cause + pg_code reproduce the error
+ * class; this table is the only human-readable text that ships. */
+const CAUSE_NOTE: Record<NoteWriteCause, string> = {
+	rls_denied: "row-level security refused the write",
+	not_found_or_forbidden: "no visible row for this id",
+	constraint: "table constraint rejected the row",
+	validation: "refused at the route boundary",
+	auth: "postgrest rejected the session token",
+	network: "transport or timeout",
+};
 
 function failWrite(op: string, error: { code?: string; message?: string }): never {
 	const { cause, pgCode } = classifyWriteError(error);
@@ -91,8 +116,10 @@ function failWrite(op: string, error: { code?: string; message?: string }): neve
 		op,
 		cause,
 		...(pgCode ? { pg_code: pgCode } : {}),
-		message: (error.message ?? "").slice(0, 200),
+		note: CAUSE_NOTE[cause],
 	});
+	// the Error's own message stays untouched — it never reaches a log or a
+	// response body (the action returns a fixed string), only a stack trace
 	throw new NoteWriteError(cause, error.message ?? "write failed", pgCode);
 }
 
@@ -110,15 +137,29 @@ function notesClient(request: Request, env: AuthEnv): SupabaseClient {
 
 const NOTES_LIST_LIMIT = 200;
 
-export async function listNotes(request: Request, env: AuthEnv): Promise<NoteRow[]> {
+/** B22 (CP-23): the index row. `body_md` is NOT in it — 200 bodies at the
+ * 64 KiB cap is 12.8 MB across the wire to render bounded titles. The
+ * bounded generated `title_line` (≤120 chars, raw markdown) is the same
+ * column the anchors embed already uses; the shared stripper turns it into
+ * the title. No schema change: the `snippet_source` column half of CP-23 is
+ * REJECTED on the record (a second derivation surface can drift from
+ * deriveNoteTitle/deriveNoteSnippet), so the index carries no snippet. */
+export interface NoteIndexRow {
+	id: string;
+	title_line: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export async function listNotes(request: Request, env: AuthEnv): Promise<NoteIndexRow[]> {
 	const { data, error } = await notesClient(request, env)
 		.schema("lumen")
 		.from("notes")
-		.select("id, body_md, created_at, updated_at")
+		.select("id, title_line, created_at, updated_at")
 		.order("updated_at", { ascending: false })
 		.limit(NOTES_LIST_LIMIT);
 	if (error) failWrite("list", error);
-	return (data ?? []) as NoteRow[];
+	return (data ?? []) as NoteIndexRow[];
 }
 
 export async function getNote(
@@ -176,7 +217,20 @@ export async function getChapterNoteAnchors(
 		.limit(CHAPTER_ANCHORS_LIMIT);
 	if (signal) query = query.abortSignal(signal);
 	const { data, error } = await query;
-	if (error) failWrite("chapter_anchors", error);
+	// B24 (CP-25): throw RAW — no failWrite here. scripture.tsx's never-throw
+	// wrapper is the sole caller and owns the single `note_anchors_degraded`
+	// emission; classifying through failWrite made every ordinary 750 ms abort
+	// emit note_write_failed too, inflating the exact write-failure signal the
+	// classifier exists to keep clean (A5 pins one event for this path).
+	if (error) {
+		// value-free by construction: the degraded event at the loader logs
+		// name+message, and PG messages can echo the ref_ids in our own filter
+		// string (B13's class) — so only the classified cause/code travel.
+		const { cause, pgCode } = classifyWriteError(error);
+		const err = new Error(pgCode ? `${cause} (${pgCode})` : cause);
+		err.name = "ChapterAnchorsError";
+		throw err;
+	}
 	// the to-one embed types as an array but returns an object at runtime
 	return (data ?? []) as unknown as NoteAnchorRow[];
 }
@@ -191,6 +245,9 @@ export function validateAnchorRefs(
 	raw: string[],
 ): { ok: true; anchors: AnchorRef[] } | { ok: false; ref: string } {
 	const anchors: AnchorRef[] = [];
+	// B15: mirror the route boundary's cap — no caller may hand an unbounded
+	// set to the write paths (the offending ref is the cap marker, not a ref)
+	if (raw.length > NOTE_MAX_ANCHORS) return { ok: false, ref: "" };
 	for (const ref of raw) {
 		const resolved = resolveAnchorRef(ref);
 		if (!resolved) {
@@ -255,12 +312,9 @@ export async function updateNote(
 	if (error) failWrite("update", error);
 	if (data && data.length > 0) {
 		const note = data[0] as NoteRow;
-		logEvent("note_updated", {
-			note_id: note.id,
-			body_len: args.body_md.length,
-			prev_updated_at: args.baseUpdatedAt,
-			new_updated_at: note.updated_at,
-		});
+		// B13 (CP-14): ids and sizes only — the base/new timestamps were outside
+		// the pinned field set and, per-user, are a write-cadence timeline
+		logEvent("note_updated", { note_id: note.id, body_len: args.body_md.length });
 		return { ok: true, note };
 	}
 	// 0 rows: stale base (note still visible) → 409 + current; else 404.
@@ -284,16 +338,10 @@ export async function syncNoteAnchors(
 	const have = new Set(existing.map((a) => `${a.kind} ${a.ref_id}`));
 	const toDelete = existing.filter((a) => !want.has(`${a.kind} ${a.ref_id}`));
 	const toInsert = anchors.filter((a) => !have.has(`${a.kind} ${a.ref}`));
-	for (const a of toDelete) {
-		const { error } = await supabase
-			.schema("lumen")
-			.from("note_anchors")
-			.delete()
-			.eq("note_id", noteId)
-			.eq("kind", a.kind)
-			.eq("ref_id", a.ref_id);
-		if (error) failWrite("anchor_delete", error);
-	}
+
+	// B15 (CP-16): INSERT FIRST, then delete. Delete-first meant a mid-sync
+	// failure was anchor LOSS; insert-first degrades to a superset, which the
+	// next save reconciles. Both halves are idempotent.
 	if (toInsert.length > 0) {
 		// double-capture is idempotent (CF-25): duplicates are ignored
 		const { error } = await supabase
@@ -304,6 +352,27 @@ export async function syncNoteAnchors(
 				{ onConflict: "note_id,kind,ref_id", ignoreDuplicates: true },
 			);
 		if (error) failWrite("anchor_insert", error);
+	}
+
+	// B15 (CP-16): ONE delete per kind (≤4 statements) instead of one round
+	// trip per removed row. N serialized subrequests inside a single Worker
+	// invocation walked into the subrequest ceiling and held N sessions
+	// against a pool cap of 15 — a documented incident class here.
+	const byKind = new Map<string, string[]>();
+	for (const a of toDelete) {
+		const bucket = byKind.get(a.kind);
+		if (bucket) bucket.push(a.ref_id);
+		else byKind.set(a.kind, [a.ref_id]);
+	}
+	for (const [kind, refIds] of byKind) {
+		const { error } = await supabase
+			.schema("lumen")
+			.from("note_anchors")
+			.delete()
+			.eq("note_id", noteId)
+			.eq("kind", kind)
+			.in("ref_id", refIds);
+		if (error) failWrite("anchor_delete", error);
 	}
 }
 
