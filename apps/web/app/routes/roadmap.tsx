@@ -13,16 +13,16 @@ const SECTIONS: Array<{ label: string; items: string[] }> = [
 	{
 		label: "Recently landed",
 		items: [
-			"Personal notes — links to verses, people, episodes, other notes, and the web",
-			"Write before signing in; an account is only needed to save",
+			"Notes, with links to verses, people, episodes, other notes, and web pages",
+			"Writing works signed out; an account is only needed to save",
 			"Global navigation, and a settings page",
-			"Strong's and Art as traversable collections",
+			"Browse pages for Strong's and for art",
 		],
 	},
 	{
 		label: "Now",
 		items: [
-			"Layout and typography consistency across every page",
+			"Consistent layout and typography on every page",
 			"Sign in with Google",
 			"A feedback form",
 		],
@@ -31,18 +31,18 @@ const SECTIONS: Array<{ label: string; items: string[] }> = [
 		label: "Next",
 		items: [
 			"Tags on notes, with colors",
-			"The references workspace — a note's sources readable beside it in full",
-			"Licensed cross-references replacing the generated set",
+			"A references panel on notes: read a linked source in full without leaving the note",
+			"Replace generated cross-references with a licensed set",
 			"The Scripture Citation Index",
-			"General Conference as linked sources",
+			"Link General Conference talks as sources",
 		],
 	},
 	{
 		label: "Later",
 		items: [
-			"A home worth returning to — resume where you left off, recent trails",
-			"Collection summary pages and collection-scoped study",
-			"The graph, opened wider",
+			"Home page: resume where you left off, recent activity",
+			"Summary pages for collections",
+			"More ways to explore the graph",
 		],
 	},
 ];
@@ -50,7 +50,7 @@ const SECTIONS: Array<{ label: string; items: string[] }> = [
 export default function Roadmap() {
 	return (
 		<PageFrame frame="column">
-			<PageHeader title="Roadmap" intro="Order, not dates." />
+			<PageHeader title="Roadmap" intro="In rough order. No dates." />
 			{SECTIONS.map((s) => (
 				<section key={s.label} aria-labelledby={`rm-${s.label}`} className="mt-8">
 					<h2

@@ -141,10 +141,10 @@ test("About and Roadmap exist, framed by the canon, linked from the home foot", 
 		.click();
 	await expect(page).toHaveURL("/about");
 	await expect(page.getByRole("heading", { name: "About", level: 1 })).toBeVisible();
-	await page.getByRole("link", { name: "where it's headed" }).click();
+	await page.getByRole("main").getByRole("link", { name: "roadmap" }).click();
 	await expect(page).toHaveURL("/roadmap");
 	await expect(page.getByRole("heading", { name: "Roadmap", level: 1 })).toBeVisible();
-	await expect(page.getByText("Order, not dates.")).toBeVisible();
+	await expect(page.getByText("In rough order. No dates.")).toBeVisible();
 });
 
 test("mobile pane carries the verse itself, roman; desktop rail does not", async ({ page }) => {
