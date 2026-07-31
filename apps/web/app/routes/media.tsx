@@ -526,9 +526,17 @@ const ParaBlock = memo(
 						{fmt(p.t)}
 					</button>
 					{captureEpisodeId !== "" && (
+						// B39 (CP-42): text-muted-foreground, matching the reader capture
+						// verbs — text-faint on these backgrounds is the documented AA
+						// failure class, and this NEW door must not shelter under the
+						// pre-existing .text-faint axe exclusion.
+						// B52 (CP-69): coarse pointers have no hover — the door stays
+						// visible on touch (full opacity: a reduced-alpha reveal would
+						// re-fail the AA contrast B39 just fixed; the muted token IS the
+						// quiet register). Fine pointers keep the hover/focus reveal.
 						<Link
 							to={`/notes/new?anchor=${encodeURIComponent(`${captureEpisodeId}@${p.t}`)}`}
-							className="mr-3 align-baseline font-ui text-xs font-semibold text-faint opacity-0 transition-opacity hover:text-primary hover:underline group-hover:opacity-100 focus-visible:opacity-100"
+							className="mr-3 align-baseline font-ui text-xs font-semibold text-muted-foreground transition-opacity hover:text-primary hover:underline focus-visible:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
 							aria-label={`New note at ${fmt(p.t)}`}
 						>
 							+ note

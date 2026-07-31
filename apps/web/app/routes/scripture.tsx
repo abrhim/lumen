@@ -923,6 +923,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			onCrossRefNavigate={onCrossRefNavigate}
 			noteRows={noteRowsFor(verse)}
 			canCapture={canCapture}
+			// B32: signed-in with a failed anchors leg — the loader's degraded
+			// shape is {canCapture: true, anchors: null} (A5/CP-8 wrapper).
+			notesDegraded={canCapture && noteAnchors === null}
 			captureVerseId={verse.id}
 			captureVerseRef={verse.reference}
 		/>
@@ -1446,6 +1449,50 @@ function NoteCaptureVerbs({ verseId, verseRef }: { verseId: string; verseRef: st
 	const appended =
 		fetcher.state === "idle" && fetcher.data?.ok === true && fetcher.data.undone !== true;
 	const failed = fetcher.state === "idle" && fetcher.data !== undefined && fetcher.data.ok !== true;
+	// B34 (CP-37): a 404 means the last-touched note is GONE (deleted) — a
+	// permanent state, not a transient save failure.
+	const lastNoteGone = failed && fetcher.data?.code === "not_found";
+
+	// B34: invalidate the stale pointer so every later capture on every verse
+	// degrades cleanly to the New-note door instead of 404ing forever.
+	useEffect(() => {
+		if (!lastNoteGone) return;
+		try {
+			localStorage.removeItem("lumen:last-note");
+		} catch {
+			// storage unavailable — dropping local state still un-wedges this page
+		}
+		setLast(null);
+	}, [lastNoteGone]);
+
+	// B37 (CP-40): the buttons unmount when the gloss replaces them (and vice
+	// versa) — a keyboard-driven capture must hand focus across the swap, the
+	// same B5 discipline this file keeps for "See all"/"Show fewer".
+	const openLinkRef = useRef<HTMLAnchorElement>(null);
+	const addBtnRef = useRef<HTMLButtonElement>(null);
+	const newLinkRef = useRef<HTMLAnchorElement>(null);
+	const keyboardCaptureRef = useRef(false);
+	const prevAppendedRef = useRef(false);
+	useEffect(() => {
+		const was = prevAppendedRef.current;
+		prevAppendedRef.current = appended;
+		if (!keyboardCaptureRef.current) return;
+		if (appended && !was) {
+			// append landed: the gloss's "open" link is the focus target
+			openLinkRef.current?.focus();
+		} else if (!appended && was) {
+			// undo landed: symmetric handoff back to the re-printed verb
+			keyboardCaptureRef.current = false;
+			(addBtnRef.current ?? newLinkRef.current)?.focus();
+		}
+	}, [appended]);
+	// B34+B37: when the 404 unmounts "Add to note" under a keyboard user,
+	// land on the New-note door instead of <body>.
+	useEffect(() => {
+		if (!lastNoteGone || !keyboardCaptureRef.current) return;
+		keyboardCaptureRef.current = false;
+		newLinkRef.current?.focus();
+	}, [lastNoteGone]);
 
 	const verbClass =
 		"font-ui text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:text-ink";
@@ -1456,14 +1503,19 @@ function NoteCaptureVerbs({ verseId, verseRef }: { verseId: string; verseRef: st
 				{appended && fetcher.data?.note_id ? (
 					<p className="font-ui text-[11px] text-muted-foreground">
 						Added to “{fetcher.data.title}” —{" "}
-						<Link to={`/notes/${fetcher.data.note_id}`} className="underline decoration-dotted underline-offset-2 hover:text-ink">
+						<Link
+							ref={openLinkRef}
+							to={`/notes/${fetcher.data.note_id}`}
+							className="underline decoration-dotted underline-offset-2 hover:text-ink"
+						>
 							open
 						</Link>{" "}
 						·{" "}
 						<button
 							type="button"
 							className="underline decoration-dotted underline-offset-2 hover:text-ink"
-							onClick={() => {
+							onClick={(e) => {
+								keyboardCaptureRef.current = e.detail === 0;
 								const d = fetcher.data!;
 								fetcher.submit(
 									{
@@ -1483,7 +1535,8 @@ function NoteCaptureVerbs({ verseId, verseRef }: { verseId: string; verseRef: st
 				) : null}
 				{failed ? (
 					<p className="font-ui text-[11px] text-muted-foreground">
-						That didn’t save — try again.
+						{/* B34: honest copy — "try again" was a lie for a deleted note */}
+						{lastNoteGone ? "That note is gone — start a new one." : "That didn’t save — try again."}
 					</p>
 				) : null}
 			</div>
@@ -1491,19 +1544,21 @@ function NoteCaptureVerbs({ verseId, verseRef }: { verseId: string; verseRef: st
 				<p className="flex gap-4">
 					{last !== null && (
 						<button
+							ref={addBtnRef}
 							type="button"
 							className={verbClass}
-							onClick={() =>
+							onClick={(e) => {
+								keyboardCaptureRef.current = e.detail === 0;
 								fetcher.submit(
 									{ intent: "append", anchor: verseId, label: verseRef },
 									{ method: "post", action: `/notes/${last.id}` },
-								)
-							}
+								);
+							}}
 						>
 							{fetcher.state !== "idle" ? "Adding…" : "Add to note"}
 						</button>
 					)}
-					<Link to={`/notes/new?anchor=${verseId}`} className={verbClass}>
+					<Link ref={newLinkRef} to={`/notes/new?anchor=${verseId}`} className={verbClass}>
 						New note
 					</Link>
 				</p>
@@ -1522,6 +1577,7 @@ function PanelBody({
 	onCrossRefNavigate,
 	noteRows,
 	canCapture,
+	notesDegraded,
 	captureVerseId,
 	captureVerseRef,
 }: {
@@ -1534,6 +1590,9 @@ function PanelBody({
 	onCrossRefNavigate: (verse: number) => void;
 	noteRows: Array<{ note_id: string; title: string; gloss: string }>;
 	canCapture: boolean;
+	/** B32: the anchors leg failed signed-in (canCapture true, anchors null) —
+	 * the register must say so instead of silently printing capture verbs. */
+	notesDegraded: boolean;
 	captureVerseId: string;
 	captureVerseRef: string;
 }) {
@@ -1583,6 +1642,15 @@ function PanelBody({
 								</Link>
 							)}
 						</>
+					)}
+					{/* B32 (rail): a degraded anchors leg otherwise prints ONLY capture
+					    verbs — indistinguishable from "no notes here". One quiet line;
+					    the print-nothing rules are untouched (signed-out: canCapture
+					    false; healthy empty: notesDegraded false). */}
+					{notesDegraded && (
+						<p className="font-ui text-[11px] text-muted-foreground">
+							Your notes are unavailable right now.
+						</p>
 					)}
 					{canCapture && <NoteCaptureVerbs verseId={captureVerseId} verseRef={captureVerseRef} />}
 				</div>

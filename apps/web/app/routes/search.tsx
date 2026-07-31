@@ -68,6 +68,10 @@ interface SearchLoaderData {
 	q: string;
 	/** Included groups from the URL, canonicalized; null = all seven. */
 	scope: GroupKey[] | null;
+	/** B53 (CP-70): signed-in `scope=notes` ran ONLY the notes leg — `scope`
+	 * stays null (no canon groups ran) but the client must not render the
+	 * all-canon-included ghost state. */
+	notesOnly: boolean;
 	/** Runtime-null on empty/keepTyping (F19 pins it); typed non-null because
 	 * the harness dereferences data.results on query paths without narrowing. */
 	results: ApiSearchPage;
@@ -161,7 +165,9 @@ export function buildPageFetchUrl({
 	after,
 }: {
 	q: string;
-	scope: GroupKey[];
+	/** B53: the notes-only page live-fetches `scope=notes` — the one
+	 * route-layer key the canon GroupKey union doesn't carry. */
+	scope: Array<GroupKey | "notes">;
 	after?: string;
 }): string {
 	const params = new URLSearchParams({
@@ -260,6 +266,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 	const base = {
 		scope: scope ?? null,
+		// B53: only the signed-in paths can render (signed-out notes scopes 400
+		// below), so the flag is safe to echo unconditionally.
+		notesOnly,
 		// See SearchLoaderData.results: null at runtime, non-null in the type.
 		results: null as unknown as ApiSearchPage,
 		referenceHref: null,
@@ -276,13 +285,28 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		// empty/keepTyping states.
 		let earlyHeaders: Headers | undefined;
 		if (deferredScopeError !== null) {
-			const session = await getSessionUser(request, context.cloudflare.env);
-			earlyHeaders = session.headers;
-			if (!session.user || !notesEnabled(context.cloudflare.env)) {
-				throw new Response(deferredScopeError, {
-					status: 400,
-					headers: withNoStore(earlyHeaders),
+			// B44 (CP-47): this early session read must honor the SAME 500
+			// contract as the main path — a session-pool throw here is a logged
+			// no-store 500, never a bare framework error page. The deliberate
+			// 400 above passes through untouched.
+			try {
+				const session = await getSessionUser(request, context.cloudflare.env);
+				earlyHeaders = session.headers;
+				if (!session.user || !notesEnabled(context.cloudflare.env)) {
+					throw new Response(deferredScopeError, {
+						status: 400,
+						headers: withNoStore(earlyHeaders),
+					});
+				}
+			} catch (err) {
+				if (err instanceof Response) throw err;
+				logSearchFailed(err, {
+					q: (rawQ ?? "").trim(),
+					scope,
+					visibility: "public",
+					surface: "page",
 				});
+				throw new Response("Search failed", { status: 500, headers: withNoStore() });
 			}
 		}
 		if (qResult.code === "q_required") {
@@ -358,10 +382,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			visibility,
 			userId: user?.id,
 			surface: "page",
+			// B14 (CP-15): notes-only skipped the canon engine — marked, never unscoped.
+			...(notesOnly ? { notesOnly: true } : {}),
+			// B42 (CP-45): the short-circuit response drops the notes group — the
+			// log matches the response (skipped, hits: 0), mirroring api.search.tsx.
 			...(notesGroup
 				? {
 						extraGroups: {
-							notes: { hits: notesGroup.results.length, degraded: notesGroup.degraded === true },
+							notes: shortCircuit
+								? { hits: 0, degraded: notesGroup.degraded === true, skipped: true }
+								: { hits: notesGroup.results.length, degraded: notesGroup.degraded === true },
 						},
 					}
 				: {}),
@@ -726,9 +756,15 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const navigate = useNavigate();
 	const navigation = useNavigation();
 
-	const included: GroupKey[] = (scopeParam as GroupKey[] | null) ?? [...GROUP_KEYS];
+	// B53 (CP-70): a notes-only search included NO canon groups — rendering
+	// them all lit would claim a full-library search that never ran.
+	const notesOnly = loaderData.notesOnly;
+	const included: GroupKey[] = notesOnly ? [] : ((scopeParam as GroupKey[] | null) ?? [...GROUP_KEYS]);
 	const excludedCount = GROUP_KEYS.length - included.length;
 	const singleScopeKey = included.length === 1 ? included[0] : null;
+	// B53: live typing on the notes-only page re-queries the notes leg, not
+	// the seven canon groups the URL excludes.
+	const fetchScope: Array<GroupKey | "notes"> = notesOnly ? ["notes"] : included;
 
 	const inputRef = useRef<HTMLInputElement>(null);
 	const mainRef = useRef<HTMLElement>(null);
@@ -829,7 +865,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		setLiveError(false);
 		debounceRef.current = window.setTimeout(() => {
 			liveQRef.current = next;
-			liveFetcher.load(buildPageFetchUrl({ q: next, scope: included }));
+			liveFetcher.load(buildPageFetchUrl({ q: next, scope: fetchScope }));
 		}, 350);
 	};
 
@@ -840,7 +876,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		window.clearTimeout(debounceRef.current);
 		setLiveError(false);
 		liveQRef.current = trimmed;
-		liveFetcher.load(buildPageFetchUrl({ q: trimmed, scope: included }));
+		liveFetcher.load(buildPageFetchUrl({ q: trimmed, scope: fetchScope }));
 	};
 
 	const display = live ?? (state === "results" || state === "reference" ? results : null);
@@ -875,7 +911,10 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const searchUrl = (nextQ: string, nextScope: GroupKey[]) => {
 		const params = new URLSearchParams();
 		if (nextQ) params.set("q", nextQ);
-		if (nextScope.length < GROUP_KEYS.length) params.set("scope", nextScope.join(","));
+		// B53: an unchanged notes-only scope re-commits as scope=notes — never
+		// the empty-scope 400, never a silent widening to all groups.
+		if (notesOnly && nextScope.length === 0) params.set("scope", "notes");
+		else if (nextScope.length < GROUP_KEYS.length) params.set("scope", nextScope.join(","));
 		const qs = params.toString();
 		return qs ? `/search?${qs}` : "/search";
 	};
@@ -1039,16 +1078,33 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		return { n: g.results.length, truncated: g.nextCursor !== undefined };
 	};
 
-	const totalShown = included.reduce((n, key) => n + (groupCount(key)?.n ?? 0), 0);
+	// B12 (CP-13): the notes section renders FIRST and its rows are result
+	// rows — they belong to the roving tab-stop set and the announced count.
+	// Signed-out responses never carry the key, so all of this stays inert.
+	const notesGroup = display?.groups.find((x) => x.key === "notes") ?? null;
+	const notesDegraded = (notesGroup as { degraded?: boolean } | null)?.degraded === true;
+	const notesRows = notesGroup && !notesDegraded ? notesGroup.results : [];
+	const notesShown = notesRows.length;
+
+	const canonShown = included.reduce((n, key) => n + (groupCount(key)?.n ?? 0), 0);
+	// B12: notes hits count — "0 results" with note rows on screen was a lie.
+	const totalShown = canonShown + notesShown;
 	const anyTruncated = included.some((key) => groupCount(key)?.truncated);
 	const hasRows = view === "results" && totalShown > 0;
 
 	// B15/AC-3: the roving tab-stop key. Default to the first rendered row so Tab
 	// reaches the list and ↑↓ work on a fresh SSR load; a stale key (after a query
 	// change) that matches no rendered row falls back to the first row.
+	// B12: notes rows join first, matching visual order — with notes-only
+	// matches the first note row IS the tab stop.
 	let firstRowKey: string | null = null;
 	const renderedKeys = new Set<string>();
 	if (view === "results" && display) {
+		for (const row of notesRows) {
+			const k = rowKey(row);
+			renderedKeys.add(k);
+			if (firstRowKey === null) firstRowKey = k;
+		}
 		for (const gk of included) {
 			const g = display.groups.find((x) => x.key === gk);
 			const gkRows = gk === singleScopeKey && mergedSingle ? mergedSingle : g?.results;
@@ -1068,7 +1124,9 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 		: view === "results"
 			? `${totalShown}${anyTruncated ? "+" : ""} ${totalShown === 1 ? "result" : "results"} for “${displayQ}”`
 			: view === "zero"
-				? `No results for “${displayQ}”`
+				? // B32 (CP-34): a degraded notes leg must be audible in the zero
+					// state too — silence would read as "no matching notes".
+					`No results for “${displayQ}”${notesDegraded ? " — your notes are unavailable right now" : ""}`
 				: view === "keepTyping"
 					? // B24/AC-8: parity with the sighted "Keep typing…" state.
 						`Keep typing — at least ${qMin} characters`
@@ -1182,6 +1240,15 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 
 				{showScopeLine && (
 					<ul className="mt-6 flex flex-wrap gap-x-4 gap-y-1.5">
+						{/* B53 (CP-70): the notes-only scope names itself — the canon
+						    pills below render excluded, so this line stops claiming a
+						    full-library search that never ran. */}
+						{notesOnly && (
+							<li className="py-1 font-ui text-sm font-semibold text-primary">
+								Your notes
+								<span className="sr-only"> — searching your notes only</span>
+							</li>
+						)}
 						{GROUP_KEYS.map((key) => {
 							const isIncluded = included.includes(key);
 							const count = isIncluded ? groupCount(key) : null;
@@ -1353,67 +1420,71 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 			)}
 
 			{view === "zero" && (
-				<p className="mt-12 max-w-prose font-reading text-[17px] leading-relaxed text-muted-foreground">
-					Nothing in the library matches <span className="not-italic">“{displayQ}”</span>
-					{excludedCount > 0 ? " in the included groups" : ""}. Try a broader phrase, a name, or
-					a book and chapter — “alma 32”.
-				</p>
+				<>
+					<p className="mt-12 max-w-prose font-reading text-[17px] leading-relaxed text-muted-foreground">
+						Nothing in the library matches <span className="not-italic">“{displayQ}”</span>
+						{excludedCount > 0 ? " in the included groups" : ""}. Try a broader phrase, a name, or
+						a book and chapter — “alma 32”.
+					</p>
+					{/* B32 (CP-34): a degraded notes leg was invisible exactly when canon
+					    came back empty — the one view where "no matching notes" is the
+					    misread A4 exists to prevent. Same copy as the results view. */}
+					{notesDegraded && (
+						<p className="mt-4 max-w-prose font-reading text-[15px] leading-relaxed text-muted-foreground">
+							Your notes are unavailable right now.
+						</p>
+					)}
+				</>
 			)}
 
 			{/* personal-notes A4/A15: the personal layer leads. Signed-out
 			    responses never contain this key, so nothing here can render.
 			    A degraded leg keeps the section with one plain line — absence
 			    would read as "no matching notes" (CF-4). */}
-			{view === "results" &&
-				display &&
-				(() => {
-					const g = display.groups.find((x) => x.key === "notes");
-					if (!g) return null;
-					const degraded = (g as { degraded?: boolean }).degraded === true;
-					if (g.results.length === 0 && !degraded) return null;
-					return (
-						<section className="mt-11">
-							<h2 className="flex items-center gap-2.5 pb-1">
-								<NotebookPenIcon
-									aria-hidden="true"
-									strokeWidth={1.8}
-									className="size-[1.05rem] flex-none text-faint"
+			{view === "results" && notesGroup && (notesShown > 0 || notesDegraded) && (
+				<section className="mt-11">
+					<h2 className="flex items-center gap-2.5 pb-1">
+						<NotebookPenIcon
+							aria-hidden="true"
+							strokeWidth={1.8}
+							className="size-[1.05rem] flex-none text-faint"
+						/>
+						<span className="font-display text-xl font-medium tracking-tight text-ink">
+							Your notes
+						</span>
+						{!notesDegraded && (
+							<span className="font-ui text-xs font-medium tabular-nums text-faint">
+								{notesShown}
+							</span>
+						)}
+						<Link
+							to="/notes"
+							className="relative ml-auto flex-none py-1 font-ui text-xs font-semibold text-primary transition-colors duration-150 after:absolute after:-inset-2 after:content-[''] hover:underline hover:underline-offset-4"
+						>
+							All notes →
+						</Link>
+					</h2>
+					{notesDegraded ? (
+						<p className="mt-2 max-w-prose font-reading text-[15px] leading-relaxed text-muted-foreground">
+							Your notes are unavailable right now.
+						</p>
+					) : (
+						<ol className="mt-2 max-w-prose list-none space-y-0.5 p-0">
+							{/* B12: these rows carry the roving tab-stop like every canon
+							    row below — notes-only matches stay Tab-reachable. */}
+							{notesRows.map((r) => (
+								<ResultRow
+									key={rowKey(r)}
+									groupKey="notes"
+									r={r}
+									tabStop={rowKey(r) === activeRowKey}
+									onFocus={() => setRovingKey(rowKey(r))}
 								/>
-								<span className="font-display text-xl font-medium tracking-tight text-ink">
-									Your notes
-								</span>
-								{!degraded && (
-									<span className="font-ui text-xs font-medium tabular-nums text-faint">
-										{g.results.length}
-									</span>
-								)}
-								<Link
-									to="/notes"
-									className="relative ml-auto flex-none py-1 font-ui text-xs font-semibold text-primary transition-colors duration-150 after:absolute after:-inset-2 after:content-[''] hover:underline hover:underline-offset-4"
-								>
-									All notes →
-								</Link>
-							</h2>
-							{degraded ? (
-								<p className="mt-2 max-w-prose font-reading text-[15px] leading-relaxed text-muted-foreground">
-									Your notes are unavailable right now.
-								</p>
-							) : (
-								<ol className="mt-2 max-w-prose list-none space-y-0.5 p-0">
-									{g.results.map((r) => (
-										<ResultRow
-											key={rowKey(r)}
-											groupKey="notes"
-											r={r}
-											tabStop={rowKey(r) === activeRowKey}
-											onFocus={() => setRovingKey(rowKey(r))}
-										/>
-									))}
-								</ol>
-							)}
-						</section>
-					);
-				})()}
+							))}
+						</ol>
+					)}
+				</section>
+			)}
 
 			{view === "results" &&
 				display &&

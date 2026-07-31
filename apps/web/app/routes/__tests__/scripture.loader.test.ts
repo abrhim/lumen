@@ -28,7 +28,8 @@ import { loader } from "../scripture";
 // Set-Cookies ride client-nav responses — unwrap for field assertions.
 const load = async (args: unknown) => {
 	const res = (await loader(args as never)) as unknown as { data?: unknown; init?: unknown };
-	return (res && typeof res === "object" && "data" in res ? res.data : res) as never;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (res && typeof res === "object" && "data" in res ? res.data : res) as any;
 };
 
 const mockVerses = [

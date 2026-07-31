@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, data, redirect, useFetcher, useNavigate, useRevalidator } from "react-router";
 import {
 	AlertDialog,
@@ -25,6 +25,7 @@ import {
 	deriveNoteTitle,
 	extractWikilinkRefs,
 	NOTE_BODY_MAX_BYTES,
+	NOTE_MAX_ANCHORS,
 	UNTITLED_NOTE,
 } from "~/lib/notes-derive";
 import { resolveLinkedCanon, type LinkedCanon, type LinkedItem } from "~/lib/notes-linked.server";
@@ -54,7 +55,9 @@ function loginRedirect(request: Request, headers: Headers): Response {
 	return redirect(`/login?next=${encodeURIComponent(url.pathname + url.search)}`, { headers });
 }
 
-function json(body: unknown, status: number, headers: Headers): Response {
+function json(body: unknown, status: number, headers?: Headers): Response {
+	// headers is optional so the catch-all can answer in-contract even when
+	// the session read itself is what threw (B23/CP-24)
 	const h = new Headers(headers);
 	h.set("Content-Type", "application/json; charset=utf-8");
 	h.set("Cache-Control", "private, no-store");
@@ -85,6 +88,13 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		// prefilled anchor from reader capture (A9): ?anchor=alma-32-21
 		const anchorParam = new URL(request.url).searchParams.get("anchor");
 		const anchor = anchorParam && resolveAnchorRef(anchorParam) ? anchorParam : null;
+		// B41 (CP-44): this param is minted by OUR capture doors, so an
+		// unresolvable ref is slug-map drift — a bug, not user garbage. Every
+		// POST path already logs it; the one insert path that silently nulled
+		// it was this one, which is exactly where a broken capture door hides.
+		if (anchorParam && !anchor) {
+			logEvent("note_anchor_invalid_ref", { ref_id: anchorParam.slice(0, 160) });
+		}
 		return data(
 			{ mode: "new" as const, note: null, title: null, html: null, anchor, linked: null },
 			{ headers },
@@ -155,55 +165,137 @@ export function shouldRevalidate({
 	return defaultShouldRevalidate;
 }
 
-function readAnchors(form: FormData): { ok: true; anchors: AnchorRef[] } | { ok: false; ref: string } {
+type AnchorsRead =
+	| { ok: true; anchors: AnchorRef[] }
+	| { ok: false; code: "anchor_invalid" }
+	| { ok: false; code: "anchor_limit" };
+
+function readAnchors(form: FormData): AnchorsRead {
+	const raw = form.getAll("anchor");
+	// B15 (CP-16): the anchor set is now bounded. Refuse before resolving so a
+	// pathological set costs nothing.
+	if (raw.length > NOTE_MAX_ANCHORS) return { ok: false, code: "anchor_limit" };
 	const anchors: AnchorRef[] = [];
-	for (const value of form.getAll("anchor")) {
-		const raw = String(value);
-		const resolved = resolveAnchorRef(raw);
+	for (const value of raw) {
+		const ref = String(value);
+		const resolved = resolveAnchorRef(ref);
 		if (!resolved) {
 			// allowlisted ref-bearing event (CF-49): an invalid ref from our own
 			// insert paths means client/slug-map drift — a bug, not user garbage
-			logEvent("note_anchor_invalid_ref", { ref_id: raw.slice(0, 160) });
-			return { ok: false, ref: raw };
+			logEvent("note_anchor_invalid_ref", { ref_id: ref.slice(0, 160) });
+			return { ok: false, code: "anchor_invalid" };
 		}
 		anchors.push(resolved);
 	}
 	return { ok: true, anchors };
 }
 
+/** B30 (CP-32): body wikilinks are anchors too — A13 says so, and the create
+ * branch only ever sent the prefill. Unlike form anchors (minted by our own
+ * capture doors, so a bad one is a bug and fails closed), a body ref is TYPED
+ * prose: an unresolvable one is skipped, never a refusal, or a typo would
+ * block the save. One log line per request bounds the drift signal. */
+function unionBodyRefs(formAnchors: AnchorRef[], bodyMd: string): AnchorRef[] {
+	const out = [...formAnchors];
+	const seen = new Set(out.map((a) => `${a.kind} ${a.ref}`));
+	let loggedInvalid = false;
+	for (const ref of extractWikilinkRefs(bodyMd)) {
+		const resolved = resolveAnchorRef(ref);
+		if (!resolved) {
+			if (!loggedInvalid) {
+				loggedInvalid = true;
+				logEvent("note_anchor_invalid_ref", { ref_id: ref.slice(0, 160) });
+			}
+			continue;
+		}
+		const key = `${resolved.kind} ${resolved.ref}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(resolved);
+	}
+	return out;
+}
+
+const encoder = new TextEncoder();
+const byteLen = (s: string) => encoder.encode(s).byteLength;
+
+/** B26 (CP-27a): the route's own 400s were invisible. A client bug producing
+ * permanently-failing oversized autosaves is A13's worst outcome class and had
+ * ZERO operator signal; `validation` was simultaneously dead vocabulary in the
+ * cause union. One event, same shape as the data layer's — no free text
+ * (B13), no body, no ref. */
+function refuse(
+	op: string,
+	code: "note_too_large" | "anchor_limit",
+	message: string,
+	headers?: Headers,
+): Response {
+	logEvent("note_write_failed", { op, cause: "validation", note: code });
+	return json({ error: message, code }, 400, headers);
+}
+
+const TOO_LARGE = "This note is too long to save";
+const TOO_MANY_ANCHORS = `A note can link at most ${NOTE_MAX_ANCHORS} references`;
+
 export async function action({ request, params, context }: Route.ActionArgs) {
 	const env = context.cloudflare.env;
 	if (!notesEnabled(env)) throw new Response(null, { status: 404 });
-	const { user, headers } = await getSessionUser(request, env);
-	if (!user) return json({ error: "Sign in required", code: "unauthenticated" }, 401, headers);
-
-	let form: FormData;
+	// B23 (CP-24): the session read lives INSIDE the try (mirroring
+	// api.search.tsx). Session-pool exhaustion is a documented incident class
+	// here, and a throw at this line used to escape the A13 JSON contract into
+	// the root ErrorBoundary — swapping the note page out from under a live
+	// editor buffer on exactly the failure the autosave contract promises to
+	// survive. `headers` stays reachable in the catch so rotation still rides.
+	let headers: Headers | undefined;
+	let intent = "";
 	try {
-		form = await request.formData();
-	} catch {
-		return json({ error: "Invalid form body", code: "form_invalid" }, 400, headers);
-	}
-	const intent = String(form.get("intent") ?? "");
+		const session = await getSessionUser(request, env);
+		headers = session.headers;
+		if (!session.user) {
+			return json({ error: "Sign in required", code: "unauthenticated" }, 401, headers);
+		}
 
-	try {
+		let form: FormData;
+		try {
+			form = await request.formData();
+		} catch {
+			return json({ error: "Invalid form body", code: "form_invalid" }, 400, headers);
+		}
+		intent = String(form.get("intent") ?? "");
+
 		switch (intent) {
 			case "create": {
 				if (params.id !== "new") {
 					return json({ error: "Create posts to /notes/new", code: "intent_invalid" }, 400, headers);
 				}
 				const rawBody = String(form.get("body_md") ?? "");
-				if (new TextEncoder().encode(rawBody).byteLength > NOTE_BODY_MAX_BYTES) {
-					return json({ error: "Note is too large", code: "note_too_large" }, 400, headers);
+				// cheap early-out; the real wall is the canonical measurement below
+				if (byteLen(rawBody) > NOTE_BODY_MAX_BYTES) {
+					return refuse("create", "note_too_large", TOO_LARGE, headers);
 				}
-				const anchors = readAnchors(form);
-				if (!anchors.ok) {
-					return json({ error: "Unknown reference", code: "anchor_invalid" }, 400, headers);
+				// A2: every save path stores C(md) — and B6 (CP-7): the DDL CHECK
+				// measures THOSE bytes. The serializer backslash-escapes ` * \ ~ [ ]
+				// (measured 2× on bracket-heavy input), so a body that clears the raw
+				// guard could still trip octet_length(65536) and come back as an
+				// opaque 500 the reader can neither see nor shrink.
+				const body = canonicalizeNoteMarkdown(rawBody);
+				if (byteLen(body) > NOTE_BODY_MAX_BYTES) {
+					return refuse("create", "note_too_large", TOO_LARGE, headers);
 				}
-				// A2: every save path stores C(md)
-				const note = await createNote(request, env, {
-					body_md: canonicalizeNoteMarkdown(rawBody),
-					anchors: anchors.anchors,
-				});
+				const formAnchors = readAnchors(form);
+				if (!formAnchors.ok) {
+					return formAnchors.code === "anchor_limit"
+						? refuse("create", "anchor_limit", TOO_MANY_ANCHORS, headers)
+						: json({ error: "Unknown reference", code: "anchor_invalid" }, 400, headers);
+				}
+				// B30: typed wikilinks become anchor rows at birth — leaving right
+				// after Save used to leave the note permanently unanchored (no reader
+				// dot, no rail row), self-healing only if a later autosave landed.
+				const anchors = unionBodyRefs(formAnchors.anchors, body);
+				if (anchors.length > NOTE_MAX_ANCHORS) {
+					return refuse("create", "anchor_limit", TOO_MANY_ANCHORS, headers);
+				}
+				const note = await createNote(request, env, { body_md: body, anchors });
 				return redirect(`/notes/${note.id}`, { headers });
 			}
 
@@ -212,27 +304,28 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 					return json({ error: "Not found", code: "not_found" }, 404, headers);
 				}
 				const rawBody = String(form.get("body_md") ?? "");
-				if (new TextEncoder().encode(rawBody).byteLength > NOTE_BODY_MAX_BYTES) {
-					return json({ error: "Note is too large", code: "note_too_large" }, 400, headers);
+				if (byteLen(rawBody) > NOTE_BODY_MAX_BYTES) {
+					return refuse("update", "note_too_large", TOO_LARGE, headers);
 				}
 				const base = String(form.get("base_updated_at") ?? "");
 				if (base === "") {
 					return json({ error: "base_updated_at required", code: "base_required" }, 400, headers);
 				}
 				const canonical = canonicalizeNoteMarkdown(rawBody);
+				// B6 (CP-7): the stored bytes are the canonical ones — measure those
+				if (byteLen(canonical) > NOTE_BODY_MAX_BYTES) {
+					return refuse("update", "note_too_large", TOO_LARGE, headers);
+				}
 				// A19 round-trip canary: the client compared C(loaded) to loaded on
-				// open and reports once, hash-only — never a body in the log.
+				// open and reports once, hash-only — never a body in the log. The
+				// hash is client-computed over the LOADED body (B49 server half:
+				// hashing `canonical` here described the wrong body — this action
+				// never holds the loaded one).
 				if (form.get("roundtrip_ok") === "false") {
-					const digest = await crypto.subtle.digest(
-						"SHA-256",
-						new TextEncoder().encode(canonical),
-					);
+					const rtSha = String(form.get("rt_sha") ?? "");
 					logEvent("note_roundtrip_violation", {
 						note_id: params.id,
-						body_sha256_16: [...new Uint8Array(digest)]
-							.slice(0, 8)
-							.map((b) => b.toString(16).padStart(2, "0"))
-							.join(""),
+						body_sha256_16: /^[0-9a-f]{16}$/.test(rtSha) ? rtSha : "unavailable",
 						len_stored: Number(form.get("rt_len_stored")) || 0,
 						len_reserialized: Number(form.get("rt_len_reserialized")) || 0,
 						first_diff_offset: Number(form.get("rt_first_diff")) || 0,
@@ -258,7 +351,19 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 								anchorsSynced = false; // note_write_failed already logged
 							}
 						} else {
-							anchorsSynced = false; // note_anchor_invalid_ref already logged
+							// B15's cap DEGRADES here rather than 400s: the body is already
+							// committed, and B3 forbids an anchor problem from surfacing as
+							// a whole-save failure (the client would keep a stale base and
+							// wedge into 409s). Create — where nothing is committed yet —
+							// refuses outright instead.
+							anchorsSynced = false;
+							if (anchors.code === "anchor_limit") {
+								logEvent("note_write_failed", {
+									op: "update",
+									cause: "validation",
+									note: "anchor_limit",
+								});
+							} // anchor_invalid already logged note_anchor_invalid_ref
 						}
 					}
 					return json(
@@ -303,14 +408,32 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				const body = canonicalizeNoteMarkdown(
 					note.body_md === "" ? `${line}\n` : `${note.body_md}\n${line}\n`,
 				);
+				// B6 (CP-7): append had NO size guard at all — capturing into a note
+				// at the cap was always an opaque 500 instead of a clean refusal.
+				if (byteLen(body) > NOTE_BODY_MAX_BYTES) {
+					return refuse("append", "note_too_large", TOO_LARGE, headers);
+				}
 				const result = await updateNote(request, env, {
 					id: params.id,
 					body_md: body,
 					baseUpdatedAt: note.updated_at,
 				});
 				if (!result.ok) {
+					// B46 (CP-50): A13 pins staleness → "409 + current row"; the capture
+					// intents returned a second, recovery-less shape for the same code.
 					return result.conflict
-						? json({ error: "Note changed elsewhere", code: "stale" }, 409, headers)
+						? json(
+								{
+									error: "Note changed elsewhere",
+									code: "stale",
+									current: {
+										body_md: result.conflict.body_md,
+										updated_at: result.conflict.updated_at,
+									},
+								},
+								409,
+								headers,
+							)
 						: json({ error: "Not found", code: "not_found" }, 404, headers);
 				}
 				// B3 (CP-3): body committed — anchor failure degrades, never 500s
@@ -358,24 +481,34 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				}
 				const note = await getNote(request, env, params.id);
 				if (!note) return json({ error: "Not found", code: "not_found" }, 404, headers);
-				if (note.updated_at !== base) {
-					return json({ error: "Note changed since capture", code: "stale" }, 409, headers);
-				}
+				// B46 (CP-50): every stale exit here carries the current row, the one
+				// shape A13 pins — the row is already in hand on all three paths.
+				const staleWith = (row: { body_md: string; updated_at: string }) =>
+					json(
+						{
+							error: "Note changed since capture",
+							code: "stale",
+							current: { body_md: row.body_md, updated_at: row.updated_at },
+						},
+						409,
+						headers,
+					);
+				if (note.updated_at !== base) return staleWith(note);
 				let prev: string | null = null;
 				if (note.body_md === `${line}\n`) prev = "";
 				else if (note.body_md.endsWith(`\n${line}\n`)) {
 					prev = note.body_md.slice(0, -(line.length + 2));
 				}
-				if (prev === null) {
-					return json({ error: "Note changed since capture", code: "stale" }, 409, headers);
-				}
+				if (prev === null) return staleWith(note);
 				const result = await updateNote(request, env, {
 					id: params.id,
 					body_md: prev,
 					baseUpdatedAt: base,
 				});
 				if (!result.ok) {
-					return json({ error: "Note changed since capture", code: "stale" }, 409, headers);
+					return result.conflict
+						? staleWith(result.conflict)
+						: json({ error: "Not found", code: "not_found" }, 404, headers);
 				}
 				if (form.get("anchor_was_new") === "1") {
 					const anchors = await getNoteAnchors(request, env, params.id);
@@ -405,8 +538,22 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 				return json({ error: "Unknown intent", code: "intent_unknown" }, 400, headers);
 		}
 	} catch (err) {
-		// classified + logged at the data layer (note_write_failed); the
-		// response stays generic and still carries session headers
+		// B25 (CP-26): the data layer classifies and logs its OWN throws, but the
+		// try also runs the session read, canonicalization (the A3 "parse never
+		// throws" pin covers markdown-it, not the serializer), crypto.subtle and
+		// deriveNoteTitle — those used to return this 500 with zero log lines, a
+		// silent-500 class in a personal-data write path on a runtime where
+		// stdout is the only signal. Name only, never a message (B13).
+		// Identified by `name` rather than `instanceof NoteWriteError` so the
+		// check survives module-level mocking of the data layer.
+		if (!(err instanceof Error) || err.name !== "NoteWriteError") {
+			logEvent("note_action_failed", {
+				intent,
+				name: err instanceof Error ? err.name : "unknown",
+			});
+		}
+		// the response stays generic and still carries session headers when we
+		// got far enough to have them (B23)
 		return json({ error: "The note could not be saved", code: "internal" }, 500, headers);
 	}
 }
@@ -414,6 +561,53 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 /* ---------------------------------- UI ---------------------------------- */
 
 const NoteEditor = lazy(() => import("~/components/editor/NoteEditor"));
+
+/** B35 (CP-38): the A19 EditorBoundary lives INSIDE the lazy chunk, so it
+ * cannot catch the chunk's own load failure — and A11's read-mode-never-loads-
+ * ProseMirror design makes that fetch happen exactly at the Edit click, on
+ * whatever network the reader has. A rejected import used to fall past
+ * <Suspense> to the route ErrorBoundary and replace a perfectly readable note
+ * with an error surface. This keeps the page; the note is still below. */
+class EditorChunkBoundary extends Component<
+	{ children: ReactNode; onDismiss: (() => void) | null },
+	{ failed: boolean }
+> {
+	state = { failed: false };
+	static getDerivedStateFromError() {
+		return { failed: true };
+	}
+	render() {
+		if (!this.state.failed) return this.props.children;
+		// A rejected React.lazy stays rejected for that component's lifetime, so
+		// the honest retry is a reload; the second door returns the reader to the
+		// note they were already reading, which never left the server.
+		return (
+			<p className="font-reading text-[17px] leading-relaxed text-muted-foreground">
+				<span className="italic">The editor didn’t load.</span>{" "}
+				<button
+					type="button"
+					onClick={() => window.location.reload()}
+					className="text-ink underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:decoration-solid"
+				>
+					Reload
+				</button>
+				{this.props.onDismiss ? (
+					<>
+						{" or "}
+						<button
+							type="button"
+							onClick={this.props.onDismiss}
+							className="text-ink underline decoration-dotted underline-offset-4 transition-colors duration-150 hover:decoration-solid"
+						>
+							go back to the note
+						</button>
+					</>
+				) : null}
+				.
+			</p>
+		);
+	}
+}
 
 /** Rail register rows in the reader's ruled idiom — whole row a door. */
 function LinkedRegister({ label, items }: { label: string; items: LinkedItem[] }) {
@@ -496,6 +690,15 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 	const deleteFetcher = useFetcher<{ ok?: boolean; deleted?: boolean }>();
 	const revalidator = useRevalidator();
 	const navigate = useNavigate();
+
+	// B38 (CP-41): "Done" must land focus on the read-view h1, not <body>
+	const h1Ref = useRef<HTMLHeadingElement>(null);
+	const [exitFocus, setExitFocus] = useState(false);
+	useEffect(() => {
+		if (!exitFocus || editing || revalidator.state !== "idle") return;
+		h1Ref.current?.focus();
+		setExitFocus(false);
+	}, [exitFocus, editing, revalidator.state]);
 
 	// A19/CF-47: post-confirm the user lands on /notes with focus on its h1
 	// and an announcement — never a dead <body> focus (B5 class).
@@ -581,27 +784,34 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 				}
 			>
 				<div className={hasRail ? "mx-auto w-full max-w-2xl lg:mx-0 lg:max-w-none" : undefined}>
-					<Suspense
-						fallback={
-							<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
-								Opening the editor…
-							</p>
-						}
-					>
-						<NoteEditor
-							noteId={note?.id ?? null}
-							initialBody={note?.body_md ?? ""}
-							initialUpdatedAt={note?.updated_at ?? null}
-							prefillAnchor={anchor ?? null}
-							onRefsChange={onRefsChange}
-							onClose={() => {
-								if (note) {
-									setEditing(false);
-									revalidator.revalidate();
-								}
-							}}
-						/>
-					</Suspense>
+					<EditorChunkBoundary onDismiss={note ? () => setEditing(false) : null}>
+						<Suspense
+							fallback={
+								<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+									Opening the editor…
+								</p>
+							}
+						>
+							<NoteEditor
+								noteId={note?.id ?? null}
+								initialBody={note?.body_md ?? ""}
+								initialUpdatedAt={note?.updated_at ?? null}
+								prefillAnchor={anchor ?? null}
+								onRefsChange={onRefsChange}
+								onClose={() => {
+									if (note) {
+										setEditing(false);
+										// B38 (CP-41): the read-view h1 already carried tabIndex={-1}
+										// — the intended landing — but nothing ever focused it, so
+										// every keyboard edit session ended on <body>. Focus waits
+										// for the revalidation so the h1 shows the SAVED title.
+										setExitFocus(true);
+										revalidator.revalidate();
+									}
+								}}
+							/>
+						</Suspense>
+					</EditorChunkBoundary>
 				</div>
 				{rail}
 			</main>
@@ -619,7 +829,8 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			<div className={hasRail ? "mx-auto w-full max-w-2xl lg:mx-0 lg:max-w-none" : undefined}>
 			<div className="flex items-baseline justify-between gap-4">
 				<h1
-					className={`font-display text-2xl font-medium tracking-tight ${title === UNTITLED_NOTE ? "italic text-muted-foreground" : ""}`}
+					ref={h1Ref}
+					className={`font-display text-2xl font-medium tracking-tight outline-none ${title === UNTITLED_NOTE ? "italic text-muted-foreground" : ""}`}
 					tabIndex={-1}
 				>
 					{title}
@@ -642,9 +853,12 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 						</AlertDialogTrigger>
 						<AlertDialogContent>
 							<AlertDialogTitle>Delete this note?</AlertDialogTitle>
+							{/* B33 (CP-35): no purge promise. A6/CF-36 kept `deleted_at` a
+							    COMMENT only — no v1 job, no user-facing retention promise —
+							    so "may be purged after 30 days" was false in both directions
+							    and implied a recoverability that does not exist. */}
 							<AlertDialogDescription>
-								It disappears from your notes, the reader, and search. Deleted notes may be
-								purged after 30 days.
+								It disappears from your notes, the reader, and search.
 							</AlertDialogDescription>
 							<div className="mt-5 flex justify-end gap-3">
 								<AlertDialogCancel>Cancel</AlertDialogCancel>

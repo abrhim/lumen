@@ -1,9 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, data, redirect, useLocation } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
 import { notesEnabled } from "~/lib/notes-enabled";
 import { listNotes } from "~/lib/notes.server";
-import { deriveNoteTitle, deriveNoteSnippet, UNTITLED_NOTE } from "~/lib/notes-derive";
+import { deriveNoteTitle, UNTITLED_NOTE } from "~/lib/notes-derive";
 import type { Route } from "./+types/notes";
 
 export function meta(_args: Route.MetaArgs) {
@@ -43,12 +43,16 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	}
 	const notes = await listNotes(request, context.cloudflare.env);
 	headers.set("Cache-Control", "private, no-store");
+	// B22 (CP-23): the read ships `title_line` (bounded generated column), not
+	// bodies — the same stripper still owns the derivation, so there is no
+	// second title surface to drift. No snippet: deriving one would need the
+	// body back (or the rejected `snippet_source` column), and the index reads
+	// as a register of titles, which is the house idiom anyway.
 	return data(
 		{
 			notes: notes.map((n) => ({
 				id: n.id,
-				title: deriveNoteTitle(n.body_md),
-				snippet: deriveNoteSnippet(n.body_md),
+				title: deriveNoteTitle(n.title_line ?? ""),
 				updated_at: n.updated_at,
 			})),
 		},
@@ -67,10 +71,22 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 	const location = useLocation();
 	const h1Ref = useRef<HTMLHeadingElement>(null);
 	const arrivedFromDelete = (location.state as { deleted?: boolean } | null)?.deleted === true;
+	// B21 (CP-22): the region MOUNTS EMPTY and is filled in an effect. Text
+	// that is already present when a live region is inserted is unreliably
+	// spoken (frequently silent in VoiceOver/NVDA) — announcements are
+	// mutations of an existing region, so the mutation has to happen after
+	// the region exists.
+	const [announcement, setAnnouncement] = useState("");
 
 	// CF-47: after a delete confirm, focus lands here with an announcement
 	useEffect(() => {
-		if (arrivedFromDelete) h1Ref.current?.focus();
+		if (!arrivedFromDelete) {
+			setAnnouncement("");
+			return;
+		}
+		h1Ref.current?.focus();
+		const t = setTimeout(() => setAnnouncement("Note deleted"), 100);
+		return () => clearTimeout(t);
 	}, [arrivedFromDelete]);
 
 	return (
@@ -83,7 +99,7 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 				Your notes
 			</h1>
 			<div aria-live="polite" className="sr-only">
-				{arrivedFromDelete ? "Note deleted" : ""}
+				{announcement}
 			</div>
 
 			{notes.length === 0 ? (
@@ -122,11 +138,6 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 									>
 										{note.title}
 									</span>
-									{note.snippet ? (
-										<span className="mt-1 block font-reading text-sm leading-relaxed text-muted-foreground">
-											{note.snippet}
-										</span>
-									) : null}
 									<time
 										dateTime={note.updated_at}
 										className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
