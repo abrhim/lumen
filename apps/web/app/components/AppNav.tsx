@@ -88,8 +88,9 @@ export function AppNav() {
 	const { pathname } = useLocation();
 	return (
 		<>
-			{/* the masthead sits at the top ALWAYS, outside the nav (Abram) */}
-			<div className="px-6 pt-5 min-[1440px]:px-10">
+			{/* the masthead sits at the top ALWAYS, outside the nav (Abram);
+			    on narrow the word-row shares its line, to the right */}
+			<div className="flex flex-wrap items-center gap-x-7 gap-y-1 px-6 pt-5 min-[1440px]:block min-[1440px]:px-10">
 				<Link
 					to="/"
 					className="inline-flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink outline-none transition-colors duration-150 hover:text-primary focus-visible:underline"
@@ -97,6 +98,12 @@ export function AppNav() {
 					<LintelMark className="h-[26px] w-[32px]" />
 					Lintel
 				</Link>
+				<nav
+					aria-label="Primary"
+					className="flex flex-wrap items-center gap-x-5 gap-y-1 font-ui text-sm min-[1440px]:hidden"
+				>
+					{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline")}
+				</nav>
 			</div>
 			{/* the words: a left rail on wide viewports (the reader's centered
 			    column owns the left margin below 1440)… */}
@@ -106,13 +113,7 @@ export function AppNav() {
 			>
 				{items(pathname, "app-nav-item px-1 py-1 outline-none transition-colors duration-150 focus-visible:underline")}
 			</nav>
-			{/* …and a top row underneath the masthead everywhere else */}
-			<nav
-				aria-label="Primary"
-				className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-6 pt-3 font-ui text-sm min-[1440px]:hidden"
-			>
-				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline")}
-			</nav>
+
 		</>
 	);
 }
