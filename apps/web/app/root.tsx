@@ -9,6 +9,7 @@ import {
 	data,
 } from "react-router";
 import { AppMenu } from "~/components/AppMenu";
+import { AppNav } from "~/components/AppNav";
 import { SearchModal, SearchOrbAnchor } from "~/components/SearchModal";
 import { getSessionUser } from "~/lib/auth.server";
 import type { Route } from "./+types/root";
@@ -98,6 +99,7 @@ export default function App() {
 				</SearchChromeBoundary>
 				<AppMenu />
 			</div>
+			<AppNav />
 			<Outlet />
 		</>
 	);

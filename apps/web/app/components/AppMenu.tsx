@@ -80,8 +80,10 @@ export function AppMenu() {
 			<div>
 				<SectionLabel>Navigate</SectionLabel>
 				<nav className="mt-1.5 flex flex-col">
-					{navItem("/", "Library")}
-					{navItem("/collections/the-grove", "The Grove", "collection")}
+					{navItem("/", "Scripture")}
+					{navItem("/notes", "Notes")}
+					{navItem("/collections", "Collections")}
+					{navItem("/me", "Me", "settings")}
 				</nav>
 			</div>
 
