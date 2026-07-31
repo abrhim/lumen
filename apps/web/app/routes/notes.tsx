@@ -93,7 +93,7 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 		<main className="mx-auto max-w-2xl px-6 py-12">
 			<h1
 				ref={h1Ref}
-				className="font-display text-2xl font-medium tracking-tight outline-none"
+				className="font-display text-3xl font-medium tracking-tight outline-none"
 				tabIndex={-1}
 			>
 				Your notes

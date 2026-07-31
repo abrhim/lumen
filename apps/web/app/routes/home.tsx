@@ -73,7 +73,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 						</Link>
 					)}
 				</div>
-				<h1 className="mt-2 font-display text-4xl font-medium tracking-tight">
+				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">
 					The Library
 				</h1>
 				<p className="mt-2 font-reading italic text-muted-foreground">
