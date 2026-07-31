@@ -1609,7 +1609,10 @@ function PanelBody({
 }) {
 	return (
 		<>
-			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-sm italic leading-relaxed text-muted-foreground">
+			{/* the verse itself rides the pane ONLY on mobile — the sheet covers
+			    the page there; on desktop the verse sits beside the rail. Roman,
+			    not italic (Abram: italics too hard to read at this size). */}
+			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-[15px] leading-relaxed text-muted-foreground lg:hidden">
 				{verseText}
 			</blockquote>
 			{/* personal-notes A15 (gate-ratified): the personal register leads,

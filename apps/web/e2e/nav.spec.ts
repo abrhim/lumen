@@ -130,3 +130,24 @@ test("a one-chapter book lands in the reading, not a contents page", async ({ pa
 	await page.goto("/scripture/alma");
 	await expect(page).toHaveURL("/scripture/alma");
 });
+
+test("About and Roadmap exist, framed by the canon, linked from the home foot", async ({
+	page,
+}) => {
+	await page.goto("/");
+	await page.getByRole("link", { name: "About", exact: true }).click();
+	await expect(page).toHaveURL("/about");
+	await expect(page.getByRole("heading", { name: "About", level: 1 })).toBeVisible();
+	await page.getByRole("link", { name: "where it's headed" }).click();
+	await expect(page).toHaveURL("/roadmap");
+	await expect(page.getByRole("heading", { name: "Roadmap", level: 1 })).toBeVisible();
+	await expect(page.getByText("Order, not dates.")).toBeVisible();
+});
+
+test("mobile pane carries the verse itself, roman; desktop rail does not", async ({ page }) => {
+	// desktop: the blockquote is hidden (the verse sits beside the rail)
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto("/scripture/alma/32?verse=21");
+	const quote = page.locator("blockquote", { hasText: "perfect knowledge" }).first();
+	await expect(quote).toBeHidden();
+});

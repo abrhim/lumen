@@ -15,6 +15,8 @@ export default [
 	// `/notes/new` is the create surface — the :id loader special-cases it (CF-29)
 	route("notes/:id", "routes/notes.$id.tsx"),
 	route("me", "routes/me.tsx"),
+	route("about", "routes/about.tsx"),
+	route("roadmap", "routes/roadmap.tsx"),
 	route("login", "routes/login.tsx"),
 	route("auth/confirm", "routes/auth.confirm.tsx"),
 	route("logout", "routes/logout.tsx"),

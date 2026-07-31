@@ -97,6 +97,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 					</ul>
 				</section>
 			))}
+
+			<footer className="mt-14 border-t border-rule pt-5 font-ui text-[13px] text-muted-foreground">
+				<Link to="/about" className="hover:text-ink">
+					About
+				</Link>
+				<span className="text-faint"> · </span>
+				<Link to="/roadmap" className="hover:text-ink">
+					Roadmap
+				</Link>
+			</footer>
 		</main>
 	);
 }
