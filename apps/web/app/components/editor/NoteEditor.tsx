@@ -802,7 +802,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 									>
 										{s.display}
 										<span className="ml-2 font-ui text-[10.5px] uppercase tracking-wide text-muted-foreground">
-											{s.kind}
+											{s.gloss ?? s.kind}
 										</span>
 									</li>
 								))

@@ -56,3 +56,21 @@ test("hovering a wikilink shows the destination snippet", async ({ page }) => {
 	await page.getByRole("heading", { name: "Seed study", level: 1 }).hover();
 	await expect(hintBox).toHaveCount(0);
 });
+
+test("entity search: [[rameumptom suggests the place; rail rides the editor", async ({ page }) => {
+	await page.goto("/notes/new");
+	await page.locator(".note-editor").click();
+	await page.keyboard.type("[[rameumptom");
+	const option = page.getByRole("option", { name: /Rameumptom/i }).first();
+	await expect(option).toBeVisible();
+	await option.click();
+	await expect(page.locator(".note-editor [data-wikilink-ref]")).toHaveCount(1);
+
+	// save → the editor stays open and the rail appears beside it
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page).toHaveURL(/\/notes\/[0-9a-f-]{36}$/);
+	const rail = page.getByRole("region", { name: "Linked in this note" });
+	await expect(rail).toBeVisible({ timeout: 10_000 });
+	await expect(rail.getByRole("heading", { name: "People & topics", level: 3 })).toBeVisible();
+	await expect(rail).toContainText(/Rameumptom/i);
+});

@@ -129,13 +129,14 @@ export async function resolveLinkedCanon(db: Db, refs: string[]): Promise<Linked
 			for (const ref of entityIds) {
 				const row = byId.get(ref);
 				if (!row) continue;
-				const slug = ENTITY_TYPE_SLUGS[row.entity_type];
+				// unmapped types still get a door — /node/:id is the catch-all
+				const slug = ENTITY_TYPE_SLUGS[row.entity_type] ?? "node";
 				push(out.entities, {
 					ref,
 					title: row.name,
 					snippet: row.description ? clip(row.description, 220) : null,
-					href: slug ? `/${slug}/${encodeURIComponent(ref)}` : null,
-					gloss: row.entity_type,
+					href: `/${slug}/${encodeURIComponent(ref)}`,
+					gloss: row.entity_type === "naves_topic" ? "topic" : row.entity_type,
 				});
 			}
 		}

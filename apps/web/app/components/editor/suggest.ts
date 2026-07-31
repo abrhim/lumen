@@ -6,6 +6,7 @@ import {
 } from "@lumen/scripture/notes-refs";
 import { CHAPTER_VERSE_COUNTS } from "@lumen/scripture/verse-counts";
 import { EPISODE_INDEX } from "@lumen/scripture/episode-index";
+import { ENTITY_INDEX, type EntityTypeCode } from "./entity-index";
 
 /**
  * personal-notes — the destination engine behind `[[` and ⌘K (v2, Abram's
@@ -24,11 +25,13 @@ import { EPISODE_INDEX } from "@lumen/scripture/episode-index";
 
 export interface InsertSuggestion {
 	ref: string;
-	/** human display, e.g. "Alma 32:21" */
+	/** human display, e.g. "Alma 32:21" — also the inserted link's label */
 	display: string;
 	kind: "verse" | "chapter" | "entity" | "transcript" | "book";
 	/** reader path when navigable (⌘↵ door) */
 	path: string | null;
+	/** row chip; falls back to kind */
+	gloss?: string;
 }
 
 function titleCaseSlug(slug: string): string {
@@ -168,6 +171,48 @@ export function suggestDestinations(rawQuery: string): InsertSuggestion[] {
 			const chapterCount = BOOK_CHAPTER_COUNTS[book] ?? 0;
 			for (let c = 1; c <= chapterCount; c++) push(chapterSuggestion(book, c));
 		}
+	}
+
+	// entities by NAME — people, places, principles, events, symbols, eras,
+	// topics (Abram: search all nodes). Every query word must appear;
+	// name-prefix matches rank first; capped (the list scrolls, but 12k
+	// rows would drown scripture results).
+	if (query.length >= 2 && chapterNum === null) {
+		const words = query.split(/\s+/).filter(Boolean);
+		const TYPE_LABEL: Record<EntityTypeCode, string> = {
+			p: "person",
+			l: "place",
+			r: "principle",
+			e: "event",
+			s: "symbol",
+			a: "era",
+			t: "topic",
+		};
+		const TYPE_SLUG: Record<EntityTypeCode, string> = {
+			p: "people",
+			l: "places",
+			r: "principles",
+			e: "events",
+			s: "symbols",
+			a: "eras",
+			t: "node",
+		};
+		const prefix: InsertSuggestion[] = [];
+		const contains: InsertSuggestion[] = [];
+		for (const [id, name, type] of ENTITY_INDEX) {
+			const hay = name.toLowerCase();
+			if (!words.every((w) => hay.includes(w))) continue;
+			const item: InsertSuggestion = {
+				ref: id,
+				display: name,
+				kind: "entity",
+				path: `/${TYPE_SLUG[type]}/${encodeURIComponent(id)}`,
+				gloss: TYPE_LABEL[type],
+			};
+			(hay.startsWith(words[0]) ? prefix : contains).push(item);
+			if (prefix.length >= 25) break;
+		}
+		for (const item of [...prefix, ...contains].slice(0, 25)) push(item);
 	}
 
 	// podcast episodes by NAME (Abram: "how does one reference unshaken?") —

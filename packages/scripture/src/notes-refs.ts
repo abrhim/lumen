@@ -52,10 +52,12 @@ export const BOOK_CHAPTER_COUNTS: Record<string, number> = {
 };
 
 const REF_MAX = 128;
-/** Scripture/entity refs: lowercase slug segments, no leading digit-junk. */
+/** Scripture refs: lowercase slug segments, no leading digit-junk. */
 const SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-/** Entity ids start with a letter (live namespace: people/places/topics…). */
-const ENTITY_SHAPE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+/** Entity ids start with a letter; live canon ids carry single spaces
+ * ("caesar augustus-1") as well as hyphens — both admitted, nothing else
+ * (traversal/injection junk still fails on its other characters). */
+const ENTITY_SHAPE = /^[a-z][a-z0-9]*(?:[ -][a-z0-9]+)*$/;
 /** Transcript: episode entity id + `@` + non-negative seconds (t_start_s). */
 const TRANSCRIPT_SHAPE = /^([A-Za-z0-9][A-Za-z0-9_-]*)@(\d+(?:\.\d+)?)$/;
 
@@ -86,7 +88,10 @@ export function resolveAnchorRef(raw: string): AnchorRef | null {
 		return { kind: 'transcript', ref };
 	}
 
-	if (!SLUG_SHAPE.test(ref)) return null;
+	// space-bearing refs can only be entities — scripture shapes are pure slugs
+	if (!SLUG_SHAPE.test(ref)) {
+		return ENTITY_SHAPE.test(ref) ? { kind: 'entity', ref } : null;
+	}
 
 	const segments = ref.split('-');
 	const last = segments[segments.length - 1];

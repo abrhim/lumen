@@ -515,38 +515,64 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 		}
 	}, [note?.id, title]);
 
-	if (editing || mode === "new") {
-		return (
-			<main className="mx-auto max-w-2xl px-6 py-12">
-				<Suspense
-					fallback={
-						<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
-							Opening the editor…
-						</p>
-					}
-				>
-					<NoteEditor
-						noteId={note?.id ?? null}
-						initialBody={note?.body_md ?? ""}
-						initialUpdatedAt={note?.updated_at ?? null}
-						prefillAnchor={anchor ?? null}
-						onClose={() => {
-							if (note) {
-								setEditing(false);
-								revalidator.revalidate();
-							}
-						}}
-					/>
-				</Suspense>
-			</main>
-		);
-	}
-
 	const hasRail =
 		linked !== null &&
 		linked.verses.length + linked.chapters.length + linked.entities.length + linked.media.length >
 			0;
 	const preview = hint ? linked?.previews[hint.ref] : null;
+
+	// the linked rail rides BOTH postures (Abram): while composing it
+	// refreshes as each autosave's revalidation resolves the fresh refs
+	const rail = hasRail && linked && (
+		<aside className="mt-10 lg:mt-0">
+			<section
+				aria-label="Linked in this note"
+				className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[20px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
+			>
+				<h2 className="font-display text-[19px] font-medium tracking-[-0.01em]">Linked</h2>
+				<LinkedRegister label="Verses" items={linked.verses} />
+				<LinkedRegister label="Chapters" items={linked.chapters} />
+				<LinkedRegister label="People & topics" items={linked.entities} />
+				<LinkedRegister label="Heard in" items={linked.media} />
+			</section>
+		</aside>
+	);
+
+	if (editing || mode === "new") {
+		return (
+			<main
+				className={
+					hasRail
+						? "mx-auto px-6 py-12 lg:grid lg:max-w-none lg:grid-cols-[minmax(0,42rem)_340px] lg:justify-center lg:gap-x-12"
+						: "mx-auto max-w-2xl px-6 py-12"
+				}
+			>
+				<div className={hasRail ? "mx-auto w-full max-w-2xl lg:mx-0 lg:max-w-none" : undefined}>
+					<Suspense
+						fallback={
+							<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+								Opening the editor…
+							</p>
+						}
+					>
+						<NoteEditor
+							noteId={note?.id ?? null}
+							initialBody={note?.body_md ?? ""}
+							initialUpdatedAt={note?.updated_at ?? null}
+							prefillAnchor={anchor ?? null}
+							onClose={() => {
+								if (note) {
+									setEditing(false);
+									revalidator.revalidate();
+								}
+							}}
+						/>
+					</Suspense>
+				</div>
+				{rail}
+			</main>
+		);
+	}
 
 	return (
 		<main
@@ -642,20 +668,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			{deleteFetcher.data ? null : null}
 			</div>
 
-			{hasRail && linked && (
-				<aside className="mt-10 lg:mt-0">
-					<section
-						aria-label="Linked in this note"
-						className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[20px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
-					>
-						<h2 className="font-display text-[19px] font-medium tracking-[-0.01em]">Linked</h2>
-						<LinkedRegister label="Verses" items={linked.verses} />
-						<LinkedRegister label="Chapters" items={linked.chapters} />
-						<LinkedRegister label="People & topics" items={linked.entities} />
-						<LinkedRegister label="Heard in" items={linked.media} />
-					</section>
-				</aside>
-			)}
+			{rail}
 
 			{preview && hint && (
 				<div
