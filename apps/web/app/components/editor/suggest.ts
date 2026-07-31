@@ -119,9 +119,21 @@ export function suggestDestinations(rawQuery: string): InsertSuggestion[] {
 	// split trailing numeric parts off the book tokens: "alma 3 2" /
 	// "alma 3:2" / "1 ne 3 7" → book="alma"/"1 ne", chapter=3, versePart="2"
 	const m = /^(.*?)(?:\s+(\d+))?(?:\s*[:\s]\s*(\d+))?$/.exec(query);
-	const bookToken = (m?.[1] ?? query).trim();
-	const chapterNum = m?.[2] ? parseInt(m[2], 10) : null;
-	const versePart = m?.[3] ?? null;
+	let bookToken = (m?.[1] ?? query).trim();
+	let chapterNum = m?.[2] ? parseInt(m[2], 10) : null;
+	let versePart = m?.[3] ?? null;
+
+	// glued form: "alma63" → book "alma", chapter 63 (and "alma63 2" shifts
+	// the trailing number into the verse slot)
+	const glued = /^(.*?[a-z])(\d+)$/.exec(bookToken);
+	if (glued && matchBooks(bookToken).length === 0) {
+		const peeled = glued[1].trim();
+		if (matchBooks(peeled).length > 0) {
+			if (chapterNum !== null && versePart === null) versePart = String(chapterNum);
+			bookToken = peeled;
+			chapterNum = parseInt(glued[2], 10);
+		}
+	}
 
 	const books = matchBooks(bookToken);
 

@@ -114,4 +114,13 @@ test("suggestion drilling: chapter pins, verses follow; digits filter prefix-the
 	await page.keyboard.press("Enter");
 	await page.keyboard.type("[[alm 32:21");
 	await expect(page.getByRole("option").first()).toContainText("Alma 32:21");
+
+	// glued form: "alma63" peels into book + chapter; a following number
+	// shifts into the verse slot
+	await page.keyboard.press("Escape");
+	await page.keyboard.press("Enter");
+	await page.keyboard.type("[[alma63");
+	await expect(page.getByRole("option").first()).toContainText("Alma 63");
+	await page.keyboard.type(" 2");
+	await expect(page.getByRole("option").first()).toContainText("Alma 63:2");
 });
