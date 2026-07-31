@@ -397,6 +397,13 @@ html {
 	body:has([data-plate="ledger"]) .app-rail { display: flex; }
 	body:has([data-plate="ledger"]) .app-toprow { display: none; }
 }
+@media (min-width: 1340px) {
+	/* the selected reader right-anchors its plate (20px right margin) so
+	   the rail squeezes toward the verses and the nav keeps its left room
+	   — the nav yields only below this (Abram's squeeze rule) */
+	body:has([data-plate="reader-wide"]) .app-rail { display: flex; }
+	body:has([data-plate="reader-wide"]) .app-toprow { display: none; }
+}
 @media (min-width: 1420px) {
 	body:has([data-plate="notes"]) .app-rail { display: flex; }
 	body:has([data-plate="notes"]) .app-toprow { display: none; }

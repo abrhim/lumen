@@ -947,7 +947,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	return (
 		<div
 			className="mx-auto px-4 pt-[72px] pb-14 lg:px-6"
-			data-plate={selected ? "wide" : "column"}
+			data-plate={selected ? "reader-wide" : "column"}
 		>
 			{/* Balance (Abram's call, overruling the earlier widths-stay ruling):
 			    the column + rail center as ONE unit (the plate's geometry), and the
@@ -956,7 +956,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			<div
 				className={
 					selected
-						? "mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-x-14 lg:gap-y-10"
+						? "mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-x-10 lg:gap-y-10 min-[1340px]:justify-end min-[1340px]:pr-5 min-[1520px]:justify-center min-[1520px]:gap-x-14 min-[1520px]:pr-0"
 						: "mx-auto max-w-[45rem]"
 				}
 			>
