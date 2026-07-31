@@ -42,16 +42,9 @@ function summonSearch(e: { preventDefault: () => void }) {
 	if (ev.defaultPrevented) e.preventDefault();
 }
 
-function items(pathname: string, itemClass: string, masthead: boolean) {
+function items(pathname: string, itemClass: string) {
 	return (
 		<>
-			<Link
-				to="/"
-				className={`${itemClass} ${masthead ? "mb-3" : ""} flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink hover:text-primary`}
-			>
-				<LintelMark className="h-[26px] w-[32px]" />
-				Lintel
-			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
 				const current = match.test(pathname);
 				return (
@@ -95,20 +88,30 @@ export function AppNav() {
 	const { pathname } = useLocation();
 	return (
 		<>
-			{/* the left rail — wide viewports only (the reader's centered
-			    column owns the left margin below 1440) */}
+			{/* the masthead sits at the top ALWAYS, outside the nav (Abram) */}
+			<div className="px-6 pt-5 min-[1440px]:px-10">
+				<Link
+					to="/"
+					className="inline-flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink outline-none transition-colors duration-150 hover:text-primary focus-visible:underline"
+				>
+					<LintelMark className="h-[26px] w-[32px]" />
+					Lintel
+				</Link>
+			</div>
+			{/* the words: a left rail on wide viewports (the reader's centered
+			    column owns the left margin below 1440)… */}
 			<nav
 				aria-label="Primary"
 				className="fixed left-10 top-28 z-30 hidden w-fit flex-col items-start gap-y-3 font-ui text-sm min-[1440px]:flex"
 			>
-				{items(pathname, "app-nav-item px-1 py-1 outline-none transition-colors duration-150 focus-visible:underline", true)}
+				{items(pathname, "app-nav-item px-1 py-1 outline-none transition-colors duration-150 focus-visible:underline")}
 			</nav>
-			{/* the same words as a top row everywhere else */}
+			{/* …and a top row underneath the masthead everywhere else */}
 			<nav
 				aria-label="Primary"
-				className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-6 pt-4 font-ui text-sm min-[1440px]:hidden"
+				className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-6 pt-3 font-ui text-sm min-[1440px]:hidden"
 			>
-				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline", false)}
+				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline")}
 			</nav>
 		</>
 	);
