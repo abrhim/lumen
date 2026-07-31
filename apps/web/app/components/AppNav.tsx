@@ -23,9 +23,9 @@ const SECTIONS = [
 ] as const;
 
 /** The mark (icon exploration round 4, #7): beam, posts, the strike. */
-function LintelMark() {
+function LintelMark({ className = "h-[13px] w-[16px]" }: { className?: string }) {
 	return (
-		<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" className="size-[15px]">
+		<svg viewBox="0 3 32 26" fill="currentColor" aria-hidden="true" className={className}>
 			<rect x="5" y="7" width="22" height="4.5" rx="1" />
 			<rect x="6.5" y="13.5" width="4.5" height="15.5" rx="1" />
 			<rect x="21" y="13.5" width="4.5" height="15.5" rx="1" />
@@ -43,14 +43,18 @@ function summonSearch(e: { preventDefault: () => void }) {
 	if (ev.defaultPrevented) e.preventDefault();
 }
 
-function items(pathname: string, itemClass: string) {
+function items(pathname: string, itemClass: string, masthead: boolean) {
 	return (
 		<>
 			<Link
 				to="/"
-				className={`${itemClass} flex items-center gap-1.5 font-semibold tracking-tight text-ink hover:text-primary`}
+				className={
+					masthead
+						? `${itemClass} mb-3 flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink hover:text-primary`
+						: `${itemClass} flex items-center gap-1.5 font-semibold tracking-tight text-ink hover:text-primary`
+				}
 			>
-				<LintelMark />
+				<LintelMark className={masthead ? "h-[22px] w-[27px] self-center translate-y-[1px]" : "h-[13px] w-[16px] self-center translate-y-[1px]"} />
 				Lintel
 			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
@@ -91,14 +95,14 @@ export function AppNav() {
 				aria-label="Primary"
 				className="fixed left-10 top-28 z-30 hidden w-fit flex-col items-start gap-y-3 font-ui text-sm min-[1440px]:flex"
 			>
-				{items(pathname, "app-nav-item px-1 py-1 outline-none transition-colors duration-150 focus-visible:underline")}
+				{items(pathname, "app-nav-item px-1 py-1 outline-none transition-colors duration-150 focus-visible:underline", true)}
 			</nav>
 			{/* the same words as a top row everywhere else */}
 			<nav
 				aria-label="Primary"
 				className="mx-auto flex max-w-6xl items-baseline gap-x-5 px-6 pt-4 pr-28 font-ui text-sm min-[1440px]:hidden"
 			>
-				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline")}
+				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline", false)}
 			</nav>
 		</>
 	);
