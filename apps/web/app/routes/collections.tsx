@@ -105,7 +105,7 @@ export default function CollectionLanding({ loaderData }: Route.ComponentProps) 
 	const { collection, groups, total } = loaderData;
 
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<p className="font-ui text-[13px] font-normal text-muted-foreground">Collection</p>
 				<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">{collection.name}</h1>
@@ -150,7 +150,7 @@ export default function CollectionLanding({ loaderData }: Route.ComponentProps) 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	const is404 = isRouteErrorResponse(error) && error.status === 404;
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<h1 className="font-display text-3xl font-medium">{is404 ? "Not found" : "Error"}</h1>
 			<p className="mt-3 font-reading text-muted-foreground">
 				{is404 ? "That collection doesn't exist." : "Something went wrong."}

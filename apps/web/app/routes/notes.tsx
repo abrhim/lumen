@@ -91,7 +91,7 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 	}, [arrivedFromDelete]);
 
 	return (
-		<main className="mx-auto max-w-2xl px-6 py-12">
+		<main data-plate="column" className="mx-auto max-w-2xl px-6 py-12">
 			<h1
 				ref={h1Ref}
 				className="font-display text-3xl font-medium tracking-tight outline-none"

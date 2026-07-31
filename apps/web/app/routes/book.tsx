@@ -71,7 +71,7 @@ export default function Book({ loaderData }: Route.ComponentProps) {
 	const unit = chapterUnit(bookId);
 
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">{name}</h1>
 			</header>
@@ -101,7 +101,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 			? error.data
 			: "Something went wrong loading this book.";
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<h1 className="font-display text-3xl font-medium">{is404 ? "Not found" : "Error"}</h1>
 			<p className="mt-3 font-reading text-muted-foreground">{detail}</p>
 			<p className="mt-6">

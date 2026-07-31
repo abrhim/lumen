@@ -56,7 +56,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 	const root = useRouteLoaderData<typeof rootLoader>("root");
 	const signedOut = !root?.user;
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<div className="flex items-baseline justify-end gap-4">
 					{/* sign-in invitation lives HERE only (plan D10) — never in the

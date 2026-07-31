@@ -380,6 +380,32 @@ html {
 }
 .note-body strong, .note-editor strong { font-weight: 600; }
 
+/* THE RAIL'S CONTENT-AWARE BREAKPOINT (Abram's 50px rule, 2026-07-31):
+   the rail lives while the page's content leaves ~180px of margin a side
+   (the rail's own ~130px + 50px of air); otherwise the words move up
+   beside the masthead. Each page declares its plate via data-plate;
+   thresholds = plate width + 2×180:
+     column 672/720 → 1080 · ledger 896 → 1260 · notes 1060 → 1420 ·
+     wide 1156 → 1520 */
+.app-rail { display: none; }
+.app-toprow { display: flex; }
+@media (min-width: 1080px) {
+	body:has([data-plate="column"]) .app-rail { display: flex; }
+	body:has([data-plate="column"]) .app-toprow { display: none; }
+}
+@media (min-width: 1260px) {
+	body:has([data-plate="ledger"]) .app-rail { display: flex; }
+	body:has([data-plate="ledger"]) .app-toprow { display: none; }
+}
+@media (min-width: 1420px) {
+	body:has([data-plate="notes"]) .app-rail { display: flex; }
+	body:has([data-plate="notes"]) .app-toprow { display: none; }
+}
+@media (min-width: 1520px) {
+	body:has([data-plate="wide"]) .app-rail { display: flex; }
+	body:has([data-plate="wide"]) .app-toprow { display: none; }
+}
+
 /* global nav rail (Abram, 2026-07-31): containerless words; on hover a
    large soft rounded shadow floats up behind the word — hand CSS, no
    component library. The halo is a pseudo-element ~30px taller and ~50px

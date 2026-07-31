@@ -945,12 +945,21 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	);
 
 	return (
-		<div className="mx-auto px-4 pt-[72px] pb-14 lg:px-6">
+		<div
+			className="mx-auto px-4 pt-[72px] pb-14 lg:px-6"
+			data-plate={selected ? "wide" : "column"}
+		>
 			{/* Balance (Abram's call, overruling the earlier widths-stay ruling):
 			    the column + rail center as ONE unit (the plate's geometry), and the
 			    header lives inside the text column so the title, summary, and navs
 			    share the verse text's left edge instead of the page's. */}
-			<div className="mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-x-14 lg:gap-y-10">
+			<div
+				className={
+					selected
+						? "mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-x-14 lg:gap-y-10"
+						: "mx-auto max-w-[45rem]"
+				}
+			>
 			<header className="pl-10 pr-4 lg:col-start-1 lg:pl-14">
 				<div className="relative mt-2 flex items-center gap-3">
 					{/* the back arrow hangs in the gutter, like the verse numbers */}
@@ -1208,7 +1217,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				    reflows the text column. Unmounted on mobile after hydration so the
 				    panel isn't reconciled twice; the CSS classes keep it hidden on
 				    mobile before hydration. */}
-				{!isMobile && (
+				{!isMobile && selected !== undefined && (
 					/* Empty rail aligns with the first verse (grid row 3, matching main's
 					   mt-8); a selection promotes it to the column top. The move animates
 					   via the view transition the verse links opt into (Abram's call);
@@ -1249,12 +1258,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 								</div>
 								{panelFor(selected)}
 							</>
-						) : (
-							<p className="font-reading text-sm leading-relaxed text-muted-foreground">
-								Select a verse to see the principles it teaches, the people it mentions, and its
-								cross-references.
-							</p>
-						)}
+						) : null}
 						</section>
 					</div>
 				)}

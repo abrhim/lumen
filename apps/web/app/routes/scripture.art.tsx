@@ -107,7 +107,7 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 	const [selected, setSelected] = useState<ArtItem | null>(null);
 
 	return (
-		<main className="mx-auto max-w-6xl px-6 py-12">
+		<main data-plate="wide" className="mx-auto max-w-6xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<div className="mt-2 flex items-center gap-3">
 					<Link

@@ -326,7 +326,7 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 	return (
 		// pt-16 keeps the search field and header labels out from under the
 		// fixed top-right chrome (AccountChip/ThemeSelect, z-40)
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<header>
 				<p className="font-ui text-[13px] font-normal text-muted-foreground">Admin</p>
 				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">Users</h1>
@@ -664,7 +664,7 @@ export function ErrorBoundary() {
 	// instead of root's dead-end "Oops!" — the loaded rows are lost, but reload
 	// re-runs page 1
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<h1 className="font-display text-3xl font-medium tracking-tight">Couldn't load users</h1>
 			<p className="mt-2 font-reading text-[17px] text-muted-foreground">
 				Something went wrong. Reload the page to try again.

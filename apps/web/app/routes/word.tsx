@@ -52,7 +52,7 @@ export default function WordDetail({ loaderData }: Route.ComponentProps) {
 	const pageUrl = (p: number) => `/word/${no}${p > 1 ? `?page=${p}` : ""}`;
 
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<p className="font-ui text-[13px] font-normal text-muted-foreground">Word study</p>
 				<div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">

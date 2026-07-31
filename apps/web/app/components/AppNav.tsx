@@ -90,7 +90,7 @@ export function AppNav() {
 		<>
 			{/* the masthead sits at the top ALWAYS, outside the nav (Abram);
 			    on narrow the word-row shares its line, to the right */}
-			<div className="flex flex-wrap items-center gap-x-7 gap-y-1 px-6 pt-5 min-[1440px]:block min-[1440px]:px-10">
+			<div className="flex flex-wrap items-center gap-x-7 gap-y-1 px-6 pt-5">
 				<Link
 					to="/"
 					className="inline-flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink outline-none transition-colors duration-150 hover:text-primary focus-visible:underline"
@@ -100,7 +100,7 @@ export function AppNav() {
 				</Link>
 				<nav
 					aria-label="Primary"
-					className="flex flex-wrap items-center gap-x-5 gap-y-1 font-ui text-sm min-[1440px]:hidden"
+					className="app-toprow flex-wrap items-center gap-x-5 gap-y-1 font-ui text-sm"
 				>
 					{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline")}
 				</nav>
@@ -109,7 +109,7 @@ export function AppNav() {
 			    column owns the left margin below 1440)… */}
 			<nav
 				aria-label="Primary"
-				className="fixed left-10 top-28 z-30 hidden w-fit flex-col items-start gap-y-3 font-ui text-sm min-[1440px]:flex"
+				className="app-rail fixed left-8 top-28 z-30 w-fit flex-col items-start gap-y-3 font-ui text-sm"
 			>
 				{items(pathname, "app-nav-item px-1 py-1 outline-none transition-colors duration-150 focus-visible:underline")}
 			</nav>

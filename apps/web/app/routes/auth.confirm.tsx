@@ -102,7 +102,7 @@ function mapVerifyError(code: string | undefined, message: string): string {
 
 export default function AuthConfirm({ loaderData, actionData }: Route.ComponentProps) {
 	return (
-		<main className="mx-auto max-w-2xl px-6 py-12">
+		<main data-plate="column" className="mx-auto max-w-2xl px-6 py-12">
 
 			{loaderData.state === "already" ? (
 				<>

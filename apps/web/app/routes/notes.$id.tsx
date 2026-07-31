@@ -902,6 +902,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 	if (editing || mode === "new") {
 		return (
 			<main
+				data-plate={hasRail ? "notes" : "column"}
 				className={
 					hasRail
 						? "mx-auto px-6 py-12 lg:grid lg:max-w-none lg:grid-cols-[minmax(0,42rem)_340px] lg:justify-center lg:gap-x-12"

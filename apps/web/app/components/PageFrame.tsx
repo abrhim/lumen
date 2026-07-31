@@ -27,6 +27,11 @@ const FRAME_WIDTH = {
 	gallery: "max-w-6xl",
 } as const;
 
+/** data-plate drives the global rail's content-aware breakpoint (Abram's
+ * 50px rule — see .app-rail in app.css): the rail lives while the page's
+ * content leaves it ~180px of margin (its own width + 50px of air). */
+const FRAME_PLATE = { column: "column", ledger: "ledger", gallery: "wide" } as const;
+
 export type Frame = keyof typeof FRAME_WIDTH;
 
 export function PageFrame({
@@ -46,6 +51,7 @@ export function PageFrame({
 		<main
 			ref={mainRef}
 			onKeyDown={onKeyDown}
+			data-plate={FRAME_PLATE[frame]}
 			className={`mx-auto ${FRAME_WIDTH[frame]} px-6 py-12${className ? ` ${className}` : ""}`}
 		>
 			{children}
