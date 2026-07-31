@@ -185,3 +185,12 @@ Read at: meta-retro — clusters and promotes recurring patterns into SKILL.md a
 - **Pre-deploy divergence check is mandatory for worktree deploys.** Deployed a
   diverged feature branch and silently reverted a concurrent session's live
   fix. `git log HEAD..main` before every worktree deploy.
+
+## 2026-07-30 · feature: personal-notes · tier: large
+- Postgres: UPDATE's NEW row is checked against SELECT policies when the statement reads the table; tombstone-hiding SELECT ⇒ DEFINER RPC.
+- Chromium natively smooth-scrolls tall focused contenteditables on a keystroke; pin "page still while typing, caret visible" in e2e.
+- Custom oracles (bundle guards, smoke) ship with --self-test negative controls, same PR.
+- tsc incremental cache false-greens are real; -b --force always.
+- After one failed UI fix, bisect-suppress before theorizing a second; two B54 workarounds had to be reverted.
+- Playwright toHaveText normalizes zero-width chars away — exact-mutation waits need expect.poll on textContent.
+- Worker-local green ≠ integration green: 4-way fix fan-out left 3 cross-worker spec contract collisions.
