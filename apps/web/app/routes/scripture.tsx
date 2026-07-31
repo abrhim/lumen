@@ -1069,9 +1069,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												);
 											}
 										}}
-										className={`relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:ring-1 hover:ring-inset hover:ring-selbar/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
+										className={`group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
 											isActive ? "bg-sel" : ""
-										}`}
+										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
 										<span
 											className={`absolute left-2 top-3 w-6 text-right font-ui text-xs font-semibold transition-colors duration-150 lg:left-4 lg:w-7 ${
@@ -1090,7 +1090,11 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{hasDepth && (
 											<span
 												aria-hidden
-												className="absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] lg:hidden"
+												className={`absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] rounded-[6px] p-[3px] -m-[3px] transition-colors duration-150 lg:hidden ${
+													isActive
+														? "bg-paper ring-1 ring-selbar/40"
+														: "group-hover:bg-paper"
+												}`}
 											>
 												{/* A15 (gate-ratified): the note RING takes the first slot;
 												    the stack clamps at 4 visible — never scrolls, never "+1".
@@ -1126,7 +1130,19 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{(signals || hasNote) && (
 											<span
 												aria-hidden
-												className="absolute left-[calc(100%+10px)] top-[1.15rem] hidden items-center gap-[5px] lg:flex"
+												className={`absolute bottom-0 left-full top-0 hidden w-[72px] rounded-r-lg transition-colors duration-150 lg:block ${
+													isActive ? "bg-sel" : "bg-transparent group-hover:bg-sel/40"
+												}`}
+											/>
+										)}
+										{(signals || hasNote) && (
+											<span
+												aria-hidden
+												className={`absolute left-[calc(100%+10px)] top-[1.15rem] hidden items-center gap-[5px] rounded-full px-[6px] py-[5px] -my-[5px] -mx-[6px] transition-colors duration-150 lg:flex ${
+													isActive
+														? "bg-paper ring-1 ring-selbar/40"
+														: "group-hover:bg-paper"
+												}`}
 											>
 												{/* A15: ring first — the personal layer leads the cluster */}
 												{hasNote && (
