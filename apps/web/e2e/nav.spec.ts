@@ -35,14 +35,38 @@ test("the reader reaches Notes in one click", async ({ page }) => {
 	await expect(page).toHaveURL("/notes");
 });
 
-test("Collections lists the podcast and lands on it", async ({ page }) => {
+test("Collections carries exactly three doors; the podcast door lands", async ({ page }) => {
 	await page.goto("/");
 	await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Collections" }).click();
 	await expect(page).toHaveURL("/collections");
+	// the curated set (Abram, 2026-07-31): Strong's, Art, Unshaken — no more
+	await expect(page.getByRole("link", { name: /Strong/ })).toBeVisible();
+	await expect(page.getByRole("link", { name: /^Art/ })).toBeVisible();
 	const unshaken = page.getByRole("link", { name: /Unshaken/i }).first();
 	await expect(unshaken).toBeVisible();
+	expect(await page.locator("main ul > li").count()).toBe(3);
 	await unshaken.click();
 	await expect(page).toHaveURL(/\/collections\/.+/);
+});
+
+test("Strong's traverses: overview → range → word study", async ({ page }) => {
+	await page.goto("/strongs");
+	await page.getByRole("link", { name: "1–100", exact: true }).first().click();
+	await expect(page).toHaveURL("/strongs?from=H1");
+	await expect(page.getByRole("heading", { name: "H1–H100" })).toBeVisible();
+	const first = page.locator("main ul a").first();
+	await expect(first).toContainText("H1");
+	await first.click();
+	await expect(page).toHaveURL(/\/word\/H1/);
+});
+
+test("Art traverses: ledger → chapter gallery", async ({ page }) => {
+	await page.goto("/art");
+	await expect(page.getByRole("heading", { name: "Art", level: 1 })).toBeVisible();
+	// canonical shelving: a book section with numbered chapter doors
+	const door = page.locator("main section a").first();
+	await door.click();
+	await expect(page).toHaveURL(/\/scripture\/[a-z0-9-]+\/\d+\/art/);
 });
 
 test("wide viewports carry the LEFT RAIL; current section reads full ink", async ({ page }) => {

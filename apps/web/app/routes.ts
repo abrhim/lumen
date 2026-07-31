@@ -7,6 +7,8 @@ export default [
 	route("scripture/:book/:chapter/art", "routes/scripture.art.tsx"),
 	route("word/:no", "routes/word.tsx"),
 	route("media/:id", "routes/media.tsx"),
+	route("strongs", "routes/strongs.tsx"),
+	route("art", "routes/art.tsx"),
 	route("collections", "routes/collections.index.tsx"),
 	route("collections/:id", "routes/collections.tsx"),
 	route("notes", "routes/notes.tsx"),

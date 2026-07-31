@@ -16,7 +16,7 @@ import { Link, useLocation } from "react-router";
 const SECTIONS = [
 	{ to: "/", label: "Scripture", match: /^\/($|scripture|word)/ },
 	{ to: "/notes", label: "Notes", match: /^\/notes/ },
-	{ to: "/collections", label: "Collections", match: /^\/(collections|media)/ },
+	{ to: "/collections", label: "Collections", match: /^\/(collections|media|strongs|art)/ },
 	{ to: "/me", label: "Me", match: /^\/me/ },
 ] as const;
 
