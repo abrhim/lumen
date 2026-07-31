@@ -187,8 +187,8 @@ vitest (red via missing modules); RLS via scripts/smoke-notes-rls.mjs
   updated_at returned; optimistic-lock deferred.
 
 ## Drift baseline (filled at end of step 6)
-- plan-hash: f4e86d25ebc2c011 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
-- harness-hash: 606e646d2aac3583 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
+- plan-hash: 6b6726b258b12fe0 (sha256 of this file with the two baseline hash lines stripped — recompute the same way at step-8 exit)
+- harness-hash: d1f1d5f0d467cfa5 (sha256 of the 5 harness test files + smoke script, concatenated in plan order)
 
 ## Plan amendments (post-panel synthesis, 2026-07-30)
 
@@ -489,4 +489,63 @@ e2e flows 41–53 land with the Playwright infra (Q1).
   + DEFINER soft-delete stands as the settled design ("pg level it is") —
   human ruling, not open for panel re-litigation. Consequence accepted on
   record: a future trash/restore feature needs its own privileged path.
+- STEPS 9-11 COMPLETE (2026-07-30): code-panel 9 lanes, 101 raw → 73
+  canonical (CP-1..73, code-panel.md); adversarial taggers + Opus meta →
+  61 material (code-adversarial.md); bug filter → 56 CPs in 53 confirmed
+  work items B1-B53 (bugs.md), 2 critical / 12 high.
+- STEPS 12-13 COMPLETE (2026-07-30): repro-first fixes for the whole
+  B-queue under Abram's "handle all remaining bugs" directive. B40 (NUL
+  hygiene) first, then B1/B2/B3/B4/B5/B7 hand-fixed with repros; B6-B53
+  cleared by a 4-worker parallel fix pass (strict disjoint file ownership)
+  and integrated by hand. New unit files fixes-{editor,notes,obs,routes}
+  .test.ts; new e2e fixes-editor.spec.ts (7) + fixes-surfaces.spec.ts (6+
+  coarse-pointer B52). Worker judgment calls on record: anchor cap stays 64
+  (NOTE_MAX_ANCHORS) with update-path DEGRADE (anchors_synced=false) rather
+  than the record's 128/too_many_anchors 400; UPDATE(deleted_at) column
+  grant KEPT (commented — the DEFINER RPC is the only live path); B32
+  degraded-capture line shipped on both scripture + media surfaces.
+- HARNESS REVISION 2 (sanctioned under the same directive, 2026-07-30):
+  worker D extended smoke-notes-rls.mjs 19→33 assertions (DEFINER
+  adversarial probes incl. forged-owner and cross-user RPC, anon EXECUTE
+  denials, CF-25 atomicity, real CF-9 default-ACL probe, born-dead INSERT
+  + created_at-tamper probes, allSettled cleanup) and migrate-notes.mjs
+  14→21 invariants (column-scoped GRANT sweep: notes INSERT(body_md)/
+  UPDATE(body_md,deleted_at), anchors INSERT cols/DELETE, default-priv
+  REVOKE for lumen_read, function EXECUTE matrix). Strictly additive —
+  no assertion weakened; smoke PASS 33/33 live.
+- B54 FILED + FIXED (2026-07-30, during step-13 integration): the tall-note
+  jump-to-bottom is a Chromium native keystroke-reveal of a
+  taller-than-viewport focused contenteditable — content-independent
+  (1 keystroke suffices), no JS caller, reproduces at baseline 24ca795.
+  Bisect exonerated every product suspect (popup mount, imperative ARIA,
+  role flip, place(), setPopup, [[ dispatch, overflow-anchor). Fix:
+  caret-keeper guard in NoteEditor (visible-caret keystroke pins scrollY;
+  >160px displacement within 700ms snaps back instantly; genuine
+  off-screen-caret reveals pass). The earlier deferred-activedescendant
+  workaround was reverted — standard combobox ARIA restored (B10/B36
+  contracts): combobox posture tracks the ACTIVE SPAN with
+  aria-expanded=false when no matches, aria-controls only while the
+  listbox exists. Rider fix: SearchModal ⌘K now yields on
+  e.defaultPrevented — the editor's Mod-k palette and the library palette
+  no longer stack (B51's true cause; the Radix dialog aria-hid the insert
+  palette underneath it).
+- STEP-13 EXIT VERIFICATION (2026-07-30, all green): tsc -b --force clean;
+  vitest 355 (web) + 130 (scripture) + 38 (neo4j-http); Playwright 52/52
+  across desktop + mobile projects; pnpm build + check-notes-bundle PASS
+  (5 guarded closures editor-free, both positive controls) + --self-test
+  PASS; smoke-notes-rls 33/33 live. e2e infra hardened during the pass:
+  playwright globalSetup now terminates zombie idle lumen_read sessions
+  (pool cap 15 — back-to-back runs inherited corpses and data routes hung;
+  linked-rail LIVE was the canary), B50's spec waits exactly (toHaveText
+  NORMALIZES zero-width chars away — poll textContent instead) and awaits
+  the suggestion before Enter, B53's spec uses its own token (the roving
+  fixture seeded the shared one). bugs.md itself de-NULed (B40's own text
+  contained a literal NUL and made the ledger grep-invisible).
+- Mid-stream product directions from Abram, all shipped with e2e pins:
+  suggestion engine v2 (scrollable >3 results, fuzzy book matching,
+  chapter-pin drilling "alma 3" / "alma 3 2", glued "alma63"), entity
+  search across all node types in `[[` (generated entity-index, 12,702
+  entries), episode/podcast references by name, linked-material side rail
+  on the note page in BOTH postures with hover hints, live rail updates
+  while typing (400ms-debounced api.notes-linked resource route).
 - Branch: feature/personal-notes.

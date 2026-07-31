@@ -396,7 +396,7 @@ not the spec.
 - Severity: low · Categories: review integrity, hygiene
 - Source: CP-43 (SEC-7, UX-12, a11y out-of-lane) · Raised_by: [security, ux,
   accessibility] — 3-lane convergence, byte-scanned by all three
-- Fix per CP-43 (` ` escapes, `.gitattributes`, optional lint).
+- Fix per CP-43 (`\0` escapes, `.gitattributes`, optional lint).
   Control failure, not content (security read all 830 lines). Fix FIRST in
   step 13 so every subsequent editor diff is reviewable.
 
@@ -490,6 +490,31 @@ not the spec.
   rejected out-of-scope; the contract is public per A4
 - Fix per CP-70 (echo notes-only in loaderData + honest scope line, or
   normalize the URL).
+
+#### B54: Chromium keystroke-reveal scrolls tall notes to their foot (filed + fixed step 13)
+- Severity: high · Categories: ux, editor, upstream-browser · Filed 2026-07-30
+  during step-13 integration; root-caused and fixed same day.
+- Symptom: in a note taller than the viewport, the page smooth-scrolls toward
+  the editor's foot during/after typing — the "chaotic jumps" that polluted
+  B11/B50/B51 spec runs.
+- Forensics (full trail in step-13 work): no JS caller — every scroll API
+  trapped (scrollIntoView, scrollTo/By/scroll, scrollTop setter, focus), all
+  silent. Reproduces at the pre-feature baseline (24ca795 worktree).
+  Content-independent: bare `z` (1 keystroke) scrolls fully to the document
+  bottom; every candidate product trigger (popup mount, imperative combobox
+  ARIA, role flip, `place()`, `setPopup`, `[[` activation dispatch,
+  `overflow-anchor`) was bisected OUT — the scroll survives with all of them
+  suppressed. Shape: Chromium starts a native eased reveal of the focused
+  taller-than-viewport contenteditable on a keystroke; subsequent keystrokes
+  cancel the running animation partway (hence the chaotic partial offsets:
+  1 char → full bottom, 2 chars → ~1600px, sustained typing → near zero).
+- Fix: caret-keeper guard in `NoteEditor.tsx` — on keydown with a VISIBLE
+  caret, record `scrollY`; any page displacement > 160px within 700ms snaps
+  back (`behavior: "instant"`). Genuine reveals (caret off-screen) and
+  line-height nudges pass through. `overflow-anchor: none` on `html` kept
+  as a separate stabilizer (CSS scroll anchoring compounded typing jitter).
+- Verified: 5-scenario matrix (1 char / 2 chars / `[[` / `[[a` / paren
+  control, delay 0 and 40ms) all pinned ≤48px; full fixes-editor suite 7/7.
 
 ---
 
