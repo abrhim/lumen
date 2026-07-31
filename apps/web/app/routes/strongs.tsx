@@ -45,7 +45,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Strong’s — candlestick.study" }];
+	return [{ title: "Strong’s — lintel" }];
 }
 
 function rangeLinks(lang: "H" | "G") {

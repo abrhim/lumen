@@ -737,7 +737,7 @@ export function headers({ loaderHeaders }: Route.HeadersArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-	return [{ title: data ? `${data.reference} · candlestick.study` : "candlestick.study" }];
+	return [{ title: data ? `${data.reference} · lintel` : "lintel" }];
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {

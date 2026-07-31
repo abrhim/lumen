@@ -75,7 +75,7 @@ test("wide viewports carry the LEFT RAIL; current section reads full ink", async
 	const rail = page.getByRole("navigation", { name: "Primary" });
 	await expect(rail).toBeVisible();
 	// vertical: the rail's words stack (Lumen above Scripture above Notes)
-	const lumen = (await rail.getByRole("link", { name: "candlestick.study" }).boundingBox())!;
+	const lumen = (await rail.getByRole("link", { name: "lintel", exact: true }).boundingBox())!;
 	const notes = (await rail.getByRole("link", { name: "Notes", exact: true }).boundingBox())!;
 	expect(lumen.x).toBeLessThan(200); // off to the left
 	expect(notes.y).toBeGreaterThan(lumen.y + 20); // stacked, with air

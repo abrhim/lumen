@@ -22,6 +22,18 @@ const SECTIONS = [
 	{ to: "/roadmap", label: "Roadmap", match: /^\/roadmap/ },
 ] as const;
 
+/** The mark (icon exploration round 4, #7): beam, posts, the strike. */
+function LintelMark() {
+	return (
+		<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" className="size-[15px]">
+			<rect x="5" y="7" width="22" height="4.5" rx="1" />
+			<rect x="6.5" y="13.5" width="4.5" height="15.5" rx="1" />
+			<rect x="21" y="13.5" width="4.5" height="15.5" rx="1" />
+			<path d="M16 3 C16 3 14.2 5.2 14.2 6.4 a1.8 1.8 0 0 0 3.6 0 C17.8 5.2 16 3 16 3 Z" />
+		</svg>
+	);
+}
+
 function summonSearch(e: { preventDefault: () => void }) {
 	// the modal claims the summon by cancelling the event; if search chrome
 	// ever crashes, nothing claims it and the word degrades to plain
@@ -36,9 +48,10 @@ function items(pathname: string, itemClass: string) {
 		<>
 			<Link
 				to="/"
-				className={`${itemClass} font-semibold tracking-tight text-ink hover:text-primary`}
+				className={`${itemClass} flex items-center gap-1.5 font-semibold tracking-tight text-ink hover:text-primary`}
 			>
-				<span aria-hidden="true">⁂ </span>candlestick.study
+				<LintelMark />
+				lintel
 			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
 				const current = match.test(pathname);

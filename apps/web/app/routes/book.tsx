@@ -63,7 +63,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-	return [{ title: data ? `${data.name} · candlestick.study` : "candlestick.study" }];
+	return [{ title: data ? `${data.name} · lintel` : "lintel" }];
 }
 
 export default function Book({ loaderData }: Route.ComponentProps) {

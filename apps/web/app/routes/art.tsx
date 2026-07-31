@@ -55,7 +55,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 }
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Art — candlestick.study" }];
+	return [{ title: "Art — lintel" }];
 }
 
 export default function Art({ loaderData }: Route.ComponentProps) {

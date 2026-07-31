@@ -36,6 +36,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem("lumen-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
 
 export const links: Route.LinksFunction = () => [
+	{ rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+	{ rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
 	{ rel: "preconnect", href: "https://fonts.googleapis.com" },
 	{
 		rel: "preconnect",
