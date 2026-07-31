@@ -135,7 +135,10 @@ test("About and Roadmap exist, framed by the canon, linked from the home foot", 
 	page,
 }) => {
 	await page.goto("/");
-	await page.getByRole("link", { name: "About", exact: true }).click();
+	await page
+		.getByRole("navigation", { name: "Primary" })
+		.getByRole("link", { name: "About", exact: true })
+		.click();
 	await expect(page).toHaveURL("/about");
 	await expect(page.getByRole("heading", { name: "About", level: 1 })).toBeVisible();
 	await page.getByRole("link", { name: "where it's headed" }).click();

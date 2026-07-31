@@ -18,6 +18,8 @@ const SECTIONS = [
 	{ to: "/notes", label: "Notes", match: /^\/notes/ },
 	{ to: "/collections", label: "Collections", match: /^\/(collections|media|strongs|art)/ },
 	{ to: "/me", label: "Me", match: /^\/me/ },
+	{ to: "/about", label: "About", match: /^\/about/ },
+	{ to: "/roadmap", label: "Roadmap", match: /^\/roadmap/ },
 ] as const;
 
 function summonSearch(e: { preventDefault: () => void }) {
