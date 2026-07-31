@@ -106,7 +106,7 @@ export function AppNav() {
 			{/* the same words as a top row everywhere else */}
 			<nav
 				aria-label="Primary"
-				className="mx-auto flex max-w-6xl items-center gap-x-5 px-6 pt-4 pr-28 font-ui text-sm min-[1440px]:hidden"
+				className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-6 pt-4 font-ui text-sm min-[1440px]:hidden"
 			>
 				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline", false)}
 			</nav>
