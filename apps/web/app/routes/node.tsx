@@ -213,8 +213,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
-	if (!d) return [{ title: "lintel" }];
-	return [{ title: `${d.entity.name} · lintel` }];
+	if (!d) return [{ title: "Lintel" }];
+	return [{ title: `${d.entity.name} · Lintel` }];
 }
 
 const TYPE_LABELS: Record<string, string> = {

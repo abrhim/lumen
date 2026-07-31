@@ -40,9 +40,9 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-	if (!data) return [{ title: "lintel" }];
+	if (!data) return [{ title: "Lintel" }];
 	const name = data.entry?.translit ?? data.no;
-	return [{ title: `${name} · ${data.no} · lintel` }];
+	return [{ title: `${name} · ${data.no} · Lintel` }];
 }
 
 export default function WordDetail({ loaderData }: Route.ComponentProps) {

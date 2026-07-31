@@ -51,7 +51,7 @@ function items(pathname: string, itemClass: string) {
 				className={`${itemClass} flex items-center gap-1.5 font-semibold tracking-tight text-ink hover:text-primary`}
 			>
 				<LintelMark />
-				lintel
+				Lintel
 			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
 				const current = match.test(pathname);

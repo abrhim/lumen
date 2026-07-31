@@ -97,8 +97,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
-	if (!d) return [{ title: "lintel" }];
-	return [{ title: `${d.collection.name} · lintel` }];
+	if (!d) return [{ title: "Lintel" }];
+	return [{ title: `${d.collection.name} · Lintel` }];
 }
 
 export default function CollectionLanding({ loaderData }: Route.ComponentProps) {

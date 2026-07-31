@@ -6,7 +6,7 @@ import type { Route } from "./+types/roadmap";
  * no dates promised, only order. */
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Roadmap — lintel" }];
+	return [{ title: "Roadmap — Lintel" }];
 }
 
 const SECTIONS: Array<{ label: string; items: string[] }> = [

@@ -87,7 +87,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 
 export function meta({ data }: Route.MetaArgs) {
 	return [
-		{ title: data ? `Art · ${data.reference} · lintel` : "Lumen" },
+		{ title: data ? `Art · ${data.reference} · Lintel` : "Lumen" },
 	];
 }
 

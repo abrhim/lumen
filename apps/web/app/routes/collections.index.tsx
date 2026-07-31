@@ -68,7 +68,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Collections — lintel" }];
+	return [{ title: "Collections — Lintel" }];
 }
 
 export default function CollectionsIndex({ loaderData }: Route.ComponentProps) {

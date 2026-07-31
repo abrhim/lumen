@@ -737,7 +737,7 @@ export function headers({ loaderHeaders }: Route.HeadersArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-	return [{ title: data ? `${data.reference} · lintel` : "lintel" }];
+	return [{ title: data ? `${data.reference} · Lintel` : "Lintel" }];
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {

@@ -7,7 +7,7 @@ import { deriveNoteTitle, UNTITLED_NOTE } from "~/lib/notes-derive";
 import type { Route } from "./+types/notes";
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Your notes · lintel" }];
+	return [{ title: "Your notes · Lintel" }];
 }
 
 /**

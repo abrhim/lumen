@@ -429,7 +429,7 @@ export function headers({ loaderHeaders }: Route.HeadersArgs) {
 
 export function meta({ data: d }: Route.MetaArgs) {
 	const q = d?.q;
-	return [{ title: q ? `“${q}” · Search · lintel` : "Search · lintel" }];
+	return [{ title: q ? `“${q}” · Search · Lintel` : "Search · Lintel" }];
 }
 
 /* ─── rendering ─── */

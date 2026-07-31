@@ -27,7 +27,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 }
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Me — lintel" }];
+	return [{ title: "Me — Lintel" }];
 }
 
 export default function Me({ loaderData }: Route.ComponentProps) {

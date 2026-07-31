@@ -46,7 +46,7 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 export function meta(_args: Route.MetaArgs) {
 	return [
-		{ title: "lintel — scripture study" },
+		{ title: "Lintel — scripture study" },
 		{ name: "description", content: "An AI-native scripture study companion." },
 	];
 }
