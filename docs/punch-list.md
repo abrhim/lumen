@@ -52,3 +52,43 @@ Add freely; strike when shipped.
 - Force-drag feel / simulation tuning on real hubs.
 - Mobile sheet ↔ graph overlay handoff choreography.
 - VoiceOver pass on the overlay (announcements, list view).
+
+## From Abram's text-message notes (transcribed 2026-07-31)
+
+### Notes editor — the references workspace
+4. **References rail on the LEFT of the note editor** — all of a note's
+   links live in a left rail; rename the register "References" (or
+   similar, not "Linked").
+5. **Selected reference → detail pane on the RIGHT** — click a reference
+   in the rail, read it in a right-hand detail pane.
+6. **The detail pane reads the ref IN ITS ENTIRETY** — full chapter/talk/
+   entry, not a snippet.
+7. **Notes need tags — with colors.**
+
+### Reader
+8. **Scripture stays CENTERED until a verse is clicked**; the verse detail
+   pane appears on click — never a standing left-offset layout.
+9. **Mobile verse detail pane renders only the verse itself** — and no
+   italics anywhere in it (too hard to read).
+
+### Data / graph hygiene
+10. **Remove ALL AI-generated cross-references.** (Pairs with item 3's TSK
+    ingest — the licensed set replaces the generated one.)
+11. **Deep-clean duplicate-named nodes** (the melchisedec-1/melchizedek-1
+    class, app-wide).
+12. **Priests of Noah is a missing node.**
+13. **Ingest the Scripture Citation Index.**
+14. **A collection of General Conference links.**
+15. **Collection summary pages** — plus principles scoped to a collection,
+    and NEW node types unique to a collection.
+
+### Product surfaces
+16. **About page.**
+17. **Roadmap page.**
+18. **Feedback form.**
+
+### Platform
+19. **An MCP server for Lumen** — with a skill that builds outlines with
+    references and URLs.
+20. **Domain: scripture.study?** (Abram's own caveat: "not a normal
+    domain" — undecided.)
