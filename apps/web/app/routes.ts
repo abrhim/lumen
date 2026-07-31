@@ -16,6 +16,7 @@ export default [
 	route("logout", "routes/logout.tsx"),
 	route("admin/users", "routes/admin.users.tsx"),
 	route("api/search", "routes/api.search.tsx"),
+	route("api/notes-linked", "routes/api.notes-linked.tsx"),
 	route("search", "routes/search.tsx"),
 	// Typed node pages — the type is the slug (/people/:id, /principles/:id…).
 	// LAST on purpose: static routes above always win; the loader 404s any

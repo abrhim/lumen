@@ -74,3 +74,18 @@ test("entity search: [[rameumptom suggests the place; rail rides the editor", as
 	await expect(rail.getByRole("heading", { name: "People & topics", level: 3 })).toBeVisible();
 	await expect(rail).toContainText(/Rameumptom/i);
 });
+
+test("the composing rail is LIVE: inserting a link populates it without any save", async ({
+	page,
+}) => {
+	await page.goto("/notes/new");
+	await page.locator(".note-editor").click();
+	await page.keyboard.type("see [[alma 32:21");
+	await page.keyboard.press("Enter");
+	// no save, no autosave wait — the rail resolves from the live doc
+	const rail = page.getByRole("region", { name: "Linked in this note" });
+	await expect(rail).toBeVisible({ timeout: 5000 });
+	await expect(rail).toContainText("Alma 32:21");
+	await expect(rail).toContainText(/perfect knowledge/);
+	await expect(page).toHaveURL(/\/notes\/new$/);
+});

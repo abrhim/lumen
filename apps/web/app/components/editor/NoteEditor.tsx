@@ -33,6 +33,7 @@ import { findCanonReferences } from "./reference-rule";
 import { suggestDestinations, type InsertSuggestion } from "./suggest";
 import { resolveAnchorRef, anchorRefToPath } from "@lumen/scripture/notes-refs";
 import { pushEscape } from "~/lib/escape-registry";
+import { extractWikilinkRefs } from "~/lib/notes-derive";
 
 export interface NoteEditorProps {
 	noteId: string | null;
@@ -40,6 +41,9 @@ export interface NoteEditorProps {
 	initialUpdatedAt: string | null;
 	prefillAnchor: string | null;
 	onClose: () => void;
+	/** fires whenever the doc's wikilink ref-set changes — feeds the live
+	 * composing rail (debounced upstream) */
+	onRefsChange?: (refs: string[]) => void;
 }
 
 /* ─── mark input rules (**bold**, *italic*) ─── */
@@ -285,7 +289,18 @@ class EditorBoundary extends Component<
 const FMT_COUNT_KEY = "lumen:fmt-count";
 
 function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }) {
-	const { noteId, initialBody, initialUpdatedAt, prefillAnchor, onClose, onMarkdown } = props;
+	const { noteId, initialBody, initialUpdatedAt, prefillAnchor, onClose, onMarkdown, onRefsChange } =
+		props;
+	const lastRefsKeyRef = useRef<string | null>(null);
+	const reportRefs = (md: string) => {
+		if (!onRefsChange) return;
+		const refs = extractWikilinkRefs(md);
+		const key = refs.join(" ");
+		if (key !== lastRefsKeyRef.current) {
+			lastRefsKeyRef.current = key;
+			onRefsChange(refs);
+		}
+	};
 	const fetcher = useFetcher<{
 		ok?: boolean;
 		updated_at?: string;
@@ -522,6 +537,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 					editGenRef.current += 1;
 					latestMdRef.current = serializeNoteDoc(newState.doc);
 					onMarkdown?.(latestMdRef.current);
+					reportRefs(latestMdRef.current);
 					// idle-based debounce: every keystroke re-arms the window
 					armIdleTimer(3000);
 				}
@@ -553,6 +569,8 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		view.dom.addEventListener("beforeinput", beforeInput);
 		viewRef.current = view;
 		view.focus();
+		// seed the composing rail with the initial doc's refs
+		reportRefs(serializeNoteDoc(view.state.doc));
 		return () => {
 			view.dom.removeEventListener("beforeinput", beforeInput);
 			view.destroy();

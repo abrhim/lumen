@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link, data, redirect, useFetcher, useNavigate, useRevalidator } from "react-router";
 import {
 	AlertDialog,
@@ -515,25 +515,58 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 		}
 	}, [note?.id, title]);
 
+	// live composing rail: the editor reports its ref-set on every change;
+	// a short debounce resolves them through /api/notes-linked, so the rail
+	// tracks typing rather than the autosave cadence (Abram)
+	const linkedFetcher = useFetcher<LinkedCanon>();
+	const liveRefsRef = useRef<string[] | null>(null);
+	const [liveRefsKey, setLiveRefsKey] = useState<string | null>(null);
+	const onRefsChange = (refs: string[]) => {
+		liveRefsRef.current = refs;
+		setLiveRefsKey(refs.join(" "));
+	};
+	useEffect(() => {
+		if (liveRefsKey === null) return;
+		const t = setTimeout(() => {
+			const refs = liveRefsRef.current ?? [];
+			if (refs.length > 0) {
+				linkedFetcher.load(`/api/notes-linked?refs=${encodeURIComponent(refs.join(","))}`);
+			}
+		}, 400);
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [liveRefsKey]);
+
+	const isComposing = editing || mode === "new";
+	const activeLinked =
+		isComposing && linkedFetcher.data
+			? liveRefsRef.current?.length === 0
+				? null
+				: linkedFetcher.data
+			: linked;
+
 	const hasRail =
-		linked !== null &&
-		linked.verses.length + linked.chapters.length + linked.entities.length + linked.media.length >
+		activeLinked !== null &&
+		activeLinked.verses.length +
+			activeLinked.chapters.length +
+			activeLinked.entities.length +
+			activeLinked.media.length >
 			0;
-	const preview = hint ? linked?.previews[hint.ref] : null;
+	const preview = hint ? activeLinked?.previews[hint.ref] : null;
 
 	// the linked rail rides BOTH postures (Abram): while composing it
 	// refreshes as each autosave's revalidation resolves the fresh refs
-	const rail = hasRail && linked && (
+	const rail = hasRail && activeLinked && (
 		<aside className="mt-10 lg:mt-0">
 			<section
 				aria-label="Linked in this note"
 				className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[20px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
 			>
 				<h2 className="font-display text-[19px] font-medium tracking-[-0.01em]">Linked</h2>
-				<LinkedRegister label="Verses" items={linked.verses} />
-				<LinkedRegister label="Chapters" items={linked.chapters} />
-				<LinkedRegister label="People & topics" items={linked.entities} />
-				<LinkedRegister label="Heard in" items={linked.media} />
+				<LinkedRegister label="Verses" items={activeLinked.verses} />
+				<LinkedRegister label="Chapters" items={activeLinked.chapters} />
+				<LinkedRegister label="People & topics" items={activeLinked.entities} />
+				<LinkedRegister label="Heard in" items={activeLinked.media} />
 			</section>
 		</aside>
 	);
@@ -560,6 +593,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 							initialBody={note?.body_md ?? ""}
 							initialUpdatedAt={note?.updated_at ?? null}
 							prefillAnchor={anchor ?? null}
+							onRefsChange={onRefsChange}
 							onClose={() => {
 								if (note) {
 									setEditing(false);
