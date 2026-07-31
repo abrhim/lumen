@@ -97,8 +97,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
-	if (!d) return [{ title: "Lumen" }];
-	return [{ title: `${d.collection.name} · Lumen` }];
+	if (!d) return [{ title: "candlestick.study" }];
+	return [{ title: `${d.collection.name} · candlestick.study` }];
 }
 
 export default function CollectionLanding({ loaderData }: Route.ComponentProps) {

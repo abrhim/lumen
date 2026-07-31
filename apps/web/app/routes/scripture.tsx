@@ -737,7 +737,7 @@ export function headers({ loaderHeaders }: Route.HeadersArgs) {
 }
 
 export function meta({ data }: Route.MetaArgs) {
-	return [{ title: data ? `${data.reference} · Lumen` : "Lumen" }];
+	return [{ title: data ? `${data.reference} · candlestick.study` : "candlestick.study" }];
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {

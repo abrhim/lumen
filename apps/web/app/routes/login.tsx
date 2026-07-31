@@ -4,7 +4,7 @@ import type { Route } from "./+types/login";
 import { getAuth, getSessionUser, safeReturnTo } from "~/lib/auth.server";
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Sign in — Lumen" }];
+	return [{ title: "Sign in — candlestick.study" }];
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {

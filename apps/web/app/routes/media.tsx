@@ -239,8 +239,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 }
 
 export function meta({ data: d }: Route.MetaArgs) {
-	if (!d) return [{ title: "Lumen" }];
-	return [{ title: `${d.title} · ${d.collectionName} · Lumen` }];
+	if (!d) return [{ title: "candlestick.study" }];
+	return [{ title: `${d.title} · ${d.collectionName} · candlestick.study` }];
 }
 
 const msg = (payload: object) => JSON.stringify({ id: "lumen-media", channel: "widget", ...payload });

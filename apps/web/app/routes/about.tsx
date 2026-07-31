@@ -6,7 +6,7 @@ import type { Route } from "./+types/about";
  * voice in product copy (Abram, 2026-07-31, standing rule). */
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "About — Lumen" }];
+	return [{ title: "About — candlestick.study" }];
 }
 
 export default function About() {
@@ -14,7 +14,7 @@ export default function About() {
 		<PageFrame frame="column">
 			<PageHeader title="About" />
 			<div className="mt-8 space-y-5 font-reading text-[17px] leading-relaxed text-ink">
-				<p>Lumen is a scripture study app.</p>
+				<p>candlestick.study is a scripture study app.</p>
 				<p>
 					You can read the standard works and see what is connected to each verse:
 					people, places, topics, cross-references, the underlying Hebrew and Greek
@@ -26,7 +26,7 @@ export default function About() {
 					your search results.
 				</p>
 				<p className="text-muted-foreground">
-					Lumen is in active development. See the{" "}
+					The app is in active development. See the{" "}
 					<Link
 						to="/roadmap"
 						className="text-ink underline decoration-dotted underline-offset-4 hover:text-primary"

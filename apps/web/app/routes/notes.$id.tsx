@@ -87,7 +87,7 @@ function json(body: unknown, status: number, headers?: Headers): Response {
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
 	const title = loaderData?.mode === "read" ? loaderData.title : "New note";
-	return [{ title: `${title} · Lumen` }];
+	return [{ title: `${title} · candlestick.study` }];
 }
 
 /** B4 (CP-5): private bodies + rotation cookies — never cacheable

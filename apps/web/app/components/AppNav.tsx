@@ -38,7 +38,7 @@ function items(pathname: string, itemClass: string) {
 				to="/"
 				className={`${itemClass} font-semibold tracking-tight text-ink hover:text-primary`}
 			>
-				<span aria-hidden="true">⁂ </span>Lumen
+				<span aria-hidden="true">⁂ </span>candlestick.study
 			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
 				const current = match.test(pathname);

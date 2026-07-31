@@ -32,7 +32,7 @@ import {
 import type { Route } from "./+types/admin.users";
 
 export function meta(_args: Route.MetaArgs) {
-	return [{ title: "Users · Admin · Lumen" }];
+	return [{ title: "Users · Admin · candlestick.study" }];
 }
 
 /**
