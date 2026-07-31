@@ -21,7 +21,13 @@ import {
 import { notesEnabled } from "~/lib/notes-enabled";
 import { renderNoteHtml } from "~/lib/notes-render.server";
 import { canonicalizeNoteMarkdown, sanitizeWikilinkLabel } from "~/lib/notes-canonical.server";
-import { deriveNoteTitle, NOTE_BODY_MAX_BYTES, UNTITLED_NOTE } from "~/lib/notes-derive";
+import {
+	deriveNoteTitle,
+	extractWikilinkRefs,
+	NOTE_BODY_MAX_BYTES,
+	UNTITLED_NOTE,
+} from "~/lib/notes-derive";
+import { resolveLinkedCanon, type LinkedCanon, type LinkedItem } from "~/lib/notes-linked.server";
 import { resolveAnchorRef, type AnchorRef } from "@lumen/scripture/notes-refs";
 import { logEvent } from "~/lib/log.server";
 import type { Route } from "./+types/notes.$id";
@@ -79,7 +85,10 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		// prefilled anchor from reader capture (A9): ?anchor=alma-32-21
 		const anchorParam = new URL(request.url).searchParams.get("anchor");
 		const anchor = anchorParam && resolveAnchorRef(anchorParam) ? anchorParam : null;
-		return data({ mode: "new" as const, note: null, title: null, html: null, anchor }, { headers });
+		return data(
+			{ mode: "new" as const, note: null, title: null, html: null, anchor, linked: null },
+			{ headers },
+		);
 	}
 
 	if (!UUID_RE.test(params.id)) {
@@ -99,6 +108,20 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 		bodyForRender = note.body_md.replace(firstLine, "").replace(/^\n+/, "");
 	}
 
+	// linked-canon rail + hover previews (Abram, 2026-07-30): anchors + body
+	// wikilinks resolved through the read-only canon connection. Absence on
+	// failure — the note itself must never depend on rail data.
+	let linked: LinkedCanon | null = null;
+	try {
+		const anchors = await getNoteAnchors(request, context.cloudflare.env, note.id);
+		const refs = [
+			...new Set([...anchors.map((a) => a.ref_id), ...extractWikilinkRefs(note.body_md)]),
+		];
+		if (refs.length > 0) linked = await resolveLinkedCanon(context.db, refs);
+	} catch {
+		linked = null;
+	}
+
 	return data(
 		{
 			mode: "read" as const,
@@ -106,6 +129,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
 			title,
 			html: renderNoteHtml(bodyForRender, { demoteHeadings: true }),
 			anchor: null,
+			linked,
 		},
 		{ headers },
 	);
@@ -391,9 +415,84 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 
 const NoteEditor = lazy(() => import("~/components/editor/NoteEditor"));
 
+/** Rail register rows in the reader's ruled idiom — whole row a door. */
+function LinkedRegister({ label, items }: { label: string; items: LinkedItem[] }) {
+	if (items.length === 0) return null;
+	return (
+		<div className="mt-[18px] first:mt-3">
+			<h3 className="font-ui text-[13px] font-normal text-muted-foreground">{label}</h3>
+			<ul className="mt-1 list-none">
+				{items.map((item) => {
+					const body = (
+						<>
+							<span className="block font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+								{item.title}
+								{item.gloss ? (
+									<span className="ml-2 font-ui text-[10.5px] text-muted-foreground">
+										{item.gloss}
+									</span>
+								) : null}
+							</span>
+							{item.snippet ? (
+								<span className="mt-0.5 line-clamp-2 block font-reading text-[13px] leading-relaxed text-muted-foreground">
+									{item.snippet}
+								</span>
+							) : null}
+						</>
+					);
+					return (
+						<li key={item.ref} className="border-t border-rule first:border-t-0">
+							{item.href ? (
+								<Link to={item.href} className="group block py-2">
+									{body}
+								</Link>
+							) : (
+								<div className="py-2">{body}</div>
+							)}
+						</li>
+					);
+				})}
+			</ul>
+		</div>
+	);
+}
+
 export default function NotePage({ loaderData }: Route.ComponentProps) {
-	const { mode, note, title, html, anchor } = loaderData;
+	const { mode, note, title, html, anchor, linked } = loaderData;
 	const [editing, setEditing] = useState(mode === "new");
+	// wikilink hover/focus hint (aria-hidden — links already carry composed
+	// aria-labels; this is a sighted-reader enhancement)
+	const [hint, setHint] = useState<{ ref: string; top: number; left: number } | null>(null);
+	const showHintFor = (target: EventTarget | null) => {
+		const el = (target as HTMLElement | null)?.closest?.("[data-ref]");
+		const ref = el?.getAttribute("data-ref");
+		if (el && ref && linked?.previews[ref]) {
+			const rect = el.getBoundingClientRect();
+			setHint({
+				ref,
+				top: rect.bottom + 8,
+				left: Math.max(8, Math.min(rect.left, window.innerWidth - 336)),
+			});
+		} else {
+			setHint(null);
+		}
+	};
+	// belt: while a hint is open, ANY pointer entry outside a wikilink or
+	// the hint itself dismisses it (delegated events over injected HTML
+	// don't reliably cover every exit path)
+	useEffect(() => {
+		if (!hint) return;
+		const onOver = (e: Event) => {
+			const el = (e.target as HTMLElement | null)?.closest?.("[data-ref], .note-hint");
+			if (!el) setHint(null);
+		};
+		document.addEventListener("pointerover", onOver, true);
+		window.addEventListener("scroll", onOver, true);
+		return () => {
+			document.removeEventListener("pointerover", onOver, true);
+			window.removeEventListener("scroll", onOver, true);
+		};
+	}, [hint !== null]);
 	const deleteFetcher = useFetcher<{ ok?: boolean; deleted?: boolean }>();
 	const revalidator = useRevalidator();
 	const navigate = useNavigate();
@@ -443,8 +542,21 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 		);
 	}
 
+	const hasRail =
+		linked !== null &&
+		linked.verses.length + linked.chapters.length + linked.entities.length + linked.media.length >
+			0;
+	const preview = hint ? linked?.previews[hint.ref] : null;
+
 	return (
-		<main className="mx-auto max-w-2xl px-6 py-12">
+		<main
+			className={
+				hasRail
+					? "mx-auto px-6 py-12 lg:grid lg:max-w-none lg:grid-cols-[minmax(0,42rem)_340px] lg:justify-center lg:gap-x-12"
+					: "mx-auto max-w-2xl px-6 py-12"
+			}
+		>
+			<div className={hasRail ? "mx-auto w-full max-w-2xl lg:mx-0 lg:max-w-none" : undefined}>
 			<div className="flex items-baseline justify-between gap-4">
 				<h1
 					className={`font-display text-2xl font-medium tracking-tight ${title === UNTITLED_NOTE ? "italic text-muted-foreground" : ""}`}
@@ -509,7 +621,12 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			{html ? (
 				<article
 					className="note-body mt-8 font-reading text-[17px] leading-relaxed text-ink"
-					// server-rendered by the constrained, escaping renderer (D4/F6)
+					// server-rendered by the constrained, escaping renderer (D4/F6);
+					// hover/focus hints delegate off the wikilinks' data-ref
+					onMouseOver={(e) => showHintFor(e.target)}
+					onMouseOut={(e) => showHintFor(e.relatedTarget)}
+					onFocusCapture={(e) => showHintFor(e.target)}
+					onBlurCapture={() => setHint(null)}
 					dangerouslySetInnerHTML={{ __html: html }}
 				/>
 			) : null}
@@ -523,6 +640,39 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 				</Link>
 			</nav>
 			{deleteFetcher.data ? null : null}
+			</div>
+
+			{hasRail && linked && (
+				<aside className="mt-10 lg:mt-0">
+					<section
+						aria-label="Linked in this note"
+						className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[20px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
+					>
+						<h2 className="font-display text-[19px] font-medium tracking-[-0.01em]">Linked</h2>
+						<LinkedRegister label="Verses" items={linked.verses} />
+						<LinkedRegister label="Chapters" items={linked.chapters} />
+						<LinkedRegister label="People & topics" items={linked.entities} />
+						<LinkedRegister label="Heard in" items={linked.media} />
+					</section>
+				</aside>
+			)}
+
+			{preview && hint && (
+				<div
+					aria-hidden
+					className="note-hint fixed z-40 w-80 rounded-md border border-rule2 bg-panel p-3 shadow-sm"
+					style={{ top: hint.top, left: hint.left }}
+				>
+					<p className="font-reading text-[14px] font-medium leading-snug text-ink">
+						{preview.title}
+					</p>
+					{preview.snippet ? (
+						<p className="mt-1 font-reading text-[13px] leading-relaxed text-muted-foreground">
+							{preview.snippet}
+						</p>
+					) : null}
+				</div>
+			)}
 		</main>
 	);
 }

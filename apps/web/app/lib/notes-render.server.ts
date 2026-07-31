@@ -79,14 +79,15 @@ md.renderer.rules.wikilink = (tokens, idx, _opts, env) => {
 		? anchorRefToPath(anchor, env?.resolveEntityPath as ((slug: string) => string | null) | undefined)
 		: null;
 	const text = neutralize(escapeHtml(label));
+	const refAttr = ` data-ref="${escapeHtml(ref)}"`;
 	if (!path) {
 		// fail-closed: no link semantics, no role — styled plain text (F5/CF-46)
-		return `<span class="note-wikilink-dead">${text}</span>`;
+		return `<span class="note-wikilink-dead"${refAttr}>${text}</span>`;
 	}
 	const display = displayRef(ref);
 	const ariaLabel =
 		label !== display ? ` aria-label="${neutralize(escapeHtml(`${label} — ${display}`))}"` : "";
-	return `<a href="${escapeHtml(path)}" class="note-wikilink"${ariaLabel}>${text}</a>`;
+	return `<a href="${escapeHtml(path)}" class="note-wikilink"${refAttr}${ariaLabel}>${text}</a>`;
 };
 
 /** Constrained md → HTML. Never throws. */

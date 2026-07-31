@@ -38,6 +38,21 @@ export function stripNoteMarkdownLine(line: string): string {
 	);
 }
 
+/** All wikilink refs in a body, first-seen order, deduped. Grammar
+ * validation is the caller's concern (fail-closed there). */
+export function extractWikilinkRefs(bodyMd: string): string[] {
+	const refs: string[] = [];
+	const seen = new Set<string>();
+	for (const m of bodyMd.matchAll(/\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]/g)) {
+		const ref = m[1].trim();
+		if (!seen.has(ref)) {
+			seen.add(ref);
+			refs.push(ref);
+		}
+	}
+	return refs;
+}
+
 function cap(text: string, max: number): string {
 	if (text.length <= max) return text;
 	return text.slice(0, max - 1).trimEnd() + "…";
