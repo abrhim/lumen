@@ -1082,8 +1082,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											isActive ? "bg-sel" : ""
 										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
+										{/* ONE gutter container owns the number AND the mobile dot
+										    stack (Abram: siblings drifted off-axis) — a centered
+										    column below lg, the right-aligned number column at lg. */}
+										<span className="absolute left-2 top-3 flex w-6 flex-col items-center lg:left-4 lg:w-7 lg:items-end">
 										<span
-											className={`absolute left-2 top-3 w-6 text-center font-ui text-xs font-semibold transition-colors duration-150 lg:left-4 lg:w-7 lg:text-right ${
+											className={`font-ui text-xs font-semibold transition-colors duration-150 ${
 												isActive
 													? "text-selbar"
 													: hasDepth
@@ -1099,7 +1103,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{hasDepth && (
 											<span
 												aria-hidden
-												className={`absolute left-2 top-8 flex w-6 flex-col items-center gap-[2.5px] rounded-[6px] p-[3px] -m-[3px] transition-[background-color,box-shadow] duration-150 group-hover:bg-paper lg:hidden ${
+												className={`mt-[6px] flex flex-col items-center gap-[2.5px] rounded-[6px] p-[3px] transition-[background-color,box-shadow] duration-150 group-hover:bg-paper lg:hidden ${
 													isActive
 														? "bg-paper ring-1 ring-selbar/40 group-hover:ring-0"
 														: ""
@@ -1132,6 +1136,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												).slice(0, 4)}
 											</span>
 										)}
+										</span>
 										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
 										{/* Margin dots (spike): one per KIND of reference behind the
 										    verse — stable order, first text line, outside the prose.
