@@ -81,6 +81,8 @@ test("the composing rail is LIVE: inserting a link populates it without any save
 	await page.goto("/notes/new");
 	await page.locator(".note-editor").click();
 	await page.keyboard.type("see [[alma 32:21");
+	// Enter only commits once the suggestion exists (the B50 lesson)
+	await expect(page.getByRole("option").first()).toContainText("Alma 32:21");
 	await page.keyboard.press("Enter");
 	// no save, no autosave wait — the rail resolves from the live doc
 	const rail = page.getByRole("region", { name: "Linked in this note" });

@@ -70,6 +70,31 @@ function sanitizeRenderLabel(label: string, fallback: string): string {
 	return stripped === "" ? fallback : stripped;
 }
 
+/** External links (Abram, 2026-07-31): EXPLICIT [label](url) only, and the
+ * href must parse as absolute http(s) — anything else renders as its label,
+ * an anchor never forms (fail-closed, same posture as dead wikilinks). */
+function safeExternalHref(raw: string | null): string | null {
+	if (!raw) return null;
+	try {
+		const u = new URL(raw);
+		if (u.protocol === "https:" || u.protocol === "http:") return raw;
+	} catch {
+		// relative or unparseable — not an external link
+	}
+	return null;
+}
+
+md.renderer.rules.link_open = (tokens, idx, _opts, env) => {
+	const href = safeExternalHref(tokens[idx].attrGet("href"));
+	// markdown-it links never nest — one flag pairs open with close
+	(env as { __deadLink?: boolean }).__deadLink = href === null;
+	if (href === null) return "";
+	return `<a href="${neutralize(escapeHtml(href))}" class="note-extlink" rel="noopener noreferrer" target="_blank">`;
+};
+md.renderer.rules.link_close = (_tokens, _idx, _opts, env) => {
+	return (env as { __deadLink?: boolean }).__deadLink ? "" : "</a>";
+};
+
 md.renderer.rules.wikilink = (tokens, idx, _opts, env) => {
 	const token = tokens[idx];
 	const ref: string = token.meta?.ref ?? token.content;

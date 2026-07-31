@@ -106,6 +106,28 @@ export const noteSchema = new Schema({
 		},
 	},
 	marks: {
+		/** External web link (Abram, 2026-07-31). href is stored as typed;
+		 * the SERVER renderer is the http(s) gate (fail-closed to plain
+		 * text) — the editor never navigates its own anchors. */
+		link: {
+			attrs: { href: {} },
+			inclusive: false,
+			parseDOM: [
+				{
+					tag: "a[href]",
+					getAttrs(dom) {
+						return { href: (dom as HTMLElement).getAttribute("href") ?? "" };
+					},
+				},
+			],
+			toDOM(mark) {
+				return [
+					"a",
+					{ href: String(mark.attrs.href), class: "note-extlink", rel: "noopener noreferrer" },
+					0,
+				];
+			},
+		},
 		em: {
 			parseDOM: [{ tag: "i" }, { tag: "em" }, { style: "font-style=italic" }],
 			toDOM() {
@@ -153,6 +175,10 @@ const noteParser = new MarkdownParser(noteSchema, md, {
 	list_item: { block: "list_item" },
 	em: { mark: "em" },
 	strong: { mark: "strong" },
+	link: {
+		mark: "link",
+		getAttrs: (tok) => ({ href: tok.attrGet("href") ?? "" }),
+	},
 	wikilink: {
 		node: "wikilink",
 		getAttrs: (tok) => ({ ref: tok.meta?.ref ?? tok.content, label: tok.meta?.label ?? null }),
@@ -245,6 +271,14 @@ const noteSerializer = new MarkdownSerializer(
 			close: "**",
 			mixable: true,
 			expelEnclosingWhitespace: true,
+		},
+		link: {
+			open: "[",
+			close(_state, mark) {
+				const href = String(mark.attrs.href).replace(/[\s()]/g, (c) => encodeURIComponent(c));
+				return `](${href})`;
+			},
+			mixable: false,
 		},
 	},
 );

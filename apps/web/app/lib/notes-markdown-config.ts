@@ -24,6 +24,10 @@ export const NOTES_MARKDOWN_RULES = [
 	"blockquote",
 	"emphasis", // strong + em
 	"escape", // backslash escapes — must match the serializer's escaping
+	// external web links (Abram, 2026-07-31): EXPLICIT [label](url) only —
+	// autolink/linkify/image stay out; the renderer enforces http(s) and a
+	// non-http href renders as its label, never an anchor
+	"link",
 ] as const;
 
 export interface WikilinkMeta {

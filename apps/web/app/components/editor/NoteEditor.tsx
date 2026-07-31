@@ -636,7 +636,22 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 			handlePaste(view, event) {
 				const text = event.clipboardData?.getData("text/plain") ?? "";
 				const ref = lumenUrlToRef(text);
-				if (!ref) return false;
+				// any OTHER absolute http(s) URL pastes as an external link:
+				// over a selection the selection is the label; bare, the URL
+				// text itself carries the mark (honest, Obsidian-like)
+				if (!ref) {
+					const ext = /^https?:\/\/\S+$/.test(text.trim()) ? text.trim() : null;
+					if (!ext) return false;
+					const { from, to } = view.state.selection;
+					const mark = noteSchema.marks.link.create({ href: ext });
+					if (from !== to) {
+						view.dispatch(view.state.tr.addMark(from, to, mark));
+					} else {
+						view.dispatch(view.state.tr.replaceSelectionWith(noteSchema.text(ext, [mark]), false));
+					}
+					say("Pasted as link");
+					return true;
+				}
 				const { from, to } = view.state.selection;
 				const selText = view.state.doc.textBetween(from, to, " ");
 				const anchor = resolveAnchorRef(ref)!;

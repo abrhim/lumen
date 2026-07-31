@@ -388,6 +388,19 @@ html {
 	text-underline-offset: 4px;
 }
 a.note-wikilink:hover { text-decoration-style: solid; }
+/* external links: same dotted idiom, an outward mark in type (doctrine 8 —
+   typographic marks are licensed; never color alone) */
+a.note-extlink {
+	text-decoration: underline dotted;
+	text-decoration-color: var(--color-rule2);
+	text-underline-offset: 4px;
+}
+a.note-extlink:hover { text-decoration-style: solid; }
+.note-body a.note-extlink::after {
+	content: " \2197";
+	font-size: 0.8em;
+	color: var(--color-muted-foreground);
+}
 /* unresolvable refs: styled plain text, no link semantics (F5) */
 .note-wikilink-dead {
 	text-decoration: underline dotted;
