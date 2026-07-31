@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Form, Link, data, useLocation } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
+import { PageFrame, PageHeader } from "~/components/PageFrame";
 import type { Route } from "./+types/me";
 
 /**
@@ -47,12 +48,10 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 	};
 
 	return (
-		<main className="mx-auto max-w-2xl px-6 py-12">
-			<header className="border-b border-rule pb-6">
-				<h1 className="font-display text-3xl font-medium tracking-tight">Me</h1>
-			</header>
+		<PageFrame frame="column">
+			<PageHeader title="Me" />
 
-			<section aria-labelledby="me-theme" className="mt-10">
+			<section aria-labelledby="me-theme" className="mt-8">
 				<h2
 					id="me-theme"
 					className="font-ui text-[13px] font-normal text-muted-foreground"
@@ -116,6 +115,6 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 					</p>
 				)}
 			</section>
-		</main>
+		</PageFrame>
 	);
 }

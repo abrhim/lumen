@@ -1,6 +1,7 @@
 import { Link, data } from "react-router";
 import { sql } from "drizzle-orm";
 import type { Route } from "./+types/art";
+import { PageFrame, PageHeader } from "~/components/PageFrame";
 
 /**
  * Art traversal (Abram, 2026-07-31): the whole art collection as a
@@ -60,13 +61,11 @@ export function meta(_args: Route.MetaArgs) {
 export default function Art({ loaderData }: Route.ComponentProps) {
 	const { sections, total } = loaderData;
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-12">
-			<header className="border-b border-rule pb-6">
-				<h1 className="font-display text-3xl font-medium tracking-tight">Art</h1>
-				<p className="mt-2 font-reading text-[15px] text-muted-foreground">
-					{total.toLocaleString("en-GB")} public-domain works, shelved by chapter.
-				</p>
-			</header>
+		<PageFrame frame="ledger">
+			<PageHeader
+				title="Art"
+				intro={`${total.toLocaleString("en-GB")} public-domain works, shelved by chapter.`}
+			/>
 			{sections.map((s) => (
 				<section key={s.id} aria-labelledby={`art-${s.id}`} className="mt-8">
 					<h2 id={`art-${s.id}`} className="flex items-baseline gap-3">
@@ -91,6 +90,6 @@ export default function Art({ loaderData }: Route.ComponentProps) {
 					</p>
 				</section>
 			))}
-		</main>
+		</PageFrame>
 	);
 }

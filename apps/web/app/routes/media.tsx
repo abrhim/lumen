@@ -884,7 +884,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	const is404 = isRouteErrorResponse(error) && error.status === 404;
 	return (
-		<main className="mx-auto max-w-2xl px-6 py-16">
+		<main className="mx-auto max-w-4xl px-6 py-12">
 			<h1 className="font-display text-3xl font-medium">{is404 ? "Not found" : "Error"}</h1>
 			<p className="mt-3 font-reading text-muted-foreground">
 				{is404 ? "That episode isn't in the library." : "Something went wrong."}

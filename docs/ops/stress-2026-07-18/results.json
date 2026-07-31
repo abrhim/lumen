@@ -324,6 +324,8 @@
     "chapters",
     "migration_state",
     "nodes",
+    "note_anchors",
+    "notes",
     "roles",
     "strongs_lexicon",
     "user_roles",
@@ -445,8 +447,8 @@
   {
    "dim": "I18",
    "name": "verses_tsvector_fresh_sampled",
-   "status": "pass",
-   "stale_in_1000": 0
+   "status": "fail",
+   "stale_in_1000": 203
   },
   {
    "dim": "I10",
@@ -1194,6 +1196,6 @@
   ],
   "aborted": false
  },
- "startedAt": "2026-07-21T18:39:54.317Z",
- "finishedAt": "2026-07-21T18:44:57.482Z"
+ "startedAt": "2026-07-31T16:18:54.940Z",
+ "finishedAt": "2026-07-31T16:19:24.557Z"
 }

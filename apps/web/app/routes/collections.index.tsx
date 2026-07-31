@@ -1,6 +1,7 @@
 import { Link, data } from "react-router";
 import { sql } from "drizzle-orm";
 import { getSessionUser } from "~/lib/auth.server";
+import { PageFrame, PageHeader } from "~/components/PageFrame";
 import { canViewCollection, getCollectionAccess } from "~/lib/collection-access.server";
 import type { Route } from "./+types/collections.index";
 
@@ -73,11 +74,9 @@ export function meta(_args: Route.MetaArgs) {
 export default function CollectionsIndex({ loaderData }: Route.ComponentProps) {
 	const { doors } = loaderData;
 	return (
-		<main className="mx-auto max-w-2xl px-6 py-12">
-			<header className="border-b border-rule pb-6">
-				<h1 className="font-display text-3xl font-medium tracking-tight">Collections</h1>
-			</header>
-			<ul className="mt-4 list-none divide-y divide-rule">
+		<PageFrame frame="column">
+			<PageHeader title="Collections" />
+			<ul className="mt-8 list-none divide-y divide-rule">
 				{doors.map((d) => (
 					<li key={d.to}>
 						<Link
@@ -97,6 +96,6 @@ export default function CollectionsIndex({ loaderData }: Route.ComponentProps) {
 					</li>
 				))}
 			</ul>
-		</main>
+		</PageFrame>
 	);
 }

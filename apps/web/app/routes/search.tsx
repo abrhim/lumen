@@ -1141,7 +1141,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	const showScopeLine = view === "results" || view === "zero" || excludedCount > 0;
 
 	return (
-		<main ref={mainRef} className="mx-auto max-w-4xl px-6 py-10" onKeyDown={onMainKeyDown}>
+		<main ref={mainRef} className="mx-auto max-w-4xl px-6 py-12" onKeyDown={onMainKeyDown}>
 			<header className="border-b border-rule pb-6">
 				<p className="font-ui text-[13px] font-normal text-muted-foreground">Search</p>
 				<form className="relative mt-3 max-w-prose" onSubmit={onSubmit}>
@@ -1623,7 +1623,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	}, []);
 
 	return (
-		<main className="mx-auto max-w-4xl px-6 py-10">
+		<main className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<p className="font-ui text-[13px] font-normal text-muted-foreground">Search</p>
 				<form

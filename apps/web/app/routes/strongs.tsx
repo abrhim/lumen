@@ -64,7 +64,7 @@ export default function Strongs({ loaderData }: Route.ComponentProps) {
 		const prev = start > 1 ? `${lang}${start - RANGE}` : null;
 		const next = start + RANGE <= MAX[lang] ? `${lang}${start + RANGE}` : null;
 		return (
-			<main className="mx-auto max-w-2xl px-6 py-12">
+			<main className="mx-auto max-w-4xl px-6 py-12">
 				<header className="border-b border-rule pb-6">
 					<p className="font-ui text-[13px] font-normal text-muted-foreground">
 						<Link to="/strongs" className="hover:text-ink">
@@ -78,7 +78,7 @@ export default function Strongs({ loaderData }: Route.ComponentProps) {
 						{end}
 					</h1>
 				</header>
-				<ul className="mt-4 list-none divide-y divide-rule">
+				<ul className="mt-8 list-none divide-y divide-rule">
 					{loaderData.entries.map((e) => (
 						<li key={e.strongs_no}>
 							<Link
