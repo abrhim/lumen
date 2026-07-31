@@ -49,9 +49,6 @@ export default function CollectionsIndex({ loaderData }: Route.ComponentProps) {
 		<main className="mx-auto max-w-2xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<h1 className="font-display text-3xl font-medium tracking-tight">Collections</h1>
-				<p className="mt-2 font-reading italic text-muted-foreground">
-					Recorded voices alongside the text.
-				</p>
 			</header>
 			{collections.length === 0 ? (
 				<p className="mt-8 font-reading text-muted-foreground">Nothing here yet.</p>

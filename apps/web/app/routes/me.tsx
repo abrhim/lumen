@@ -50,15 +50,12 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 		<main className="mx-auto max-w-2xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
 				<h1 className="font-display text-3xl font-medium tracking-tight">Me</h1>
-				<p className="mt-2 font-reading italic text-muted-foreground">
-					How Lumen reads, and who is reading.
-				</p>
 			</header>
 
 			<section aria-labelledby="me-theme" className="mt-10">
 				<h2
 					id="me-theme"
-					className="font-ui text-[11px] font-bold uppercase tracking-[0.14em] text-faint"
+					className="font-ui text-[13px] font-normal text-muted-foreground"
 				>
 					Theme
 				</h2>
@@ -90,7 +87,7 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 			<section aria-labelledby="me-account" className="mt-10 border-t border-rule pt-6">
 				<h2
 					id="me-account"
-					className="font-ui text-[11px] font-bold uppercase tracking-[0.14em] text-faint"
+					className="font-ui text-[13px] font-normal text-muted-foreground"
 				>
 					Account
 				</h2>
@@ -109,14 +106,13 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 					</div>
 				) : (
 					<p className="mt-4 font-reading text-[15px] text-muted-foreground">
-						Reading as a guest —{" "}
+						Signed out.{" "}
 						<Link
 							to="/login?next=/me"
 							className="text-ink underline decoration-dotted underline-offset-4 hover:text-primary"
 						>
-							sign in
+							Sign in
 						</Link>
-						.
 					</p>
 				)}
 			</section>

@@ -235,15 +235,10 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 	return (
 		<main className="mx-auto max-w-3xl px-6 py-10">
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>{" "}
-					· {TYPE_LABELS[entity.type] ?? entity.type}
-				</p>
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">{TYPE_LABELS[entity.type] ?? entity.type}</p>
 				<div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
 					<h1 className="font-display text-3xl font-medium tracking-tight">{entity.name}</h1>
-					<span className="font-reading text-sm italic text-faint">
+					<span className="font-reading text-sm text-muted-foreground">
 						{TYPE_LABELS[entity.type] ?? entity.type}
 					</span>
 					<Link
@@ -282,7 +277,7 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 
 			{scripture.length > 0 && (
 				<section className="mt-10">
-					<h2 className="font-reading text-sm italic text-faint">
+					<h2 className="font-reading text-sm text-muted-foreground">
 						In scripture <span className="not-italic">· {verseRefCount} verses</span>
 					</h2>
 					<ul className="mt-3 list-none">
@@ -307,7 +302,7 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 
 			{unshaken.total > 0 && (
 				<section className="mt-10">
-					<h2 className="font-reading text-sm italic text-faint">
+					<h2 className="font-reading text-sm text-muted-foreground">
 						In Unshaken <span className="not-italic">· {unshaken.total} passages</span>
 					</h2>
 					<div className="mt-3 space-y-3">
@@ -344,7 +339,7 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 
 			{groups.length > 0 && (
 				<section className="mt-10">
-					<h2 className="font-reading text-sm italic text-faint">Connections</h2>
+					<h2 className="font-reading text-sm text-muted-foreground">Connections</h2>
 					<div className="mt-3 max-w-prose space-y-4">
 						{groups.map((g) => (
 							<div key={g.label}>

@@ -704,11 +704,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 
 	const header = (
 		<header className="border-b border-rule pb-6">
-			<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-				<Link to="/" className="hover:text-ink">
-					Lumen
-				</Link>{" "}
-				·{" "}
+			<p className="font-ui text-[13px] font-normal text-muted-foreground">
 				<Link to={`/collections/${collectionId}`} className="hover:text-ink">
 					{collectionName}
 				</Link>

@@ -58,10 +58,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
-				<div className="flex items-baseline justify-between gap-4">
-					<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-						Lumen
-					</p>
+				<div className="flex items-baseline justify-end gap-4">
 					{/* sign-in invitation lives HERE only (plan D10) — never in the
 					    fixed chrome over a chapter */}
 					{signedOut && (
@@ -73,19 +70,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 						</Link>
 					)}
 				</div>
-				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">
+				<h1 className="font-display text-3xl font-medium tracking-tight">
 					The Library
 				</h1>
-				<p className="mt-2 font-reading italic text-muted-foreground">
-					Choose a book to begin reading.
-				</p>
 			</header>
 
 			{volumes.map((volume) => (
 				<section key={volume.id} className="mt-10" aria-labelledby={`vol-${volume.id}`}>
 					<h2
 						id={`vol-${volume.id}`}
-						className="font-ui text-[11px] font-bold uppercase tracking-[0.14em] text-faint"
+						className="font-ui text-[13px] font-normal text-muted-foreground"
 					>
 						{volume.name}
 					</h2>

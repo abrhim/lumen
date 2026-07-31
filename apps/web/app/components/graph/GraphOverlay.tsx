@@ -280,7 +280,7 @@ function GraphBody({
 		<div className="flex h-full flex-col">
 			<header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-rule p-5 pb-4">
 				<div className="min-w-0">
-					<p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+					<p className="font-ui text-[12px] font-normal text-muted-foreground">
 						Local graph · depth {depth}
 					</p>
 					<h2 className="mt-1 truncate font-display text-2xl font-medium">{vm.center.label}</h2>
@@ -414,7 +414,7 @@ function SegmentedToggle({
 }) {
 	return (
 		<div className="inline-flex items-center gap-1.5" role="group" aria-label={label}>
-			<span className="font-ui text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+			<span className="font-ui text-[12px] font-normal text-muted-foreground">
 				{label}
 			</span>
 			<span className="inline-flex overflow-hidden rounded-md border border-rule2">
@@ -469,7 +469,7 @@ function ListView({
 				const meta = vm.types.find((t) => t.type === type);
 				return (
 					<section key={type} aria-label={meta?.label ?? type} className="mb-6">
-						<h3 className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+						<h3 className="font-ui text-[12px] font-normal text-muted-foreground">
 							<span
 								className="mr-1.5 inline-block size-2 rounded-full align-baseline"
 								style={{ background: meta?.color }}

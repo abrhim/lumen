@@ -664,7 +664,7 @@ class EditorChunkBoundary extends Component<
 		// note they were already reading, which never left the server.
 		return (
 			<p className="font-reading text-[17px] leading-relaxed text-muted-foreground">
-				<span className="italic">The editor didn’t load.</span>{" "}
+				<span>The editor didn’t load.</span>{" "}
 				<button
 					type="button"
 					onClick={() => window.location.reload()}
@@ -915,7 +915,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 					<EditorChunkBoundary onDismiss={note ? () => setEditing(false) : null}>
 						<Suspense
 							fallback={
-								<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+								<p className="font-reading text-[17px] leading-relaxed text-muted-foreground">
 									Opening the editor…
 								</p>
 							}
@@ -967,7 +967,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			<div className="flex items-baseline justify-between gap-4">
 				<h1
 					ref={h1Ref}
-					className={`font-display text-2xl font-medium tracking-tight outline-none ${title === UNTITLED_NOTE ? "italic text-muted-foreground" : ""}`}
+					className={`font-display text-2xl font-medium tracking-tight outline-none ${title === UNTITLED_NOTE ? "text-muted-foreground" : ""}`}
 					tabIndex={-1}
 				>
 					{title}
@@ -1017,7 +1017,7 @@ export default function NotePage({ loaderData }: Route.ComponentProps) {
 			</div>
 
 			{note ? (
-				<p className="mt-1 font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+				<p className="mt-1 font-ui text-[12px] text-muted-foreground">
 					<time dateTime={note.updated_at}>
 						{/* timeZone pinned: SSR (UTC worker) and the client must
 						    print the SAME text or hydration replaces the article —

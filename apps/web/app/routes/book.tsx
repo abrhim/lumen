@@ -63,16 +63,7 @@ export default function Book({ loaderData }: Route.ComponentProps) {
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-12">
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>
-				</p>
 				<h1 className="mt-2 font-display text-4xl font-medium tracking-tight">{name}</h1>
-				<p className="mt-2 font-reading italic text-muted-foreground">
-					{chapters.length} {unit.toLowerCase()}
-					{chapters.length === 1 ? "" : "s"}
-				</p>
 			</header>
 
 			<nav aria-label={`${unit}s in ${name}`} className="mt-8">

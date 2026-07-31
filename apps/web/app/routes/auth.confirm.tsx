@@ -103,12 +103,6 @@ function mapVerifyError(code: string | undefined, message: string): string {
 export default function AuthConfirm({ loaderData, actionData }: Route.ComponentProps) {
 	return (
 		<main className="mx-auto max-w-md px-6 py-16">
-			<Link
-				to="/"
-				className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint transition-colors duration-150 hover:text-ink"
-			>
-				Lumen
-			</Link>
 
 			{loaderData.state === "already" ? (
 				<>

@@ -106,7 +106,7 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 				// A9/CF-20: empty /notes speaks once in type — one italic line and a
 				// plain door. No empty-state card, no illustration.
 				<div className="mt-10">
-					<p className="font-reading text-[17px] italic leading-relaxed text-muted-foreground">
+					<p className="font-reading text-[17px] leading-relaxed text-muted-foreground">
 						Nothing written yet.
 					</p>
 					<Link
@@ -140,7 +140,7 @@ export default function NotesIndex({ loaderData }: Route.ComponentProps) {
 									</span>
 									<time
 										dateTime={note.updated_at}
-										className="mt-1 block font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground"
+										className="mt-1 block font-ui text-[12px] text-muted-foreground"
 									>
 										{updatedFmt.format(new Date(note.updated_at))}
 									</time>

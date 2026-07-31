@@ -328,12 +328,7 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 		// fixed top-right chrome (AccountChip/ThemeSelect, z-40)
 		<main className="mx-auto max-w-5xl px-6 pb-16 pt-16">
 			<header>
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>{" "}
-					· Admin
-				</p>
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">Admin</p>
 				<h1 className="mt-2 font-display text-3xl font-medium tracking-tight">Users</h1>
 			</header>
 

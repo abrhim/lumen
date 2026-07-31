@@ -109,11 +109,6 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 	return (
 		<main className="mx-auto max-w-6xl px-6 py-10">
 			<header className="border-b border-rule pb-5">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>
-				</p>
 				<div className="mt-2 flex items-center gap-3">
 					<Link
 						to={backUrl}
@@ -129,19 +124,15 @@ export default function ChapterArtGallery({ loaderData }: Route.ComponentProps) 
 						· Art
 					</h1>
 				</div>
-				<p className="mt-2 font-reading italic text-muted-foreground">
-					{total} artwork{total === 1 ? "" : "s"} anchored to this {unit.toLowerCase()}
-					{totalPages > 1 && ` · page ${page} of ${totalPages}`}
-				</p>
 			</header>
 
 			{degraded && (
-				<p className="mt-8 font-reading text-sm italic text-muted-foreground">
+				<p className="mt-8 font-reading text-sm text-muted-foreground">
 					Artwork couldn't be loaded right now — try again in a moment.
 				</p>
 			)}
 			{!degraded && art.length === 0 && (
-				<p className="mt-8 font-reading text-sm italic text-faint">
+				<p className="mt-8 font-reading text-sm text-faint">
 					No artwork has been indexed for this {unit.toLowerCase()} yet.
 				</p>
 			)}

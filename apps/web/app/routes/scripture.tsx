@@ -952,11 +952,6 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			    share the verse text's left edge instead of the page's. */}
 			<div className="mx-auto max-w-[45rem] lg:grid lg:max-w-none lg:grid-cols-[minmax(0,45rem)_380px] lg:justify-center lg:gap-x-14 lg:gap-y-10">
 			<header className="pl-10 pr-4 lg:col-start-1 lg:pl-14">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>
-				</p>
 				<div className="relative mt-2 flex items-center gap-3">
 					{/* the back arrow hangs in the gutter, like the verse numbers */}
 					<button
@@ -1239,7 +1234,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 								{panelFor(selected)}
 							</>
 						) : (
-							<p className="font-reading text-sm italic leading-relaxed text-faint">
+							<p className="font-reading text-sm leading-relaxed text-muted-foreground">
 								Select a verse to see the principles it teaches, the people it mentions, and its
 								cross-references.
 							</p>
@@ -1809,7 +1804,7 @@ function InlineWordCard({
 			>
 				<div className="rounded-lg border border-rule2 bg-panel p-3">
 					<div className="flex items-baseline justify-between gap-3">
-						<p className="font-reading text-sm italic text-muted-foreground">
+						<p className="font-reading text-sm text-muted-foreground">
 							No original-language data recorded for this word.
 						</p>
 						<Link

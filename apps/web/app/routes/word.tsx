@@ -54,12 +54,7 @@ export default function WordDetail({ loaderData }: Route.ComponentProps) {
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-10">
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>{" "}
-					· Word study
-				</p>
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">Word study</p>
 				<div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
 					{entry?.original && (
 						<span className="font-reading text-5xl text-ink" dir={lang === "Hebrew" ? "rtl" : "ltr"}>
@@ -81,7 +76,7 @@ export default function WordDetail({ loaderData }: Route.ComponentProps) {
 
 			{defLines.length > 0 && (
 				<section aria-label="Definition" className="mt-8">
-					<h2 className="font-ui text-[11px] font-bold uppercase tracking-[0.14em] text-faint">
+					<h2 className="font-ui text-[13px] font-normal text-muted-foreground">
 						Definition
 					</h2>
 					<div className="mt-3 max-w-prose space-y-1.5">
@@ -113,7 +108,7 @@ export default function WordDetail({ loaderData }: Route.ComponentProps) {
 			)}
 
 			<section aria-label="Occurrences" className="mt-10">
-				<h2 className="font-ui text-[11px] font-bold uppercase tracking-[0.14em] text-faint">
+				<h2 className="font-ui text-[13px] font-normal text-muted-foreground">
 					Occurrences · {total} verse{total === 1 ? "" : "s"}
 					{totalPages > 1 && ` · page ${page} of ${totalPages}`}
 				</h2>

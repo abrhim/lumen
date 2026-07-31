@@ -88,12 +88,6 @@ export default function Login({ actionData }: Route.ComponentProps) {
 
 	return (
 		<main className="mx-auto max-w-md px-6 py-16">
-			<Link
-				to="/"
-				className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint transition-colors duration-150 hover:text-ink"
-			>
-				Lumen
-			</Link>
 			<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">Sign in</h1>
 
 			{/* pre-mounted live region — announcements only work if the container
@@ -133,7 +127,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
 				<Form method="post" className="mt-6">
 					<label
 						htmlFor="email"
-						className="font-ui text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+						className="font-ui text-xs font-normal text-muted-foreground"
 					>
 						Email
 					</label>

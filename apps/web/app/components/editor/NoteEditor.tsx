@@ -1097,7 +1097,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 						Save
 					</button>
 				)}
-				<span aria-live="polite" className="font-ui text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+				<span aria-live="polite" className="font-ui text-[12px] text-muted-foreground">
 					{fetcher.state !== "idle"
 						? "Saving…"
 						: stale
@@ -1205,7 +1205,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 										className={`cursor-pointer rounded px-2 py-1.5 font-reading text-[15px] text-ink ${i === highlight ? "bg-sel" : ""}`}
 									>
 										{s.display}
-										<span className="ml-2 font-ui text-[10.5px] uppercase tracking-wide text-ink">
+										<span className="ml-2 font-ui text-[11px] text-ink">
 											{s.gloss ?? s.kind}
 										</span>
 									</li>

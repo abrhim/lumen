@@ -107,12 +107,7 @@ export default function CollectionLanding({ loaderData }: Route.ComponentProps) 
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-10">
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="hover:text-ink">
-						Lumen
-					</Link>{" "}
-					· Collection
-				</p>
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">Collection</p>
 				<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">{collection.name}</h1>
 				<p className="mt-1 font-ui text-sm text-faint">
 					{collection.description && `${collection.description} · `}
@@ -122,7 +117,7 @@ export default function CollectionLanding({ loaderData }: Route.ComponentProps) 
 
 			{groups.map((g) => (
 				<section key={g.book} aria-label={g.book} className="mt-8">
-					<h2 className="font-reading text-sm italic text-faint">{g.book}</h2>
+					<h2 className="font-reading text-sm text-muted-foreground">{g.book}</h2>
 					<ul className="mt-2 list-none space-y-1">
 						{g.episodes.map((e) => (
 							<li key={e.id}>

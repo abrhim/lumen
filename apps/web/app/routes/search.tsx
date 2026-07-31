@@ -1143,12 +1143,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 	return (
 		<main ref={mainRef} className="mx-auto max-w-4xl px-6 py-10" onKeyDown={onMainKeyDown}>
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="transition-colors duration-150 hover:text-ink">
-						Lumen
-					</Link>{" "}
-					· Search
-				</p>
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">Search</p>
 				<form className="relative mt-3 max-w-prose" onSubmit={onSubmit}>
 					<input
 						ref={inputRef}
@@ -1386,7 +1381,7 @@ export default function SearchPage({ loaderData }: Route.ComponentProps) {
 			    reader door. */}
 			{displayReference && (view === "reference" || view === "results" || view === "zero") && (
 				<div className="mt-10">
-					<p className="font-ui text-[11px] font-medium uppercase tracking-[0.14em] text-faint">
+					<p className="font-ui text-[13px] font-normal text-faint">
 						Reference
 					</p>
 					{displayReferenceHref ? (
@@ -1630,12 +1625,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 	return (
 		<main className="mx-auto max-w-4xl px-6 py-10">
 			<header className="border-b border-rule pb-6">
-				<p className="font-ui text-[11px] font-semibold uppercase tracking-[0.22em] text-faint">
-					<Link to="/" className="transition-colors duration-150 hover:text-ink">
-						Lumen
-					</Link>{" "}
-					· Search
-				</p>
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">Search</p>
 				<form
 					className="relative mt-3 max-w-prose"
 					onSubmit={(e) => {
