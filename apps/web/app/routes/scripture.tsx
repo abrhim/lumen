@@ -1026,7 +1026,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 				art={art}
 				reference={reference}
 				galleryUrl={`/scripture/${bookId}/${chapter}/art${selectedVerse !== null ? `?verse=${selectedVerse}` : ""}`}
-				className="mt-6 lg:col-start-1"
+				className="ml-10 mt-6 lg:col-start-1 lg:ml-14"
 			/>
 
 				<main className="mt-8 lg:col-start-1 lg:row-start-2">
@@ -1083,7 +1083,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
 										<span
-											className={`absolute left-2 top-3 w-6 text-right font-ui text-xs font-semibold transition-colors duration-150 lg:left-4 lg:w-7 ${
+											className={`absolute left-2 top-3 w-6 text-center font-ui text-xs font-semibold transition-colors duration-150 lg:left-4 lg:w-7 lg:text-right ${
 												isActive
 													? "text-selbar"
 													: hasDepth
@@ -1099,7 +1099,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{hasDepth && (
 											<span
 												aria-hidden
-												className={`absolute left-2 top-8 flex w-6 flex-col items-end gap-[2.5px] rounded-[6px] p-[3px] -m-[3px] transition-[background-color,box-shadow] duration-150 group-hover:bg-paper lg:hidden ${
+												className={`absolute left-2 top-8 flex w-6 flex-col items-center gap-[2.5px] rounded-[6px] p-[3px] -m-[3px] transition-[background-color,box-shadow] duration-150 group-hover:bg-paper lg:hidden ${
 													isActive
 														? "bg-paper ring-1 ring-selbar/40 group-hover:ring-0"
 														: ""
