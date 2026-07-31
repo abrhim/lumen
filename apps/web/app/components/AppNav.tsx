@@ -47,13 +47,9 @@ function items(pathname: string, itemClass: string, masthead: boolean) {
 		<>
 			<Link
 				to="/"
-				className={
-					masthead
-						? `${itemClass} mb-3 flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink hover:text-primary`
-						: `${itemClass} flex items-center gap-1.5 font-semibold tracking-tight text-ink hover:text-primary`
-				}
+				className={`${itemClass} ${masthead ? "mb-3" : ""} flex items-center gap-2.5 font-display text-[26px] font-medium tracking-tight text-ink hover:text-primary`}
 			>
-				<LintelMark className={masthead ? "h-[26px] w-[32px]" : "h-[15px] w-[18px]"} />
+				<LintelMark className="h-[26px] w-[32px]" />
 				Lintel
 			</Link>
 			{SECTIONS.map(({ to, label, match }) => {
@@ -110,7 +106,7 @@ export function AppNav() {
 			{/* the same words as a top row everywhere else */}
 			<nav
 				aria-label="Primary"
-				className="mx-auto flex max-w-6xl items-baseline gap-x-5 px-6 pt-4 pr-28 font-ui text-sm min-[1440px]:hidden"
+				className="mx-auto flex max-w-6xl items-center gap-x-5 px-6 pt-4 pr-28 font-ui text-sm min-[1440px]:hidden"
 			>
 				{items(pathname, "-my-2 px-1 py-2 outline-none transition-colors duration-150 focus-visible:underline", false)}
 			</nav>
