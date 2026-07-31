@@ -13,7 +13,15 @@
  *  - the round-trip canary (A19), the formatting legend (A17), and the
  *    data-loss error boundary (A19; beacon deliberately absent — recorded)
  */
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+	Component,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type CSSProperties,
+	type ReactNode,
+} from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { EditorState, Plugin, PluginKey, TextSelection, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
@@ -28,11 +36,18 @@ import {
 } from "prosemirror-inputrules";
 import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
 import type { MarkType } from "prosemirror-model";
-import { noteSchema, parseNoteMarkdown, serializeNoteDoc, canonicalizeNoteMarkdown } from "./markdown";
+import {
+	noteSchema,
+	parseNoteMarkdown,
+	serializeNoteDoc,
+	canonicalizeNoteMarkdown,
+	insertLabel,
+} from "./markdown";
 import { findCanonReferences } from "./reference-rule";
 import { suggestDestinations, type InsertSuggestion } from "./suggest";
-import { resolveAnchorRef, anchorRefToPath } from "@lumen/scripture/notes-refs";
-import { pushEscape } from "~/lib/escape-registry";
+import { lumenUrlToRef } from "./lumen-url";
+import { resolveAnchorRef } from "@lumen/scripture/notes-refs";
+import { pushEscape, installEscapeHandler } from "~/lib/escape-registry";
 import { extractWikilinkRefs } from "~/lib/notes-derive";
 
 export interface NoteEditorProps {
@@ -183,10 +198,29 @@ function makeAutocompletePlugin(): Plugin<AutocompleteState> {
 				if (next.from !== null && tr.docChanged && !meta) {
 					next = { ...next, from: tr.mapping.map(next.from) };
 				}
-				// deactivate when the caret leaves the span or `]]` closes it
+				// Deactivate when the caret leaves the span in EITHER direction or
+				// `]]` closes it (B29/CP-31). Only the backwards case used to be
+				// handled, so a hand-typed `[[alma-32-21]]` — or a click into a
+				// later paragraph — left the span active forever, and the
+				// auto-link rule is gated on exactly this (:97): reference
+				// auto-linking died for the rest of the session.
 				if (next.from !== null && !next.insertPosture) {
 					const head = tr.selection.head;
-					if (head < next.from + 2) next = { ...next, from: null };
+					const size = tr.doc.content.size;
+					const from = next.from;
+					if (head < from + 2 || from > size || head > size) {
+						next = { ...next, from: null };
+					} else {
+						const $from = tr.doc.resolve(from);
+						const $head = tr.doc.resolve(head);
+						// left the block the `[[` was typed in
+						if (!$from.sameParent($head)) {
+							next = { ...next, from: null };
+						} else if (tr.doc.textBetween(from, head, undefined, "￼").includes("]]")) {
+							// the writer closed the wikilink by hand
+							next = { ...next, from: null };
+						}
+					}
 				}
 				return next;
 			},
@@ -221,31 +255,57 @@ function autocompleteQuery(state: EditorState): string {
 	return state.doc.textBetween(ps.from + 2, head, undefined, "￼");
 }
 
-/* ─── paste conversion (mechanism 4) ─── */
+/* ─── paste conversion (mechanism 4) lives in ./lumen-url (origin-gated) ─── */
 
-function lumenUrlToRef(raw: string): string | null {
-	let url: URL;
-	try {
-		url = new URL(raw.trim());
-	} catch {
-		return null;
-	}
-	const segs = url.pathname.split("/").filter(Boolean);
-	if (segs[0] === "scripture" && segs.length === 3) {
-		const verse = url.searchParams.get("verse");
-		const ref = `${segs[1]}-${segs[2]}${verse ? `-${verse}` : ""}`;
-		return resolveAnchorRef(ref) ? ref : null;
-	}
-	if (segs[0] === "media" && segs.length === 2) {
-		const t = url.searchParams.get("t");
-		if (t !== null && /^\d+(\.\d+)?$/.test(t)) {
-			const ref = `${segs[1]}@${t}`;
-			return resolveAnchorRef(ref) ? ref : null;
-		}
-		return null;
-	}
-	if (segs.length === 2 && resolveAnchorRef(segs[1])?.kind === "entity") return segs[1];
-	return null;
+/* ─── combobox ARIA on the focused element (A10 / B10) ─── */
+
+const LISTBOX_ID = "note-insert-listbox";
+const EDITOR_CLASS =
+	"note-editor outline-none font-reading text-[17px] leading-relaxed text-ink min-h-[16rem]";
+
+/** live listbox facts the PM `attributes` function cannot read off plugin
+ * state (they live in React): whether a listbox is rendered, and which
+ * option is active. */
+interface ComboState {
+	expanded: boolean;
+	activeId: string | null;
+}
+
+/** PM-managed attributes stay STATIC. The combobox ARIA is applied
+ * imperatively (below) because PM re-applies this map on every redraw, and
+ * each re-application of aria-controls/aria-activedescendant triggers
+ * Chromium's native reveal-scroll — hundreds of px per keystroke in a tall
+ * note (B11's true root cause). */
+function editorAttributes(): Record<string, string> {
+	return { class: EDITOR_CLASS };
+}
+
+/** Popup box geometry (B11): width of the panel and the gap it keeps from
+ * the caret and the viewport edges. */
+const POPUP_W = 320;
+const POPUP_GAP = 4;
+const POPUP_EDGE = 8;
+/** worst-case panel height (max-h-72 list + input + foot line) — used only
+ * to decide the flip, never to size the box */
+const POPUP_MAX_H = 360;
+
+/**
+ * Position the popup at the caret, clamped to the viewport, flipped above
+ * the caret when it would clip the bottom (B11/CP-12). `fixed` because the
+ * coordinates `coordsAtPos` returns are viewport coordinates; with no
+ * anchor yet the box sits at the top-left of the editor's flow, which is
+ * the old behavior and never off-screen.
+ */
+function popupStyle(anchor: { left: number; top: number; flipUp: boolean } | null): CSSProperties {
+	// position:fixed with viewport coords — a fixed box can't be scrolled
+	// "into view", so Chromium's native reveals (aria idrefs, focus) no-op
+	// against it. The historical page-jumps came from the popup existing
+	// UNPLACED for a frame and from PM re-applying ARIA per redraw — both
+	// now structurally impossible (anchor-gated mount, imperative ARIA).
+	if (!anchor) return { position: "fixed", left: 0, top: 0, zIndex: 20, visibility: "hidden" };
+	return anchor.flipUp
+		? { position: "fixed", left: anchor.left, bottom: anchor.top, zIndex: 20 }
+		: { position: "fixed", left: anchor.left, top: anchor.top, zIndex: 20 };
 }
 
 /* ─── error boundary (A19/CF-51): data-loss containment first ─── */
@@ -312,7 +372,16 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 	const viewRef = useRef<EditorView | null>(null);
 	const baseRef = useRef(initialUpdatedAt);
 	const latestMdRef = useRef(initialBody);
-	const canaryRef = useRef<{ mismatch: boolean; reserialized: string } | null>(null);
+	// A19 canary: the LOADED body and its reserialization, captured at mount.
+	// `sent` makes it report ONCE per editor session (B49/CP-60) — the old
+	// clear-on-success re-sent the same event on every failed retry.
+	const canaryRef = useRef<{
+		mismatch: boolean;
+		stored: string;
+		reserialized: string;
+		sent: boolean;
+		sha: string | null;
+	} | null>(null);
 	const [dirty, setDirty] = useState(false);
 	// B3/CP-4: a 409 is a fork, not a dead end — the server's current row is
 	// held here and the writer picks a door (keep mine = LWW overwrite per
@@ -324,6 +393,8 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		query: string;
 		storedSelection: { from: number; to: number; text: string } | null;
 	} | null>(null);
+	// caret anchor for the popup (B11): viewport coords of the selection head
+	const [anchor, setAnchor] = useState<{ left: number; top: number; flipUp: boolean } | null>(null);
 	const [insertQuery, setInsertQuery] = useState("");
 	const [highlight, setHighlight] = useState(0);
 	const [fmtCount, setFmtCount] = useState(() => {
@@ -349,6 +420,10 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 	};
 	// PM keymap handlers run outside React — they read the popup state
 	// through refs kept current on every render.
+	const comboRef = useRef<ComboState>({ expanded: false, activeId: null });
+	const popupWrapRef = useRef<HTMLDivElement>(null);
+	const popupBoxRef = useRef<HTMLDivElement>(null);
+	const closePopupRef = useRef<() => void>(() => {});
 	const suggestionsRef = useRef<InsertSuggestion[]>([]);
 	const highlightRef = useRef(0);
 	const commitRef = useRef<(s: InsertSuggestion, nav: boolean) => void>(() => {});
@@ -359,6 +434,18 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 	useEffect(() => {
 		if (initialUpdatedAt && !baseRef.current) baseRef.current = initialUpdatedAt;
 	}, [initialUpdatedAt]);
+
+	// B50/CP-61: an aria-live region only announces when its text CHANGES.
+	// Pasting the same URL twice, or re-typing the same reference, produced
+	// the identical string and therefore silence. A zero-width space that
+	// alternates on every call guarantees a DOM mutation; the ZWSP is not
+	// spoken, so the announcement itself is unchanged.
+	const announceParityRef = useRef(false);
+	const say = (message: string) => {
+		// alternate on the PREVIOUS value, not call parity — extra renders or
+		// double-calls can never make two consecutive announcements identical
+		setAnnounce((prev) => (prev === message ? message + "\u200B" : message));
+	};
 
 	const bumpFmt = () => {
 		setFmtCount((c) => {
@@ -397,13 +484,19 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		// body anchors ride every save: wikilinks in the doc become anchor rows
 		for (const ref of collectBodyRefs(body)) form.append("anchor", ref);
 		form.set("sync_anchors", "1");
-		// A19 round-trip canary: hash-only fields, never the body
+		// A19 round-trip canary: hash-only fields, never the body. Every field
+		// describes the LOADED body against its reserialization — never the
+		// buffer being saved — and rides exactly one submit (B49/CP-60).
 		const canary = canaryRef.current;
-		if (canary?.mismatch) {
+		if (canary?.mismatch && !canary.sent) {
+			canary.sent = true;
 			form.set("roundtrip_ok", "false");
-			form.set("rt_len_stored", String(initialBody.length));
+			form.set("rt_len_stored", String(canary.stored.length));
 			form.set("rt_len_reserialized", String(canary.reserialized.length));
-			form.set("rt_first_diff", String(firstDiff(initialBody, canary.reserialized)));
+			form.set("rt_first_diff", String(firstDiff(canary.stored, canary.reserialized)));
+			// hash of the LOADED body, computed client-side at mount — the
+			// server never holds that body at log time (B49 server half)
+			if (canary.sha) form.set("rt_sha", canary.sha);
 		}
 		savingRef.current = true;
 		fetcher.submit(form, { method: "post", action: `/notes/${noteId}` });
@@ -418,7 +511,22 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		);
 		// A19: the canary — compare C(loaded) to loaded, report on next save
 		const reserialized = canonicalizeNoteMarkdown(initialBody);
-		canaryRef.current = { mismatch: initialBody !== "" && reserialized !== initialBody, reserialized };
+		canaryRef.current = {
+			mismatch: initialBody !== "" && reserialized !== initialBody,
+			stored: initialBody,
+			reserialized,
+			sent: false,
+			sha: null,
+		};
+		if (canaryRef.current.mismatch && typeof crypto !== "undefined" && crypto.subtle) {
+			crypto.subtle.digest("SHA-256", new TextEncoder().encode(initialBody)).then((d) => {
+				const hex = [...new Uint8Array(d)]
+					.slice(0, 8)
+					.map((b) => b.toString(16).padStart(2, "0"))
+					.join("");
+				if (canaryRef.current) canaryRef.current.sha = hex;
+			});
+		}
 
 		const state = EditorState.create({
 			doc,
@@ -505,12 +613,12 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 
 		const view = new EditorView(mountRef.current!, {
 			state,
-			attributes: {
-				role: "textbox",
-				"aria-multiline": "true",
-				"aria-label": "Note",
-				class: "note-editor outline-none font-reading text-[17px] leading-relaxed text-ink min-h-[16rem]",
-			},
+			// B10/CP-11 + CP-62: the combobox contract belongs on the FOCUSED
+			// element. In the `[[` posture that element is this contenteditable,
+			// so the attributes are computed from plugin state here (and from
+			// the live listbox state through comboRef) — never on a role-less
+			// wrapper div, where `aria-activedescendant` is inert.
+			attributes: editorAttributes(),
 			handlePaste(view, event) {
 				const text = event.clipboardData?.getData("text/plain") ?? "";
 				const ref = lumenUrlToRef(text);
@@ -518,13 +626,15 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 				const { from, to } = view.state.selection;
 				const selText = view.state.doc.textBetween(from, to, " ");
 				const anchor = resolveAnchorRef(ref)!;
-				const label = selText.trim() !== "" ? selText : null;
+				// B47/CP-52: the label the writer sees IS the label that gets
+				// stored — sanitize at the insert site, not only at serialize.
+				const label = insertLabel(selText.trim() !== "" ? selText : null, anchor.ref);
 				view.dispatch(
 					view.state.tr.replaceSelectionWith(
 						noteSchema.nodes.wikilink.create({ ref: anchor.ref, label }),
 					),
 				);
-				setAnnounce("Pasted as link — Backspace to undo");
+				say("Pasted as link — Backspace to undo");
 				return true;
 			},
 			dispatchTransaction(tr: Transaction) {
@@ -542,7 +652,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 					armIdleTimer(3000);
 				}
 				const al = autoLinkKey.getState(newState);
-				if (al?.announce) setAnnounce(al.announce);
+				if (al?.announce) say(al.announce);
 				const ac = autocompleteKey.getState(newState);
 				if (ac && (ac.from !== null || ac.insertPosture)) {
 					setPopup({
@@ -613,7 +723,8 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		if (!d) return;
 		if (d.updated_at) {
 			baseRef.current = d.updated_at;
-			canaryRef.current = null; // canary reports once
+			// (the canary's own `sent` flag is what makes it report once — it is
+			// set at submit time, so a failed save can never re-fire it: B49)
 			if (editGenRef.current === inflightGenRef.current) {
 				dirtyRef.current = false;
 				setDirty(false);
@@ -652,62 +763,225 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		setStale(null);
 	};
 
+	// THE close path — one function, every door (Esc, outside pointerdown).
+	// A10/CF-13: focus + selection restore on ANY close.
+	const closePopup = () => {
+		const view = viewRef.current;
+		if (!view) {
+			setPopup(null);
+			setInsertQuery("");
+			return;
+		}
+		const ac = autocompleteKey.getState(view.state);
+		const tr = view.state.tr.setMeta(autocompleteKey, {
+			from: null,
+			insertPosture: false,
+			storedSelection: null,
+		});
+		view.dispatch(tr);
+		if (ac?.storedSelection) {
+			const sel = TextSelection.create(
+				view.state.doc,
+				Math.min(ac.storedSelection.from, view.state.doc.content.size),
+				Math.min(ac.storedSelection.to, view.state.doc.content.size),
+			);
+			view.dispatch(view.state.tr.setSelection(sel));
+		}
+		view.focus();
+		setPopup(null);
+		setInsertQuery("");
+	};
+	closePopupRef.current = closePopup;
+
 	// escape registry: the popup is an escapable layer (A10)
 	useEffect(() => {
 		if (!popup) return;
-		return pushEscape({
-			onEscape: () => {
-				const view = viewRef.current;
-				if (!view) return;
-				const ac = autocompleteKey.getState(view.state);
-				const tr = view.state.tr.setMeta(autocompleteKey, {
-					from: null,
-					insertPosture: false,
-					storedSelection: null,
-				});
-				view.dispatch(tr);
-				// CF-13: focus + selection restore on ANY close
-				if (ac?.storedSelection) {
-					const sel = TextSelection.create(
-						view.state.doc,
-						Math.min(ac.storedSelection.from, view.state.doc.content.size),
-						Math.min(ac.storedSelection.to, view.state.doc.content.size),
-					);
-					view.dispatch(view.state.tr.setSelection(sel));
-				}
-				view.focus();
-				setPopup(null);
-			},
-		});
+		return pushEscape({ onEscape: () => closePopupRef.current() });
 	}, [popup !== null]);
 
-	// global Esc → registry (innermost layer only; inert when empty)
+	// B51/CP-64: clicking away from the ⌘K palette dismisses it down the SAME
+	// path as Esc — otherwise the popup stays mounted with aria-expanded=true
+	// over a stale stored selection, and a later Esc jumps the caret back.
+	// (The `[[` posture needs no listener: a click moves the caret out of the
+	// span, which deactivates it — B29.)
 	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key !== "Escape") return;
-			import("~/lib/escape-registry").then(({ popEscape }) => {
-				if (popEscape()) e.preventDefault();
-			});
+		if (!popup?.insertPosture) return;
+		const onDown = (e: Event) => {
+			const box = popupBoxRef.current;
+			const target = e.target as globalThis.Node | null;
+			if (box && target && box.contains(target)) return;
+			// A10 restores focus + selection on EVERY close, so a click on dead
+			// space must not then hand focus to the body: swallow that pointer.
+			// A click on something interactive keeps its default — the writer
+			// asked to go there, and the restore would be a hijack.
+			const el = target instanceof Element ? target : null;
+			const interactive = el?.closest(
+				"a,button,input,textarea,select,summary,[tabindex],[contenteditable]",
+			);
+			if (!interactive) e.preventDefault();
+			closePopupRef.current();
+		};
+		document.addEventListener("pointerdown", onDown, true);
+		return () => document.removeEventListener("pointerdown", onDown, true);
+	}, [popup?.insertPosture]);
+
+	// global Esc → registry (innermost layer only; inert when empty).
+	// B16/CP-17: the pop is SYNCHRONOUS — an async hop lands after dispatch,
+	// where preventDefault is a no-op and every other listener has run.
+	useEffect(() => installEscapeHandler(document), []);
+
+	// B54: Chromium natively smooth-scrolls the page toward the foot of a
+	// taller-than-viewport contenteditable on a keystroke — no JS caller
+	// (every scroll API trapped, silent) and it reproduces at the pre-feature
+	// baseline, content-independent. When the caret was already visible that
+	// animation is pure displacement: snap back to the keystroke's scroll
+	// position. Small nudges (a line entering view at the fold) and genuine
+	// reveals (caret off-screen) pass through untouched.
+	useEffect(() => {
+		let at = 0; // last keystroke that had a visible caret
+		let y = 0; // page scrollY at that keystroke
+		const KEEP_MS = 700; // the native ease runs ~500ms
+		const SLACK_PX = 160; // legitimate caret-following stays a few lines
+		const onKey = () => {
+			const view = viewRef.current;
+			if (!view || !view.hasFocus()) return;
+			try {
+				const c = view.coordsAtPos(view.state.selection.head);
+				const visible = c.top >= 0 && c.bottom <= window.innerHeight;
+				at = visible ? performance.now() : 0;
+				y = window.scrollY;
+			} catch {
+				at = 0;
+			}
+		};
+		const onScroll = () => {
+			if (at === 0 || performance.now() - at > KEEP_MS) return;
+			if (Math.abs(window.scrollY - y) <= SLACK_PX) return;
+			window.scrollTo({ top: y, left: window.scrollX, behavior: "instant" });
 		};
 		document.addEventListener("keydown", onKey, true);
-		return () => document.removeEventListener("keydown", onKey, true);
+		window.addEventListener("scroll", onScroll, { passive: true });
+		return () => {
+			document.removeEventListener("keydown", onKey, true);
+			window.removeEventListener("scroll", onScroll);
+		};
 	}, []);
 
 	const suggestions = useMemo(
 		() => (popup ? suggestDestinations(popup.insertPosture ? insertQuery : popup.query) : []),
 		[popup, insertQuery],
 	);
-	useEffect(() => setHighlight(0), [suggestions.length]);
+	// B48/CP-53: reset on list IDENTITY, not length — "alma 3" → "mosiah 3"
+	// yields equal-length lists with entirely different destinations, and a
+	// stale highlight index makes Enter insert somewhere the writer never
+	// looked. (The lists routinely share a length; that is the fixture.)
+	const suggestionsKey = useMemo(() => suggestions.map((s) => s.ref).join(" "), [suggestions]);
+	useEffect(() => setHighlight(0), [suggestionsKey]);
 	// the list scrolls (no result cap) — keep the active option in view
 	useEffect(() => {
-		document
-			.getElementById(`note-insert-opt-${highlight}`)
-			?.scrollIntoView({ block: "nearest" });
-	}, [highlight]);
+		// container-only scrolling: scrollIntoView walks ancestors and was
+		// dragging the PAGE hundreds of px per keystroke with the popup open —
+		// manual scrollTop on the listbox physically cannot touch the page
+		const el = document.getElementById(`note-insert-opt-${highlight}`);
+		const listbox = document.getElementById("note-insert-listbox");
+		if (!el || !listbox) return;
+		const elTop = el.offsetTop;
+		const elBottom = elTop + el.offsetHeight;
+		if (elTop < listbox.scrollTop) listbox.scrollTop = elTop;
+		else if (elBottom > listbox.scrollTop + listbox.clientHeight) {
+			listbox.scrollTop = elBottom - listbox.clientHeight;
+		}
+	}, [highlight, suggestions]);
 	suggestionsRef.current = suggestions;
 	highlightRef.current = highlight;
-	moveHighlightRef.current = (delta: number) =>
+
+	// B10: keep the focused element's combobox attributes in step with the
+	// listbox React owns (the PM `attributes` function reads comboRef).
+	// anchor-gated: until the caret anchor is measured the popup DOM must not
+	// exist at all — its unplaced geometry sits at the editor's FOOT, and
+	// Chromium's async reveal of a fresh aria-controls target scrolls the
+	// page there (the B11 late-jump root cause)
+	const listboxOpen = popup !== null && anchor !== null && suggestions.length > 0;
+	// standard combobox pattern: the active option is exposed whenever the
+	// listbox is open. (An earlier deferred-until-arrowed variant existed to
+	// dodge a Chromium reveal-scroll wrongly attributed to this attribute —
+	// the actual trigger was the keystroke-reveal the B54 guard now cancels.)
+	const activeOptionId = listboxOpen ? `note-insert-opt-${highlight}` : null;
+	comboRef.current = { expanded: listboxOpen, activeId: activeOptionId };
+	useEffect(() => {
+		// imperative ARIA on the focused contenteditable (B10), applied ONLY on
+		// real value changes — see editorAttributes for why PM must not manage
+		// these (Chromium reveal-scroll per re-application)
+		const dom = viewRef.current?.dom;
+		if (!dom) return;
+		const setAttr = (name: string, value: string | null) => {
+			if (value === null) {
+				if (dom.hasAttribute(name)) dom.removeAttribute(name);
+			} else if (dom.getAttribute(name) !== value) {
+				dom.setAttribute(name, value);
+			}
+		};
+		setAttr("aria-label", "Note");
+		// the combobox posture tracks the ACTIVE SPAN, not the listbox: with a
+		// query that matches nothing the writer is still inside `[[` — the
+		// editor stays a combobox and aria-expanded says "no list" (B36).
+		// aria-controls only while its target exists (axe: valid idref).
+		const comboActive = popup !== null && !popup.insertPosture;
+		if (comboActive) {
+			setAttr("role", "combobox");
+			setAttr("aria-multiline", null);
+			setAttr("aria-autocomplete", "list");
+			setAttr("aria-haspopup", "listbox");
+			setAttr("aria-expanded", listboxOpen ? "true" : "false");
+			setAttr("aria-controls", listboxOpen ? LISTBOX_ID : null);
+			setAttr("aria-activedescendant", activeOptionId);
+		} else {
+			setAttr("role", "textbox");
+			setAttr("aria-multiline", "true");
+			setAttr("aria-autocomplete", null);
+			setAttr("aria-haspopup", null);
+			setAttr("aria-expanded", null);
+			setAttr("aria-controls", null);
+			setAttr("aria-activedescendant", null);
+		}
+	}, [listboxOpen, activeOptionId, popup === null, popup?.insertPosture]);
+
+	// B11/CP-12: anchor the popup at the CARET, not the editor's foot — in a
+	// note taller than the viewport the foot placement opened the listbox
+	// off-screen and the universal insert door (A9) read as broken.
+	useEffect(() => {
+		if (!popup) {
+			setAnchor(null);
+			return;
+		}
+		const place = () => {
+			const view = viewRef.current;
+			if (!view) return;
+			try {
+				const c = view.coordsAtPos(view.state.selection.head);
+				const roomBelow = window.innerHeight - c.bottom;
+				const flipUp = roomBelow < POPUP_MAX_H && c.top > POPUP_MAX_H;
+				const left = Math.max(POPUP_EDGE, Math.min(c.left, window.innerWidth - POPUP_W - POPUP_EDGE));
+				setAnchor(
+					flipUp
+						? { left, top: window.innerHeight - c.top + POPUP_GAP, flipUp: true }
+						: { left, top: c.bottom + POPUP_GAP, flipUp: false },
+				);
+			} catch {
+				// position no longer in the doc — leave the last known anchor
+			}
+		};
+		place();
+		window.addEventListener("scroll", place, true);
+		window.addEventListener("resize", place);
+		return () => {
+			window.removeEventListener("scroll", place, true);
+			window.removeEventListener("resize", place);
+		};
+	}, [popup]);
+	moveHighlightRef.current = (delta: number) => {
 		setHighlight((h) => Math.max(0, Math.min(h + delta, Math.max(0, suggestions.length - 1))));
+	};
 
 	const commitSuggestion = (s: InsertSuggestion, navigateInstead: boolean) => {
 		const view = viewRef.current;
@@ -723,12 +997,16 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 			insertPosture: false,
 			storedSelection: null,
 		};
-		const label =
+		// B47/CP-52: the stored selection is the writer's own text — it must be
+		// sanitized to the label grammar HERE, or the doc shows `a|b` while
+		// storage silently keeps `ab` and the reload rewrites the note.
+		const rawLabel =
 			ac.storedSelection?.text && ac.storedSelection.text.trim() !== ""
 				? ac.storedSelection.text
 				: s.display !== s.ref
 					? s.display
 					: null;
+		const label = insertLabel(rawLabel, s.ref);
 		const node = noteSchema.nodes.wikilink.create({ ref: s.ref, label });
 		let tr = view.state.tr;
 		if (ac.insertPosture && ac.storedSelection) {
@@ -741,7 +1019,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 		tr.setMeta(autocompleteKey, { from: null, insertPosture: false, storedSelection: null });
 		view.dispatch(tr);
 		view.focus();
-		setAnnounce(`Inserted link to ${s.display}`);
+		say(`Inserted link to ${s.display}`);
 		setPopup(null);
 		setInsertQuery("");
 	};
@@ -759,19 +1037,19 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 				{announce ?? ""}
 			</div>
 
-			<div
-				ref={mountRef}
-				aria-expanded={popup ? true : undefined}
-				aria-haspopup={popup ? "listbox" : undefined}
-				aria-controls={popup ? "note-insert-listbox" : undefined}
-				aria-activedescendant={
-					popup && suggestions.length > 0 ? `note-insert-opt-${highlight}` : undefined
-				}
-			/>
+			{/* B10: the combobox ARIA lives on the contenteditable PM mounts
+			    inside here (the focused element) — never on this wrapper. */}
+			<div ref={mountRef} />
 
-			{popup && (
-				<div className="relative">
-					<div className="absolute z-10 mt-1 w-80 max-w-full rounded-md border border-rule2 bg-panel p-1 shadow-sm">
+			{/* caret-anchored popup: zero-height relative wrapper right after the
+			    editor; the popup positions absolutely inside it (never fixed) */}
+			<div ref={popupWrapRef} className="relative h-0">
+			{popup && anchor && (
+				<div style={popupStyle(anchor)}>
+					<div
+						ref={popupBoxRef}
+						className="w-80 max-w-[calc(100vw-1rem)] rounded-md border border-rule2 bg-panel p-1 shadow-sm"
+					>
 						{popup.insertPosture && (
 							<input
 								autoFocus
@@ -792,21 +1070,25 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 								placeholder="Link to…"
 								aria-label="Link destination"
 								role="combobox"
-								aria-expanded="true"
-								aria-controls="note-insert-listbox"
-								aria-activedescendant={
-									suggestions.length > 0 ? `note-insert-opt-${highlight}` : undefined
-								}
+								// CP-62: the APG contract the palette was short of
+								aria-autocomplete="list"
+								aria-expanded={listboxOpen}
+								aria-controls={listboxOpen ? LISTBOX_ID : undefined}
+								aria-activedescendant={activeOptionId ?? undefined}
 								className="mb-1 h-9 w-full rounded border-0 bg-transparent px-2 font-reading text-[15px] text-ink outline-none"
 							/>
 						)}
-						<ul id="note-insert-listbox" role="listbox" className="max-h-72 list-none overflow-y-auto">
-							{suggestions.length === 0 ? (
-								<li className="px-2 py-1.5 font-ui text-xs text-muted-foreground">
-									Type a reference — “Alma 32:21”
-								</li>
-							) : (
-								suggestions.map((s, i) => (
+						{/* B36/CP-39: `role=listbox` may only contain options, so the
+						    empty-state hint renders OUTSIDE the list and the listbox
+						    itself exists only when there is something to list. */}
+						{listboxOpen ? (
+							<ul
+								id={LISTBOX_ID}
+								role="listbox"
+								aria-label="Link destinations"
+								className="max-h-72 list-none overflow-y-auto"
+							>
+								{suggestions.map((s, i) => (
 									<li
 										key={s.ref}
 										id={`note-insert-opt-${i}`}
@@ -819,13 +1101,17 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 										className={`cursor-pointer rounded px-2 py-1.5 font-reading text-[15px] text-ink ${i === highlight ? "bg-sel" : ""}`}
 									>
 										{s.display}
-										<span className="ml-2 font-ui text-[10.5px] uppercase tracking-wide text-muted-foreground">
+										<span className="ml-2 font-ui text-[10.5px] uppercase tracking-wide text-ink">
 											{s.gloss ?? s.kind}
 										</span>
 									</li>
-								))
-							)}
-						</ul>
+								))}
+							</ul>
+						) : (
+							<p className="px-2 py-1.5 font-ui text-xs text-muted-foreground">
+								Type a reference — “Alma 32:21”
+							</p>
+						)}
 						{/* Shape C foot line — the verbs, from context */}
 						<p className="border-t border-rule px-2 pb-0.5 pt-1 font-ui text-[10.5px] text-muted-foreground">
 							Enter to insert · ⌘↵ to go
@@ -833,6 +1119,7 @@ function PMEditor(props: NoteEditorProps & { onMarkdown?: (md: string) => void }
 					</div>
 				</div>
 			)}
+			</div>
 
 			<div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-rule pt-3">
 				{noteId !== null ? (

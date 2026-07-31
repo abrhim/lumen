@@ -159,11 +159,36 @@ const noteParser = new MarkdownParser(noteSchema, md, {
 	},
 });
 
+/** Longest label a stored wikilink may carry — long enough for any real
+ * quotation fragment, short enough that a pathological label can never
+ * dominate a note body. */
+const LABEL_MAX = 200;
+
 /** Label grammar (A2/CF-42): `|`, `[`, `]` can never survive into a stored
- * label — the serialized form must re-tokenize to the same node. Insert
- * paths sanitize with this too. */
+ * label — the serialized form must re-tokenize to the same node. Newlines
+ * (and every other whitespace run) collapse to a single space for the same
+ * reason: the tokenizer rejects an inner newline, so a `\n`-bearing label
+ * would serialize into escaped literal junk and the trailing lines would
+ * re-parse as headings/quotes of their own (B18/CP-19). The collapse
+ * matches `stripNoteMarkdownLine`'s read side. Insert paths sanitize with
+ * this too (B47/CP-52 — see `insertLabel`). */
 export function sanitizeWikilinkLabel(label: string): string {
-	return label.replace(/[[\]|]/g, "").trim();
+	return label
+		.replace(/[[\]|]/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, LABEL_MAX)
+		.trim();
+}
+
+/** The label an insert path (paste, ⌘K, `[[` commit) puts on the node it
+ * creates. Sanitizing HERE — not only at serialize time — is what keeps the
+ * label the writer sees identical to the label that gets stored (B47).
+ * `null` means "bare `[[ref]]`". */
+export function insertLabel(raw: string | null | undefined, ref: string): string | null {
+	if (raw === null || raw === undefined) return null;
+	const clean = sanitizeWikilinkLabel(raw);
+	return clean === "" || clean === ref ? null : clean;
 }
 
 function writeWikilink(ref: string, label: string | null): string {

@@ -40,3 +40,35 @@ export function popEscape(): boolean {
 export function escapeDepth(): number {
 	return stack.length;
 }
+
+/**
+ * The one global Escape keydown handler, as a synchronous function (B16).
+ *
+ * Doctrine 6 ("innermost layer only, never falls through") is a claim about
+ * ORDER, so the pop has to happen inside the dispatch of the event itself:
+ * an async hop (a dynamic `import()`, a promise, a timeout) resolves after
+ * the event has finished dispatching, which makes `preventDefault()` a
+ * structural no-op and lets every other Escape listener act first. Returns
+ * true when a layer consumed the escape.
+ */
+export function handleEscapeKeydown(event: {
+	key: string;
+	defaultPrevented?: boolean;
+	preventDefault: () => void;
+	stopPropagation: () => void;
+}): boolean {
+	if (event.key !== "Escape" || event.defaultPrevented) return false;
+	if (!popEscape()) return false;
+	event.preventDefault();
+	event.stopPropagation();
+	return true;
+}
+
+/** Install `handleEscapeKeydown` in the capture phase; returns the disposer. */
+export function installEscapeHandler(target: Pick<Document, "addEventListener" | "removeEventListener">): () => void {
+	const onKey = (e: Event) => {
+		handleEscapeKeydown(e as KeyboardEvent);
+	};
+	target.addEventListener("keydown", onKey, true);
+	return () => target.removeEventListener("keydown", onKey, true);
+}

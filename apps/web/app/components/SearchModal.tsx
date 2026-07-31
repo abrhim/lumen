@@ -80,6 +80,9 @@ function SearchModalInteractive() {
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			// ⌘K opens EVERYWHERE — including inside inputs (Decisions SU-6).
+			// B51: unless a closer handler already claimed it (the note editor
+			// binds Mod-k to its insert palette; two palettes must never stack).
+			if (e.defaultPrevented) return;
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
 				e.preventDefault();
 				openedByPointer.current = false;

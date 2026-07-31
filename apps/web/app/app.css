@@ -204,6 +204,11 @@ html {
 	font-family: var(--font-ui);
 	background: var(--color-paper);
 	color: var(--color-ink);
+	/* CSS scroll anchoring compensates layout shifts by silently adjusting
+	   scroll — around the editor's caret-anchored popup it produced chaotic
+	   multi-hundred-px jumps while typing (B54 forensics). App surfaces
+	   manage their own scroll; anchoring off is the stable posture. */
+	overflow-anchor: none;
 }
 
 @theme inline {

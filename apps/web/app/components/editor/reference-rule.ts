@@ -54,6 +54,25 @@ interface Tok {
 	start: number;
 }
 
+/**
+ * B31/CP-33 — the tokenizer is `\S+`, so punctuation glued to the front of
+ * the first book token ("...Alma", "&Alma") joined the match: the span and
+ * the link label swallowed an ellipsis that belongs to the writer's
+ * quotation. Trim leading non-alphanumerics off the FIRST book token before
+ * the span is derived; a token that is nothing but punctuation is not a
+ * book start at all (the shorter book window handles it).
+ */
+function trimmedBookSpan(bookToks: readonly Tok[]): { span: string; start: number } | null {
+	const head = bookToks[0];
+	const lead = /^[^A-Za-z0-9]*/.exec(head.text)![0].length;
+	const headText = head.text.slice(lead);
+	if (headText === "") return null;
+	return {
+		span: [headText, ...bookToks.slice(1).map((t) => t.text)].join(" "),
+		start: head.start + lead,
+	};
+}
+
 function tokenize(text: string): Tok[] {
 	const toks: Tok[] = [];
 	const re = /\S+/g;
@@ -93,7 +112,9 @@ export function findCanonReferences(text: string): CanonReferenceMatch[] {
 
 		for (let j = Math.min(3, i); j >= 1; j--) {
 			const bookToks = toks.slice(i - j, i);
-			const bookSpan = bookToks.map((t) => t.text).join(" ");
+			const trimmed = trimmedBookSpan(bookToks);
+			if (!trimmed) continue;
+			const bookSpan = trimmed.span;
 			if (!/^[A-Za-z0-9&.\s]+$/.test(bookSpan)) continue;
 			const parsed = parseReference(
 				`${normalizeBook(bookSpan)} ${verseMatch[1]}:${verseMatch[2]}`,
@@ -101,7 +122,7 @@ export function findCanonReferences(text: string): CanonReferenceMatch[] {
 			if (parsed.level !== "verse" || !parsed.bookId) continue;
 			const count = BOOK_CHAPTER_COUNTS[parsed.bookId];
 			if (count === undefined || parsed.chapter! > count) continue;
-			const start = bookToks[0].start;
+			const start = trimmed.start;
 			const end = toks[i].start + verseMatch[0].length;
 			matches.push({
 				ref: `${parsed.bookId}-${parsed.chapter}-${parsed.verse}`,
@@ -125,7 +146,9 @@ export function findCanonReferences(text: string): CanonReferenceMatch[] {
 		for (let j = Math.min(3, i); j >= 1; j--) {
 			if (consumed.has(i - j)) continue;
 			const bookToks = toks.slice(i - j, i);
-			const bookSpan = bookToks.map((t) => t.text).join(" ");
+			const trimmed = trimmedBookSpan(bookToks);
+			if (!trimmed) continue;
+			const bookSpan = trimmed.span;
 			if (!/^[A-Za-z0-9&.\s]+$/.test(bookSpan)) continue;
 			const normalized = normalizeBook(bookSpan).toLowerCase();
 			const unique = CHAPTER_FORM_BOOKS.has(normalized) || /^\d/.test(normalized);
@@ -135,7 +158,7 @@ export function findCanonReferences(text: string): CanonReferenceMatch[] {
 			if (parsed.level !== "chapter" || !parsed.bookId) continue;
 			const count = BOOK_CHAPTER_COUNTS[parsed.bookId];
 			if (count === undefined || parsed.chapter! > count) continue;
-			const start = bookToks[0].start;
+			const start = trimmed.start;
 			const end = toks[i].start + chapMatch[1].length;
 			matches.push({
 				ref: `${parsed.bookId}-${parsed.chapter}`,
