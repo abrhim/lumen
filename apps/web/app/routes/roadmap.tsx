@@ -2,27 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { Link, data, redirect, useFetcher } from "react-router";
 import { PageFrame, PageHeader } from "~/components/PageFrame";
 import { getSessionUser } from "~/lib/auth.server";
-import { listRoadmap, myVotes, pressUnvote, pressVote, type RoadmapFeature } from "~/lib/roadmap.server";
+import { listRoadmap, pressUnvote, pressVote, type RoadmapFeature } from "~/lib/roadmap.server";
 
 /** mirror of the SQL cap in migrate-roadmap.mjs (client-safe display) */
 const VOTE_CAP = 10;
 import type { Route } from "./+types/roadmap";
 
 /**
- * Roadmap (2026-08-01): features live in lumen.roadmap_features now.
- * Anyone sees the standings; signed-in readers press the flame — up to
- * VOTE_CAP presses per feature (the Comeau-heart interaction, in the
- * house mark). Signed out, the flame is the sign-in door.
+ * Roadmap (2026-08-01): features live in lumen.roadmap_features. Anyone
+ * sees the standings; signed-in readers press the chevron — up to
+ * VOTE_CAP presses each. Signed out, the chevron is the sign-in door.
  */
 
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	headers.set("Cache-Control", "private, no-store");
-	const [features, mine] = await Promise.all([
-		listRoadmap(context.db),
-		user ? myVotes(request, context.cloudflare.env) : Promise.resolve({} as Record<string, number>),
-	]);
-	return data({ features, mine, signedIn: user !== null }, { headers });
+	const features = await listRoadmap(context.db, user?.id ?? null);
+	return data({ features, signedIn: user !== null }, { headers });
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -53,10 +49,10 @@ export function meta(_args: Route.MetaArgs) {
 	return [{ title: "Roadmap — Lintel" }];
 }
 
-/** The flame: fills with YOUR presses (level = mine/cap), pops on each
- * press, sparks fly. Reduced motion: the fill still rises, nothing moves
- * otherwise. Signed out it is a plain door to /login. */
-function FlameVote({
+/** The vote: a chevron that fills with YOUR presses and a total that rolls
+ * on change. Left-click adds a press, right-click (or the minus key) takes
+ * one back. Signed out it is a plain door to /login. */
+function VoteControl({
 	feature,
 	votes,
 	mine,
@@ -71,6 +67,10 @@ function FlameVote({
 	// optimistic press DELTA (right-click retracts): folds into server truth
 	const [pressed, setPressed] = useState(0);
 	const baseMine = useRef(mine);
+	// rapid presses race a single fetcher (each submit aborts the last), so
+	// presses accumulate locally and flush as ONE request carrying the delta
+	const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const deltaRef = useRef(0);
 	useEffect(() => {
 		// server truth arrived — fold it in and clear the optimistic layer
 		if (fetcher.data?.ok && fetcher.data.feature === feature && fetcher.data.count != null) {
@@ -79,7 +79,7 @@ function FlameVote({
 		}
 	}, [fetcher.data, feature]);
 	const mineNow = Math.max(0, Math.min(safeCount(baseMine.current) + pressed, VOTE_CAP));
-	const votesNow = votes - mine + mineNow;
+	const votesNow = Math.max(0, votes - mine + mineNow);
 	const level = mineNow / VOTE_CAP;
 	const atCap = mineNow >= VOTE_CAP;
 
@@ -87,20 +87,15 @@ function FlameVote({
 		return (
 			<Link
 				to="/login?next=%2Froadmap"
-				className="group flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums text-muted-foreground transition-colors duration-150 hover:text-ink"
+				className="flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums text-muted-foreground transition-colors duration-150 hover:text-ink"
 				aria-label={`${votes} votes — sign in to vote`}
 			>
-				<TorchGlyph level={0} lit={false} />
-				{votes}
+				<ChevronGlyph level={0} full={false} />
+				<Ticker value={votes} />
 			</Link>
 		);
 	}
 
-	// burst batching: rapid presses race a single fetcher (each submit
-	// aborts the last), so presses accumulate locally and flush as ONE
-	// request carrying the net delta
-	const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const deltaRef = useRef(0);
 	const scheduleFlush = () => {
 		if (flushTimer.current) clearTimeout(flushTimer.current);
 		flushTimer.current = setTimeout(() => {
@@ -146,19 +141,13 @@ function FlameVote({
 					pressDown();
 				}
 			}}
-			className={`group flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums transition-colors duration-150 hover:text-ink ${atCap ? "text-ink" : "text-muted-foreground"}`}
+			className={`flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums transition-colors duration-150 hover:text-ink ${atCap ? "text-ink" : "text-muted-foreground"}`}
 		>
-			{/* keying by press count re-mounts the glyph → the pop replays */}
-			<span key={mineNow} className={mineNow > 0 ? "animate-vote-pop" : ""}>
-				<TorchGlyph level={level} lit={atCap} />
-				{mineNow > 0 && !atCap && (
-					<span aria-hidden className="pointer-events-none relative">
-						<span className="absolute -top-4 left-0 size-[3px] rounded-full bg-dot-teaches animate-vote-spark-1" />
-						<span className="absolute -top-3 left-2 size-[2.5px] rounded-full bg-dot-media animate-vote-spark-2" />
-					</span>
-				)}
+			{/* keying by press count re-mounts the glyph → the lift replays */}
+			<span key={mineNow} className={mineNow > 0 ? "animate-vote-lift" : ""}>
+				<ChevronGlyph level={level} full={atCap} />
 			</span>
-			{votesNow}
+			<Ticker value={votesNow} />
 		</button>
 	);
 }
@@ -167,43 +156,71 @@ function safeCount(n: number): number {
 	return Number.isFinite(n) ? n : 0;
 }
 
-/** The torch (Abram, 2026-08-01): head + handle fill with `level`; at
- * full the whole torch tips slightly and the flame IGNITES, then
- * flickers while lit. Reduced motion: states apply instantly — fill
- * rises, tilt holds, no flicker. */
-function TorchGlyph({ level, lit }: { level: number; lit: boolean }) {
+/** The chevron: a muted track with your presses filling both arms from
+ * their ends toward the apex; solid and lifted once all ten are in. */
+function ChevronGlyph({ level, full }: { level: number; full: boolean }) {
 	const pct = Math.round(level * 100);
-	const clipId = `torch-fill-${pct}`;
+	const clipId = `vote-fill-${pct}`;
+	const d = "M4.5 15 L12 7.5 L19.5 15";
 	return (
 		<svg
-			viewBox="0 0 32 32"
-			className={`size-[19px] ${lit ? "torch-lit" : ""}`}
+			viewBox="0 0 24 24"
+			className={`size-[16px] vote-chevron ${full ? "vote-chevron-full" : ""}`}
 			aria-hidden="true"
 		>
 			<defs>
 				<clipPath id={clipId}>
-					<rect x="0" y={31 - 19 * (pct / 100)} width="32" height={19 * (pct / 100) + 1} />
+					<rect x="0" y={17 - 11 * (pct / 100)} width="24" height={11 * (pct / 100) + 1} />
 				</clipPath>
 			</defs>
-			{/* the flame — exists only once lit; ignites from the head */}
-			{lit && (
-				<path
-					className="torch-flame"
-					d="M16 1.5 C14.2 3.9 13.6 5.7 14.3 7.3 C14.9 8.7 16.5 9 17.6 8.1 C18.8 7.1 18.7 5.4 17.9 3.9 C17.3 2.9 16.7 2.1 16 1.5 Z"
-					fill="currentColor"
-				/>
-			)}
-			{/* head wrap + handle, outline */}
-			<g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-				<path d="M11.5 12.5 h9 l-1.6 5.5 h-5.8 Z" />
-				<path d="M14.6 18 L14 29 a2 2 0 0 0 4 0 L17.4 18" />
-			</g>
-			{/* the fill, rising with presses */}
-			<g fill="currentColor" clipPath={`url(#${clipId})`}>
-				<path d="M11.5 12.5 h9 l-1.6 5.5 h-5.8 Z" />
-				<path d="M14.6 18 L14 29 a2 2 0 0 0 4 0 L17.4 18 Z" />
-			</g>
+			<path
+				d={d}
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				opacity="0.3"
+			/>
+			<path
+				d={d}
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				clipPath={`url(#${clipId})`}
+			/>
 		</svg>
+	);
+}
+
+const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+/** The total, as an odometer: only the digits that change roll. The
+ * button's aria-label carries the spoken value, so the strips themselves
+ * stay out of the accessibility tree. */
+function Ticker({ value }: { value: number }) {
+	const chars = String(Math.max(0, value)).split("");
+	return (
+		<span aria-hidden className="ticker">
+			{chars.map((ch, i) => (
+				// keyed from the RIGHT so crossing 9→10 pushes a column on the
+				// front instead of re-rolling every place
+				<span key={chars.length - i} className="ticker-col">
+					<span
+						className="ticker-strip"
+						style={{ transform: `translateY(-${Number(ch) * 10}%)` }}
+					>
+						{DIGITS.map((digit) => (
+							<span key={digit} className="ticker-digit">
+								{digit}
+							</span>
+						))}
+					</span>
+				</span>
+			))}
+		</span>
 	);
 }
 
@@ -215,14 +232,17 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 export default function Roadmap({ loaderData }: Route.ComponentProps) {
-	const { features, mine, signedIn } = loaderData;
+	const { features, signedIn } = loaderData;
 	const groups: Array<[string, RoadmapFeature[]]> = ["building", "planned", "proposed", "shipped"]
 		.map((state) => {
 			const rows = features.filter((f) => f.state === state);
 			rows.sort((a, b) =>
 				state === "proposed"
 					? b.votes - a.votes || a.title.localeCompare(b.title)
-					: (a.sort_order ?? 99) - (b.sort_order ?? 99) || a.title.localeCompare(b.title),
+					: state === "shipped"
+						? (b.shipped_at ?? "").localeCompare(a.shipped_at ?? "") ||
+							a.title.localeCompare(b.title)
+						: (a.sort_order ?? 99) - (b.sort_order ?? 99) || a.title.localeCompare(b.title),
 			);
 			return [state, rows] as [string, RoadmapFeature[]];
 		})
@@ -234,7 +254,7 @@ export default function Roadmap({ loaderData }: Route.ComponentProps) {
 				title="Roadmap"
 				intro={
 					signedIn
-						? `In rough order. No dates. Press the flame on what you want — up to ${VOTE_CAP} presses each.`
+						? `In rough order. No dates. Press the chevron on what you want — up to ${VOTE_CAP} presses each.`
 						: "In rough order. No dates. Sign in to vote for what you want."
 				}
 			/>
@@ -262,10 +282,10 @@ export default function Roadmap({ loaderData }: Route.ComponentProps) {
 										{f.shipped_at ?? ""}
 									</span>
 								) : (
-									<FlameVote
+									<VoteControl
 										feature={f.id}
 										votes={f.votes}
-										mine={mine[f.id] ?? 0}
+										mine={f.mine}
 										signedIn={signedIn}
 									/>
 								)}

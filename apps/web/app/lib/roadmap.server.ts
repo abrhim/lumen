@@ -1,11 +1,10 @@
-import { sql, type SQLWrapper } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { getAuth, type AuthEnv } from "./auth.server";
 
 /**
- * Roadmap data (2026-08-01). Standings are PUBLIC counts aggregated
- * server-side over the read-only connection — voter ids never leave the
- * server. A signed-in reader's own counts ride the user client (RLS:
- * SELECT own rows). Presses go through the capped INVOKER RPC.
+ * Roadmap data (2026-08-01). Standings are PUBLIC counts; voter ids never
+ * leave the server. Presses go through the capped INVOKER RPC.
  */
 
 export interface RoadmapFeature {
@@ -16,35 +15,34 @@ export interface RoadmapFeature {
 	sort_order: number | null;
 	shipped_at: string | null;
 	votes: number;
+	mine: number;
 }
 
-type Db = { execute: (q: SQLWrapper) => Promise<unknown> };
-
-export async function listRoadmap(db: Db): Promise<RoadmapFeature[]> {
-	const rows = (await db.execute(sql`
-		SELECT f.id, f.title, f.detail, f.state, f.sort_order,
-		       f.shipped_at::date::text AS shipped_at,
-		       COALESCE(SUM(v.count), 0)::int AS votes
-		FROM lumen.roadmap_features f
-		LEFT JOIN lumen.roadmap_votes v ON v.feature_id = f.id
-		GROUP BY f.id
-	`)) as RoadmapFeature[];
-	return rows;
-}
-
-/** The signed-in reader's own press counts, keyed by feature id. */
-export async function myVotes(request: Request, env: AuthEnv): Promise<Record<string, number>> {
-	try {
-		const { supabase } = getAuth(request, env);
-		const { data, error } = await supabase
-			.schema("lumen")
-			.from("roadmap_votes")
-			.select("feature_id, count");
-		if (error || !data) return {};
-		return Object.fromEntries(data.map((r) => [r.feature_id as string, r.count as number]));
-	} catch {
-		return {};
-	}
+/**
+ * The public total AND the caller's own presses, from ONE query on ONE
+ * connection. They must share a snapshot: the rendered number is
+ * `votes - mine + optimistic`, so a fresh `mine` against a stale `votes`
+ * renders a just-cast vote as zero. That is exactly what happened when
+ * the total came from Hyperdrive and `mine` came from PostgREST —
+ * Hyperdrive caches reads for ~60s, PostgREST doesn't. The explicit
+ * transaction is what keeps this query out of that cache.
+ */
+export async function listRoadmap(
+	db: PostgresJsDatabase,
+	voterId: string | null,
+): Promise<RoadmapFeature[]> {
+	const rows = await db.transaction(async (tx) =>
+		tx.execute(sql`
+			SELECT f.id, f.title, f.detail, f.state, f.sort_order,
+			       f.shipped_at::date::text AS shipped_at,
+			       COALESCE(SUM(v.count), 0)::int AS votes,
+			       COALESCE(SUM(v.count) FILTER (WHERE v.voter_id = ${voterId}::uuid), 0)::int AS mine
+			FROM lumen.roadmap_features f
+			LEFT JOIN lumen.roadmap_votes v ON v.feature_id = f.id
+			GROUP BY f.id
+		`),
+	);
+	return rows as unknown as RoadmapFeature[];
 }
 
 /** One press. Returns the caller's new count for that feature, or null. */

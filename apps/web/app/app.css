@@ -479,29 +479,28 @@ a.note-extlink:hover { text-decoration-style: solid; }
 }
 .note-editor:focus { outline: none; }
 
-/* roadmap flame (Comeau-style presses, 2026-08-01): the pop replays per
-   press via keyed remount; sparks are two dots that leap and fade. All
-   three ride motion-safe: — reduced motion sees only the fill rise. */
-@keyframes vote-pop {
-	0% { transform: scale(1); }
-	35% { transform: scale(1.35); }
-	100% { transform: scale(1); }
+/* roadmap vote (2026-08-01): a chevron that fills with your presses and
+   an odometer total. The lift replays per press via keyed remount. */
+.vote-chevron-full { transform: translateY(-1px); }
+@keyframes vote-lift {
+	0% { transform: translateY(0); }
+	45% { transform: translateY(-3px); }
+	100% { transform: translateY(0); }
 }
-@keyframes vote-spark-1 {
-	0% { transform: translate(0, 0); opacity: 1; }
-	100% { transform: translate(-5px, -10px); opacity: 0; }
-}
-@keyframes vote-spark-2 {
-	0% { transform: translate(0, 0); opacity: 1; }
-	100% { transform: translate(6px, -8px); opacity: 0; }
-}
-/* sparks are motion-only: they exist AS animation — reduced motion (or
-   the animation having finished) leaves them invisible */
-.animate-vote-spark-1, .animate-vote-spark-2 { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {
-	.animate-vote-pop { display: inline-block; animation: vote-pop 260ms cubic-bezier(0.22, 1, 0.36, 1); }
-	.animate-vote-spark-1 { animation: vote-spark-1 420ms ease-out forwards; }
-	.animate-vote-spark-2 { animation: vote-spark-2 420ms ease-out 40ms forwards; }
+	.vote-chevron { transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+	.animate-vote-lift { display: inline-block; animation: vote-lift 280ms cubic-bezier(0.22, 1, 0.36, 1); }
+}
+
+/* the ticker: each place is a window over a 0-9 strip, positioned by
+   transform. Only the digits that changed move, and they roll the way the
+   number went. Reduced motion gets the same positions without the roll. */
+.ticker { display: inline-flex; }
+.ticker-col { display: inline-block; overflow: hidden; height: 1.15em; }
+.ticker-strip { display: block; }
+.ticker-digit { display: block; height: 1.15em; line-height: 1.15em; }
+@media (prefers-reduced-motion: no-preference) {
+	.ticker-strip { transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1); }
 }
 
 /* the torch (2026-08-01): full = tilt + ignite + flicker. The tilt is a
