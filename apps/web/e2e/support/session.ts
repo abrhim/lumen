@@ -90,6 +90,11 @@ export async function createE2eUser(tag: string): Promise<E2eUser> {
 		session: signIn.session,
 		install,
 		cleanup: async () => {
+			// roadmap_votes.voter_id is a bare uuid, not an FK to auth.users, so
+			// deleting the user leaves its presses standing in the PUBLIC totals.
+			// Every suite run used to add a few; they compounded into triple
+			// digits on the live roadmap. Take them with the user.
+			await admin.schema("lumen").from("roadmap_votes").delete().eq("voter_id", data.user.id);
 			await admin.auth.admin.deleteUser(data.user.id);
 		},
 	};

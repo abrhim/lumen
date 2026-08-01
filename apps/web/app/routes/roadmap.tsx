@@ -5,7 +5,7 @@ import { getSessionUser } from "~/lib/auth.server";
 import { listRoadmap, pressUnvote, pressVote, type RoadmapFeature } from "~/lib/roadmap.server";
 
 /** mirror of the SQL cap in migrate-roadmap.mjs (client-safe display) */
-const VOTE_CAP = 10;
+const VOTE_CAP = 3;
 import type { Route } from "./+types/roadmap";
 
 /**
@@ -33,7 +33,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 		return data({ ok: false as const }, { status: 400, headers });
 	}
 	const down = form.get("press") === "down";
-	const n = Math.min(10, Math.max(1, parseInt(String(form.get("n") ?? "1"), 10) || 1));
+	const n = Math.min(VOTE_CAP, Math.max(1, parseInt(String(form.get("n") ?? "1"), 10) || 1));
 	// a burst lands as ONE request: apply n capped presses sequentially
 	let count: number | null = null;
 	for (let i = 0; i < n; i++) {
@@ -96,6 +96,8 @@ function VoteControl({
 		);
 	}
 
+	const spent = mineNow > 0;
+
 	const scheduleFlush = () => {
 		if (flushTimer.current) clearTimeout(flushTimer.current);
 		flushTimer.current = setTimeout(() => {
@@ -121,34 +123,48 @@ function VoteControl({
 		scheduleFlush();
 	};
 	return (
-		<button
-			type="button"
-			title="Click adds a press · right-click takes one back"
-			aria-label={
-				atCap
-					? `${votesNow} votes — your ${VOTE_CAP} are in; right-click or press minus to take one back`
-					: `${votesNow} votes — press to add yours (${mineNow} of ${VOTE_CAP})`
-			}
-			aria-keyshortcuts="Minus"
-			onClick={pressUp}
-			onContextMenu={(e) => {
-				e.preventDefault();
-				pressDown();
-			}}
-			onKeyDown={(e) => {
-				if (e.key === "-") {
+		<div
+			className={`flex shrink-0 items-center gap-1.5 font-ui text-[13px] tabular-nums ${spent ? "text-ink" : "text-muted-foreground"}`}
+		>
+			<button
+				type="button"
+				title="Add a press"
+				aria-label={
+					atCap
+						? `${votesNow} votes — your ${VOTE_CAP} are in`
+						: `${votesNow} votes — press to add yours (${mineNow} of ${VOTE_CAP})`
+				}
+				aria-keyshortcuts="Minus"
+				onClick={pressUp}
+				onContextMenu={(e) => {
 					e.preventDefault();
 					pressDown();
-				}
-			}}
-			className={`flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums transition-colors duration-150 hover:text-ink ${atCap ? "text-ink" : "text-muted-foreground"}`}
-		>
-			{/* keying by press count re-mounts the glyph → the lift replays */}
-			<span key={mineNow} className={mineNow > 0 ? "animate-vote-lift" : ""}>
-				<ChevronGlyph level={level} full={atCap} />
-			</span>
+				}}
+				onKeyDown={(e) => {
+					if (e.key === "-") {
+						e.preventDefault();
+						pressDown();
+					}
+				}}
+				className="flex items-center px-0.5 transition-colors duration-150 hover:text-primary"
+			>
+				{/* keying by press count re-mounts the glyph → the lift replays */}
+				<span key={mineNow} className={spent ? "animate-vote-lift" : ""}>
+					<ChevronGlyph level={level} full={atCap} />
+				</span>
+			</button>
 			<Ticker value={votesNow} />
-		</button>
+			<button
+				type="button"
+				title="Take a press back"
+				aria-label={`take a press back (${mineNow} of ${VOTE_CAP})`}
+				onClick={pressDown}
+				disabled={!spent}
+				className="flex items-center px-0.5 transition-colors duration-150 hover:text-primary disabled:cursor-default disabled:opacity-30 disabled:hover:text-current"
+			>
+				<ChevronGlyph dir="down" />
+			</button>
+		</div>
 	);
 }
 
@@ -156,12 +172,35 @@ function safeCount(n: number): number {
 	return Number.isFinite(n) ? n : 0;
 }
 
-/** The chevron: a muted track with your presses filling both arms from
- * their ends toward the apex; solid and lifted once all ten are in. */
-function ChevronGlyph({ level, full }: { level: number; full: boolean }) {
+/** The chevron. Up: a muted track with your presses filling both arms from
+ * their ends toward the apex, solid and lifted once all of them are in.
+ * Down: a plain glyph — it's an action, not a gauge. */
+function ChevronGlyph({
+	level = 0,
+	full = false,
+	dir = "up",
+}: {
+	level?: number;
+	full?: boolean;
+	dir?: "up" | "down";
+}) {
 	const pct = Math.round(level * 100);
 	const clipId = `vote-fill-${pct}`;
 	const d = "M4.5 15 L12 7.5 L19.5 15";
+	if (dir === "down") {
+		return (
+			<svg viewBox="0 0 24 24" className="size-[16px]" aria-hidden="true">
+				<path
+					d="M4.5 9.5 L12 17 L19.5 9.5"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		);
+	}
 	return (
 		<svg
 			viewBox="0 0 24 24"
@@ -254,8 +293,8 @@ export default function Roadmap({ loaderData }: Route.ComponentProps) {
 				title="Roadmap"
 				intro={
 					signedIn
-						? `In rough order. No dates. Press the chevron on what you want — up to ${VOTE_CAP} presses each.`
-						: "In rough order. No dates. Sign in to vote for what you want."
+						? `In rough order. No dates. Vote on the features you want most — up to ${VOTE_CAP} presses each.`
+						: "In rough order. No dates. Sign in to vote on the features you want most."
 				}
 			/>
 			{groups.map(([state, rows]) => (

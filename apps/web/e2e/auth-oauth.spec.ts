@@ -32,7 +32,7 @@ test("callback with a garbage code fails closed to /login", async ({ request }) 
 
 test("the login page carries the Google door", async ({ page }) => {
 	await page.goto("/login?next=%2Fnotes");
-	const door = page.getByRole("link", { name: "Continue with Google" });
+	const door = page.getByRole("link", { name: "Sign in with Google" });
 	await expect(door).toBeVisible();
 	await expect(door).toHaveAttribute("href", "/auth/google?next=%2Fnotes");
 });

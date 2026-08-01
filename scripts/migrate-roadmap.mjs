@@ -23,7 +23,11 @@ if (!dsn) {
 	process.exit(1);
 }
 
-const VOTE_CAP = 10;
+/** Abram, 2026-08-01: three presses per feature, not ten — a vote should
+ * cost something. The cap lives here and is mirrored client-side in
+ * roadmap.tsx; changing it here re-caps the constraint and the RPC, and
+ * clamps any rows already above the new ceiling. */
+const VOTE_CAP = 3;
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS lumen.roadmap_features (
@@ -50,6 +54,14 @@ CREATE TABLE IF NOT EXISTS lumen.roadmap_votes (
 	PRIMARY KEY (feature_id, voter_id)
 );
 CREATE INDEX IF NOT EXISTS roadmap_votes_feature_idx ON lumen.roadmap_votes (feature_id);
+
+-- re-cap an existing table (CREATE TABLE IF NOT EXISTS won't touch it):
+-- clamp first, or the new constraint can't validate
+UPDATE lumen.roadmap_votes SET count = ${VOTE_CAP} WHERE count > ${VOTE_CAP};
+ALTER TABLE lumen.roadmap_votes DROP CONSTRAINT IF EXISTS roadmap_votes_count_check;
+ALTER TABLE lumen.roadmap_votes DROP CONSTRAINT IF EXISTS roadmap_votes_count_cap;
+ALTER TABLE lumen.roadmap_votes ADD CONSTRAINT roadmap_votes_count_cap
+	CHECK (count >= 1 AND count <= ${VOTE_CAP});
 
 -- state transitions stamp their dates; dates never drift from states
 CREATE OR REPLACE FUNCTION lumen.roadmap_stamp_state() RETURNS trigger
@@ -182,7 +194,8 @@ const checks = [
 	['authenticated cannot write features', `SELECT count(*)::int AS n FROM information_schema.role_table_grants WHERE table_schema='lumen' AND table_name='roadmap_features' AND grantee='authenticated' AND privilege_type <> 'SELECT'`, (r) => r[0].n === 0],
 	['vote RPC exists, anon lacks EXECUTE', `SELECT count(*)::int AS n FROM information_schema.routine_privileges WHERE routine_schema='lumen' AND routine_name='roadmap_vote' AND grantee='anon'`, (r) => r[0].n === 0],
 	['seed present', `SELECT count(*)::int AS n FROM lumen.roadmap_features`, (r) => r[0].n >= 15],
-	['count cap constraint', `SELECT count(*)::int AS n FROM information_schema.check_constraints WHERE constraint_schema='lumen' AND check_clause LIKE '%${VOTE_CAP}%'`, (r) => r[0].n >= 1],
+	['count capped at the cap', `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid='lumen.roadmap_votes'::regclass AND conname='roadmap_votes_count_cap'`, (r) => r[0]?.def?.includes(`<= ${VOTE_CAP}`)],
+	['no row exceeds the cap', `SELECT count(*)::int AS n FROM lumen.roadmap_votes WHERE count > ${VOTE_CAP}`, (r) => r[0].n === 0],
 ];
 let bad = 0;
 for (const [name, q, ok] of checks) {

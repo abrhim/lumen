@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Form, Link, data, redirect, useLocation, useNavigation } from "react-router";
+import { Form, data, redirect, useLocation, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
+import { LintelMark } from "~/components/LintelMark";
 import { getAuth, getSessionUser, safeReturnTo } from "~/lib/auth.server";
 
 export function meta(_args: Route.MetaArgs) {
@@ -63,6 +64,31 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 const RESEND_SECONDS = 60;
 
+/** Google's own G, from their sign-in brand assets — the button is only
+ * recognizable as Google's if the mark is theirs, unaltered. */
+function GoogleG() {
+	return (
+		<svg viewBox="0 0 18 18" className="size-[18px] shrink-0" aria-hidden="true">
+			<path
+				fill="#4285F4"
+				d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.614z"
+			/>
+			<path
+				fill="#34A853"
+				d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.859-3.048.859-2.344 0-4.328-1.583-5.036-3.71H.957v2.332A8.997 8.997 0 0 0 9 18z"
+			/>
+			<path
+				fill="#FBBC05"
+				d="M3.964 10.71a5.41 5.41 0 0 1 0-3.42V4.958H.957a9 9 0 0 0 0 8.084l3.007-2.332z"
+			/>
+			<path
+				fill="#EA4335"
+				d="M9 3.58c1.321 0 2.508.454 3.44 1.346l2.582-2.582C13.463.892 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+			/>
+		</svg>
+	);
+}
+
 export default function Login({ actionData }: Route.ComponentProps) {
 	const location = useLocation();
 	const params = new URLSearchParams(location.search);
@@ -91,35 +117,45 @@ export default function Login({ actionData }: Route.ComponentProps) {
 	}, [cooldown > 0]);
 
 	return (
-		<main data-plate="column" className="mx-auto max-w-2xl px-6 py-12">
-			<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">Sign in</h1>
-
-			<div className="mt-8">
-				<a
-					href={googleHref}
-					className="inline-block rounded-md border border-rule2 bg-panel px-4 py-2.5 font-ui text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:border-primary hover:text-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-				>
-					Continue with Google
-				</a>
-				{oauthError && (
-					<p className="mt-3 font-reading text-[15px] text-destructive" role="alert">
-						Google sign-in didn't complete. Try again, or use email below.
-					</p>
-				)}
-				<p className="mt-6 font-ui text-[13px] font-normal text-muted-foreground">
-					Or with email
+		<main
+			data-plate="column"
+			className="mx-auto flex min-h-[76svh] w-full max-w-[22rem] flex-col justify-center px-6 py-12"
+		>
+			<div className="text-center">
+				<LintelMark className="mx-auto h-[30px] w-[37px] text-ink" />
+				<h1 className="mt-4 font-display text-2xl font-medium tracking-tight">Sign in to Lintel</h1>
+				<p className="mt-2 font-reading text-[15px] leading-relaxed text-muted-foreground">
+					Either way in reaches the same account.
 				</p>
+			</div>
+
+			<a
+				href={googleHref}
+				className="mt-8 flex min-h-11 w-full items-center justify-center gap-3 rounded-md border border-rule2 bg-panel px-4 font-ui text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+			>
+				<GoogleG />
+				Sign in with Google
+			</a>
+			{oauthError && (
+				<p className="mt-3 font-reading text-[15px] text-destructive" role="alert">
+					Google sign-in didn't complete. Try again, or use email below.
+				</p>
+			)}
+
+			<div className="my-6 flex items-center gap-3">
+				<span className="flex-1 border-t border-rule" />
+				<span className="font-ui text-[12px] text-muted-foreground">or</span>
+				<span className="flex-1 border-t border-rule" />
 			</div>
 
 			{/* pre-mounted live region — announcements only work if the container
 			    exists before the content arrives */}
 			<div aria-live="polite">
 				{showSuccess ? (
-					<div className="mt-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+					<div className="motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
 						<p className="font-reading text-[17px] leading-relaxed text-ink">
 							Check your email. A sign-in link is on its way to{" "}
-							<strong className="font-semibold">{successEmail}</strong> — open it in this
-							browser.
+							<strong className="font-semibold">{successEmail}</strong> — open it in this browser.
 						</p>
 						<p className="mt-3 font-reading text-sm leading-relaxed text-muted-foreground">
 							If you request another link, only the newest email works.
@@ -130,7 +166,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
 							<button
 								type="submit"
 								disabled={cooldown > 0 || pending}
-								className="min-h-11 rounded-md border border-rule2 px-4 font-ui text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
+								className="min-h-11 w-full rounded-md border border-rule2 px-4 font-ui text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:border-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-50"
 							>
 								{cooldown > 0 ? `Resend in ${cooldown}s` : "Resend the link"}
 							</button>
@@ -145,11 +181,8 @@ export default function Login({ actionData }: Route.ComponentProps) {
 			</div>
 
 			{!showSuccess && (
-				<Form method="post" className="mt-6">
-					<label
-						htmlFor="email"
-						className="font-ui text-xs font-normal text-muted-foreground"
-					>
+				<Form method="post">
+					<label htmlFor="email" className="font-ui text-xs font-normal text-muted-foreground">
 						Email
 					</label>
 					<input
@@ -166,7 +199,11 @@ export default function Login({ actionData }: Route.ComponentProps) {
 						className="mt-1.5 block h-11 w-full rounded-md border border-rule2 bg-surface px-3 font-reading text-base text-ink outline-none transition-colors duration-150 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive"
 					/>
 					{/* reserved slot — errors never shift the layout */}
-					<p id="email-error" className="mt-1.5 min-h-6 font-ui text-sm text-destructive" role="alert">
+					<p
+						id="email-error"
+						className="mt-1.5 min-h-6 font-ui text-sm text-destructive"
+						role="alert"
+					>
 						{actionData?.error ?? ""}
 					</p>
 					<button
@@ -176,8 +213,8 @@ export default function Login({ actionData }: Route.ComponentProps) {
 					>
 						{pending ? "Sending…" : "Email me a sign-in link"}
 					</button>
-					<p className="mt-4 font-reading text-sm leading-relaxed text-muted-foreground">
-						No password — a link signs you in. Your email is used only to send it.
+					<p className="mt-4 text-center font-reading text-sm leading-relaxed text-muted-foreground">
+						No password — a link signs you in.
 					</p>
 				</Form>
 			)}
