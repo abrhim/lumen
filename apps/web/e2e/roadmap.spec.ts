@@ -37,19 +37,31 @@ test.describe("signed in", () => {
 		await flame.click();
 		await expect(flame).toHaveAttribute("aria-label", new RegExp(`3 of 10`));
 
-		// server truth survives a reload
+		// the burst flushes ~250ms after the last press — let it land
+		await page.waitForTimeout(900);
 		await page.reload();
 		const after = page.getByRole("button", { name: /3 of 10/ }).first();
 		await expect(after).toBeVisible();
 		await expect(after).toHaveAttribute("aria-label", new RegExp(`^${before + 3} votes`));
 
-		// hammer past the cap — the DB clamps and the button retires
+		// hammer past the cap — the DB clamps; the lit torch stays live
 		for (let i = 0; i < 9; i++) {
 			const b = page.getByRole("button", { name: /press to add yours|are in/ }).first();
 			if ((await b.getAttribute("aria-label"))?.includes("are in")) break;
 			await b.click();
 		}
+		await page.waitForTimeout(900);
 		await page.reload();
-		await expect(page.getByRole("button", { name: /your 10 are in/ }).first()).toBeVisible();
+		const lit = page.getByRole("button", { name: /your 10 are in/ }).first();
+		await expect(lit).toBeVisible();
+
+		// right-click takes one back — and it persists
+		await lit.click({ button: "right" });
+		await expect(
+			page.getByRole("button", { name: /9 of 10/ }).first(),
+		).toBeVisible();
+		await page.waitForTimeout(900);
+		await page.reload();
+		await expect(page.getByRole("button", { name: /9 of 10/ }).first()).toBeVisible();
 	});
 });

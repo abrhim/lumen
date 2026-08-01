@@ -17,6 +17,7 @@ export default [
 	route("me", "routes/me.tsx"),
 	route("about", "routes/about.tsx"),
 	route("roadmap", "routes/roadmap.tsx"),
+	route("privacy", "routes/privacy.tsx"),
 	route("login", "routes/login.tsx"),
 	route("auth/confirm", "routes/auth.confirm.tsx"),
 	route("auth/google", "routes/auth.google.tsx"),

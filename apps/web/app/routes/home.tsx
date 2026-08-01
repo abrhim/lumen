@@ -106,6 +106,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 				<Link to="/roadmap" className="hover:text-ink">
 					Roadmap
 				</Link>
+				<span className="text-faint"> · </span>
+				<Link to="/privacy" className="hover:text-ink">
+					Privacy
+				</Link>
 			</footer>
 		</main>
 	);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, data, redirect, useFetcher } from "react-router";
 import { PageFrame, PageHeader } from "~/components/PageFrame";
 import { getSessionUser } from "~/lib/auth.server";
-import { listRoadmap, myVotes, pressVote, type RoadmapFeature } from "~/lib/roadmap.server";
+import { listRoadmap, myVotes, pressUnvote, pressVote, type RoadmapFeature } from "~/lib/roadmap.server";
 
 /** mirror of the SQL cap in migrate-roadmap.mjs (client-safe display) */
 const VOTE_CAP = 10;
@@ -36,7 +36,16 @@ export async function action({ request, context }: Route.ActionArgs) {
 	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(featureId)) {
 		return data({ ok: false as const }, { status: 400, headers });
 	}
-	const count = await pressVote(request, context.cloudflare.env, featureId);
+	const down = form.get("press") === "down";
+	const n = Math.min(10, Math.max(1, parseInt(String(form.get("n") ?? "1"), 10) || 1));
+	// a burst lands as ONE request: apply n capped presses sequentially
+	let count: number | null = null;
+	for (let i = 0; i < n; i++) {
+		count = down
+			? await pressUnvote(request, context.cloudflare.env, featureId)
+			: await pressVote(request, context.cloudflare.env, featureId);
+		if (count === null) break;
+	}
 	return data({ ok: count !== null, feature: featureId, count }, { headers });
 }
 
@@ -59,7 +68,7 @@ function FlameVote({
 	signedIn: boolean;
 }) {
 	const fetcher = useFetcher<typeof action>();
-	// optimistic presses: queued submissions count immediately
+	// optimistic press DELTA (right-click retracts): folds into server truth
 	const [pressed, setPressed] = useState(0);
 	const baseMine = useRef(mine);
 	useEffect(() => {
@@ -69,7 +78,7 @@ function FlameVote({
 			setPressed(0);
 		}
 	}, [fetcher.data, feature]);
-	const mineNow = Math.min(safeCount(baseMine.current) + pressed, VOTE_CAP);
+	const mineNow = Math.max(0, Math.min(safeCount(baseMine.current) + pressed, VOTE_CAP));
 	const votesNow = votes - mine + mineNow;
 	const level = mineNow / VOTE_CAP;
 	const atCap = mineNow >= VOTE_CAP;
@@ -81,35 +90,71 @@ function FlameVote({
 				className="group flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums text-muted-foreground transition-colors duration-150 hover:text-ink"
 				aria-label={`${votes} votes — sign in to vote`}
 			>
-				<FlameGlyph level={0} />
+				<TorchGlyph level={0} lit={false} />
 				{votes}
 			</Link>
 		);
 	}
 
+	// burst batching: rapid presses race a single fetcher (each submit
+	// aborts the last), so presses accumulate locally and flush as ONE
+	// request carrying the net delta
+	const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const deltaRef = useRef(0);
+	const scheduleFlush = () => {
+		if (flushTimer.current) clearTimeout(flushTimer.current);
+		flushTimer.current = setTimeout(() => {
+			const d = deltaRef.current;
+			deltaRef.current = 0;
+			if (d === 0) return;
+			fetcher.submit(
+				{ feature, press: d > 0 ? "up" : "down", n: String(Math.abs(d)) },
+				{ method: "post" },
+			);
+		}, 250);
+	};
+	const pressUp = () => {
+		if (mineNow >= VOTE_CAP) return;
+		setPressed((p) => p + 1);
+		deltaRef.current += 1;
+		scheduleFlush();
+	};
+	const pressDown = () => {
+		if (mineNow <= 0) return;
+		setPressed((p) => p - 1);
+		deltaRef.current -= 1;
+		scheduleFlush();
+	};
 	return (
 		<button
 			type="button"
-			disabled={atCap}
+			title="Click adds a press · right-click takes one back"
 			aria-label={
 				atCap
-					? `${votesNow} votes — your ${VOTE_CAP} are in`
+					? `${votesNow} votes — your ${VOTE_CAP} are in; right-click or press minus to take one back`
 					: `${votesNow} votes — press to add yours (${mineNow} of ${VOTE_CAP})`
 			}
-			onClick={() => {
-				if (atCap) return;
-				setPressed((p) => p + 1);
-				fetcher.submit({ feature }, { method: "post" });
+			aria-keyshortcuts="Minus"
+			onClick={pressUp}
+			onContextMenu={(e) => {
+				e.preventDefault();
+				pressDown();
 			}}
-			className="group flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums text-muted-foreground transition-colors duration-150 hover:text-ink disabled:cursor-default disabled:text-ink"
+			onKeyDown={(e) => {
+				if (e.key === "-") {
+					e.preventDefault();
+					pressDown();
+				}
+			}}
+			className={`group flex shrink-0 items-center gap-2 font-ui text-[13px] tabular-nums transition-colors duration-150 hover:text-ink ${atCap ? "text-ink" : "text-muted-foreground"}`}
 		>
 			{/* keying by press count re-mounts the glyph → the pop replays */}
-			<span key={mineNow} className={mineNow > 0 ? "motion-safe:animate-vote-pop" : ""}>
-				<FlameGlyph level={level} />
+			<span key={mineNow} className={mineNow > 0 ? "animate-vote-pop" : ""}>
+				<TorchGlyph level={level} lit={atCap} />
 				{mineNow > 0 && !atCap && (
 					<span aria-hidden className="pointer-events-none relative">
-						<span className="absolute -top-4 left-0 size-[3px] rounded-full bg-dot-teaches motion-safe:animate-vote-spark-1" />
-						<span className="absolute -top-3 left-2 size-[2.5px] rounded-full bg-dot-media motion-safe:animate-vote-spark-2" />
+						<span className="absolute -top-4 left-0 size-[3px] rounded-full bg-dot-teaches animate-vote-spark-1" />
+						<span className="absolute -top-3 left-2 size-[2.5px] rounded-full bg-dot-media animate-vote-spark-2" />
 					</span>
 				)}
 			</span>
@@ -122,29 +167,42 @@ function safeCount(n: number): number {
 	return Number.isFinite(n) ? n : 0;
 }
 
-/** Two-layer flame: quiet outline, fill rising with `level` (0..1). */
-function FlameGlyph({ level }: { level: number }) {
+/** The torch (Abram, 2026-08-01): head + handle fill with `level`; at
+ * full the whole torch tips slightly and the flame IGNITES, then
+ * flickers while lit. Reduced motion: states apply instantly — fill
+ * rises, tilt holds, no flicker. */
+function TorchGlyph({ level, lit }: { level: number; lit: boolean }) {
 	const pct = Math.round(level * 100);
+	const clipId = `torch-fill-${pct}`;
 	return (
-		<svg viewBox="0 0 32 32" className="size-[18px]" aria-hidden="true">
+		<svg
+			viewBox="0 0 32 32"
+			className={`size-[19px] ${lit ? "torch-lit" : ""}`}
+			aria-hidden="true"
+		>
 			<defs>
-				<clipPath id={`flame-fill-${pct}`}>
-					<rect x="0" y={`${32 - (26 * pct) / 100 - 3}`} width="32" height={`${(26 * pct) / 100 + 3}`} />
+				<clipPath id={clipId}>
+					<rect x="0" y={31 - 19 * (pct / 100)} width="32" height={19 * (pct / 100) + 1} />
 				</clipPath>
 			</defs>
-			<path
-				d="M16 3 C16 3 8 12 8 19 a8 8 0 0 0 16 0 C24 12 16 3 16 3 Z"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="2"
-			/>
-			{pct > 0 && (
+			{/* the flame — exists only once lit; ignites from the head */}
+			{lit && (
 				<path
-					d="M16 3 C16 3 8 12 8 19 a8 8 0 0 0 16 0 C24 12 16 3 16 3 Z"
+					className="torch-flame"
+					d="M16 1.5 C14.2 3.9 13.6 5.7 14.3 7.3 C14.9 8.7 16.5 9 17.6 8.1 C18.8 7.1 18.7 5.4 17.9 3.9 C17.3 2.9 16.7 2.1 16 1.5 Z"
 					fill="currentColor"
-					clipPath={`url(#flame-fill-${pct})`}
 				/>
 			)}
+			{/* head wrap + handle, outline */}
+			<g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+				<path d="M11.5 12.5 h9 l-1.6 5.5 h-5.8 Z" />
+				<path d="M14.6 18 L14 29 a2 2 0 0 0 4 0 L17.4 18" />
+			</g>
+			{/* the fill, rising with presses */}
+			<g fill="currentColor" clipPath={`url(#${clipId})`}>
+				<path d="M11.5 12.5 h9 l-1.6 5.5 h-5.8 Z" />
+				<path d="M14.6 18 L14 29 a2 2 0 0 0 4 0 L17.4 18 Z" />
+			</g>
 		</svg>
 	);
 }

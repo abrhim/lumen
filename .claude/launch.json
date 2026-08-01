@@ -1,0 +1,18 @@
+{
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "web",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": [
+				"--filter",
+				"@lumen/web",
+				"dev",
+				"--port",
+				"4179"
+			],
+			"port": 4179,
+			"autoPort": false
+		}
+	]
+}

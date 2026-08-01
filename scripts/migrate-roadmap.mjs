@@ -76,6 +76,23 @@ BEGIN
 	RETURN new_count;
 END $$;
 
+-- one retraction: decrement own count; the last press deletes the row
+CREATE OR REPLACE FUNCTION lumen.roadmap_unvote(p_feature_id text)
+RETURNS int LANGUAGE plpgsql SECURITY INVOKER AS $$
+DECLARE new_count int;
+BEGIN
+	UPDATE lumen.roadmap_votes
+	SET count = count - 1, updated_at = now()
+	WHERE feature_id = p_feature_id AND voter_id = (SELECT auth.uid()) AND count > 1
+	RETURNING count INTO new_count;
+	IF new_count IS NULL THEN
+		DELETE FROM lumen.roadmap_votes
+		WHERE feature_id = p_feature_id AND voter_id = (SELECT auth.uid());
+		new_count := 0;
+	END IF;
+	RETURN new_count;
+END $$;
+
 ALTER TABLE lumen.roadmap_features ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lumen.roadmap_votes ENABLE ROW LEVEL SECURITY;
 
@@ -88,6 +105,9 @@ CREATE POLICY roadmap_features_select ON lumen.roadmap_features
 DROP POLICY IF EXISTS roadmap_votes_select ON lumen.roadmap_votes;
 CREATE POLICY roadmap_votes_select ON lumen.roadmap_votes
 	FOR SELECT TO authenticated USING (voter_id = (SELECT auth.uid()));
+DROP POLICY IF EXISTS roadmap_votes_delete ON lumen.roadmap_votes;
+CREATE POLICY roadmap_votes_delete ON lumen.roadmap_votes
+	FOR DELETE TO authenticated USING (voter_id = (SELECT auth.uid()));
 -- the app server aggregates COUNTS over lumen_read; voter ids never
 -- serialize to clients (loader discipline, enforced in roadmap.server)
 DROP POLICY IF EXISTS roadmap_votes_read_server ON lumen.roadmap_votes;
@@ -106,11 +126,13 @@ CREATE POLICY roadmap_votes_update ON lumen.roadmap_votes
 -- bounded direct DML on own rows); lumen_read aggregates counts server-side
 GRANT USAGE ON SCHEMA lumen TO anon, authenticated;
 GRANT SELECT ON lumen.roadmap_features TO anon, authenticated, lumen_read;
-GRANT SELECT, INSERT, UPDATE ON lumen.roadmap_votes TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON lumen.roadmap_votes TO authenticated;
 GRANT SELECT ON lumen.roadmap_votes TO lumen_read;
 REVOKE ALL ON lumen.roadmap_votes FROM anon;
 REVOKE EXECUTE ON FUNCTION lumen.roadmap_vote(text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION lumen.roadmap_unvote(text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION lumen.roadmap_vote(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION lumen.roadmap_unvote(text) TO authenticated;
 `;
 
 const SEED = [
@@ -155,7 +177,7 @@ try {
 const checks = [
 	['features table + RLS', `SELECT relrowsecurity FROM pg_class WHERE oid = 'lumen.roadmap_features'::regclass`, (r) => r[0].relrowsecurity === true],
 	['votes table + RLS', `SELECT relrowsecurity FROM pg_class WHERE oid = 'lumen.roadmap_votes'::regclass`, (r) => r[0].relrowsecurity === true],
-	['5 policies across the two tables', `SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='lumen' AND tablename IN ('roadmap_features','roadmap_votes')`, (r) => r[0].n === 5],
+	['6 policies across the two tables', `SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='lumen' AND tablename IN ('roadmap_features','roadmap_votes')`, (r) => r[0].n === 6],
 	['anon holds no vote DML', `SELECT count(*)::int AS n FROM information_schema.role_table_grants WHERE table_schema='lumen' AND table_name='roadmap_votes' AND grantee='anon'`, (r) => r[0].n === 0],
 	['authenticated cannot write features', `SELECT count(*)::int AS n FROM information_schema.role_table_grants WHERE table_schema='lumen' AND table_name='roadmap_features' AND grantee='authenticated' AND privilege_type <> 'SELECT'`, (r) => r[0].n === 0],
 	['vote RPC exists, anon lacks EXECUTE', `SELECT count(*)::int AS n FROM information_schema.routine_privileges WHERE routine_schema='lumen' AND routine_name='roadmap_vote' AND grantee='anon'`, (r) => r[0].n === 0],

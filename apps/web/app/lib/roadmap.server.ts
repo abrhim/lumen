@@ -60,3 +60,17 @@ export async function pressVote(
 	if (error) return null;
 	return typeof data === "number" ? data : null;
 }
+
+/** One retraction. Returns the caller's new count (0 = row gone). */
+export async function pressUnvote(
+	request: Request,
+	env: AuthEnv,
+	featureId: string,
+): Promise<number | null> {
+	const { supabase } = getAuth(request, env);
+	const { data, error } = await supabase
+		.schema("lumen")
+		.rpc("roadmap_unvote", { p_feature_id: featureId });
+	if (error) return null;
+	return typeof data === "number" ? data : null;
+}
