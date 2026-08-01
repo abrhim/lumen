@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Form, Link, data, redirect, useNavigation } from "react-router";
+import { Form, Link, data, redirect, useLocation, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
 import { getAuth, getSessionUser, safeReturnTo } from "~/lib/auth.server";
 
@@ -64,6 +64,10 @@ export async function action({ request, context }: Route.ActionArgs) {
 const RESEND_SECONDS = 60;
 
 export default function Login({ actionData }: Route.ComponentProps) {
+	const location = useLocation();
+	const params = new URLSearchParams(location.search);
+	const oauthError = params.get("error") === "oauth";
+	const googleHref = `/auth/google${params.get("next") ? `?next=${encodeURIComponent(params.get("next")!)}` : ""}`;
 	const navigation = useNavigation();
 	const pending = navigation.state === "submitting";
 	const sent = actionData?.sent === true;
@@ -89,6 +93,23 @@ export default function Login({ actionData }: Route.ComponentProps) {
 	return (
 		<main data-plate="column" className="mx-auto max-w-2xl px-6 py-12">
 			<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">Sign in</h1>
+
+			<div className="mt-8">
+				<a
+					href={googleHref}
+					className="inline-block rounded-md border border-rule2 bg-panel px-4 py-2.5 font-ui text-sm font-semibold text-ink outline-none transition-colors duration-150 hover:border-primary hover:text-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+				>
+					Continue with Google
+				</a>
+				{oauthError && (
+					<p className="mt-3 font-reading text-[15px] text-destructive" role="alert">
+						Google sign-in didn't complete. Try again, or use email below.
+					</p>
+				)}
+				<p className="mt-6 font-ui text-[13px] font-normal text-muted-foreground">
+					Or with email
+				</p>
+			</div>
 
 			{/* pre-mounted live region — announcements only work if the container
 			    exists before the content arrives */}

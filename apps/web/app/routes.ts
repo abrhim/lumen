@@ -19,6 +19,8 @@ export default [
 	route("roadmap", "routes/roadmap.tsx"),
 	route("login", "routes/login.tsx"),
 	route("auth/confirm", "routes/auth.confirm.tsx"),
+	route("auth/google", "routes/auth.google.tsx"),
+	route("auth/callback", "routes/auth.callback.tsx"),
 	route("logout", "routes/logout.tsx"),
 	route("admin/users", "routes/admin.users.tsx"),
 	route("api/search", "routes/api.search.tsx"),
