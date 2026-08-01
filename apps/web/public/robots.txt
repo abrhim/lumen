@@ -1,0 +1,12 @@
+User-agent: *
+# the reader emits a per-verse URL variant; crawling them all is a
+# combinatorial walk with no distinct content value
+Disallow: /*?verse=
+Disallow: /*?word=
+Disallow: /*?t=
+Disallow: /search
+Disallow: /strongs?
+Disallow: /login
+Disallow: /auth/
+Disallow: /notes
+Allow: /

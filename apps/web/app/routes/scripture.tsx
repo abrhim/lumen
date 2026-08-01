@@ -47,7 +47,7 @@ import { useIsMobile } from "~/hooks/use-mobile";
 import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
-import { cachedJson } from "../lib/cache.server";
+import { cachedJson, isBotUA } from "../lib/cache.server";
 import { getSessionUser, hasAuthCookie } from "../lib/auth.server";
 import { getChapterNoteAnchors } from "../lib/notes.server";
 import { notesEnabled } from "../lib/notes-enabled";
@@ -434,6 +434,7 @@ function clampDepth(raw: string | null): 1 | 2 | 3 {
  */
 async function loadGraph(
 	context: Route.LoaderArgs["context"],
+	botRequest: boolean,
 	entityId: string,
 	depth: 1 | 2 | 3,
 	collections: string[] | undefined,
@@ -489,7 +490,7 @@ async function loadGraph(
 					elapsedMs,
 				});
 			}
-			if (context.cache) {
+			if (context.cache && !botRequest) {
 				try {
 					await context.cache.put(cacheKey, JSON.stringify(neighborhood), {
 						expirationTtl: CONNECTIONS_TTL_SECONDS,
@@ -520,6 +521,7 @@ async function loadGraph(
 /** Never rejects: failures resolve to `{degraded: true}` so the streamed panel can't crash the page. */
 async function loadConnections(
 	context: Route.LoaderArgs["context"],
+	botRequest: boolean,
 	bookId: string,
 	chapter: number,
 	verse: number,
@@ -535,6 +537,7 @@ async function loadConnections(
 			`vconn:v3:${verseId}`,
 			CONNECTIONS_TTL_SECONDS,
 			() => getVerseConnections(context.neo4j, verseId),
+			{ skipWrite: botRequest },
 		);
 		return {
 			degraded: false,
@@ -597,7 +600,9 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// chapter renders immediately and the panel fills in when Neo4j answers.
 	const requestedVerse = parseVerseParam(url.search);
 	const pendingConnections =
-		requestedVerse !== null ? loadConnections(context, bookId, chapter, requestedVerse) : null;
+		requestedVerse !== null
+			? loadConnections(context, isBotUA(request.headers.get("user-agent")), bookId, chapter, requestedVerse)
+			: null;
 
 	// An invalid-charset id still opens the overlay in its not-found state
 	// (contract: "Invalid/unknown entityId → overlay not-found") — it just
@@ -687,7 +692,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		graphId === null
 			? null
 			: graphIdValid
-				? loadGraph(context, graphId, graphDepth, publicCollections)
+				? loadGraph(context, isBotUA(request.headers.get("user-agent")), graphId, graphDepth, publicCollections)
 				: Promise.resolve({
 						degraded: false,
 						neighborhood: GRAPH_NOT_FOUND,

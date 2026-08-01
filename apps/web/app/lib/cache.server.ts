@@ -11,11 +11,21 @@ export interface KVLike {
  * errors are logged once and the fetcher result is served live. Fetcher
  * errors DO propagate — callers own their degradation semantics.
  */
+/** Crawler user-agents read the cache but never spend the WRITE quota —
+ * KV free tier is 1,000 writes/day, and a fresh domain's crawler swarm
+ * walking per-verse URLs exhausted it in hours (2026-07-31). */
+export function isBotUA(userAgent: string | null): boolean {
+	return /bot|crawl|spider|slurp|preview|semrush|ahrefs|petal|bytespider|gpt|claude|ccbot|facebookexternal|headless/i.test(
+		userAgent ?? "",
+	);
+}
+
 export async function cachedJson<T>(
 	kv: KVLike | undefined,
 	key: string,
 	ttlSeconds: number,
 	fetcher: () => Promise<T>,
+	opts?: { skipWrite?: boolean },
 ): Promise<T> {
 	if (kv) {
 		try {
@@ -38,7 +48,7 @@ export async function cachedJson<T>(
 
 	const value = await fetcher();
 
-	if (kv) {
+	if (kv && !opts?.skipWrite) {
 		try {
 			await kv.put(key, JSON.stringify(value), { expirationTtl: ttlSeconds });
 		} catch (error) {
