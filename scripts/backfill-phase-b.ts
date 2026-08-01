@@ -41,6 +41,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import pg from 'pg';
 // Shared DB-merge shape — the in-memory collapse must produce exactly what
 // migrate-phaseb-dedupe.mjs's MERGE_UPDATE_SQL produced in the database.
@@ -52,6 +53,11 @@ import {
 } from './migrate-phaseb-dedupe.mjs';
 
 // ── Paths ──────────────────────────────────────────────────────────────
+
+// This file has import syntax and the package declares no "type", so node
+// parses it as ESM — where __dirname does not exist. Same idiom as
+// export-neo4j.mjs.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ROOT = path.resolve(__dirname, '..');
 const EXPORT_DIR = path.join(ROOT, 'data/neo4j-export');
@@ -825,7 +831,9 @@ async function main(): Promise<void> {
   }
 }
 
-if (require.main === module) {
+// ESM has no require.main === module; compare this file's URL to argv[1] so
+// importing it for tests stays side-effect free while direct runs still work.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error('Phase B backfill failed:', err);
     process.exit(1);

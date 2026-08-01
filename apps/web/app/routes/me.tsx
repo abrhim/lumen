@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Form, Link, data, useLocation } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
-import { PageFrame, PageHeader } from "~/components/PageFrame";
+import { PageFoot, PageFrame, PageHeader } from "~/components/PageFrame";
 import type { Route } from "./+types/me";
 
 /**
@@ -115,6 +115,7 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 					</p>
 				)}
 			</section>
+			<PageFoot />
 		</PageFrame>
 	);
 }

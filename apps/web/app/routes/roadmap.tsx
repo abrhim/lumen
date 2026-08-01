@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, data, redirect, useFetcher } from "react-router";
-import { PageFrame, PageHeader } from "~/components/PageFrame";
+import { PageFoot, PageFrame, PageHeader } from "~/components/PageFrame";
 import { getSessionUser } from "~/lib/auth.server";
 import { listRoadmap, pressUnvote, pressVote, type RoadmapFeature } from "~/lib/roadmap.server";
 
@@ -333,6 +333,7 @@ export default function Roadmap({ loaderData }: Route.ComponentProps) {
 					</ul>
 				</section>
 			))}
+			<PageFoot />
 		</PageFrame>
 	);
 }

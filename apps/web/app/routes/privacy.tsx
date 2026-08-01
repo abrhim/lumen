@@ -1,4 +1,4 @@
-import { PageFrame, PageHeader } from "~/components/PageFrame";
+import { PageFoot, PageFrame, PageHeader } from "~/components/PageFrame";
 import type { Route } from "./+types/privacy";
 
 /** Privacy policy (2026-08-01). Plain and true — it describes what the
@@ -102,6 +102,7 @@ export default function Privacy() {
 					above updated.
 				</p>
 			</Section>
+			<PageFoot />
 		</PageFrame>
 	);
 }

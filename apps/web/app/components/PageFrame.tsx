@@ -1,4 +1,5 @@
-import type { ReactNode, RefObject } from "react";
+import { Fragment, type ReactNode, type RefObject } from "react";
+import { Link, useLocation } from "react-router";
 
 /**
  * THE layout canon (Abram, 2026-07-31) — encoded in code so it never
@@ -56,6 +57,36 @@ export function PageFrame({
 		>
 			{children}
 		</main>
+	);
+}
+
+const FOOT_LINKS = [
+	{ to: "/about", label: "About" },
+	{ to: "/roadmap", label: "Roadmap" },
+	{ to: "/privacy", label: "Privacy" },
+] as const;
+
+/**
+ * The quiet foot: the three pages that explain the app and what it does
+ * with your data. It belongs on the pages that ARE the app's chrome —
+ * home, about, roadmap, privacy, me — and NOT inside the reading, which
+ * owns its own bottom. The page you're standing on drops out rather than
+ * linking to itself.
+ */
+export function PageFoot() {
+	const { pathname } = useLocation();
+	const links = FOOT_LINKS.filter((l) => l.to !== pathname);
+	return (
+		<footer className="mt-14 border-t border-rule pt-5 font-ui text-[13px] text-muted-foreground">
+			{links.map((l, i) => (
+				<Fragment key={l.to}>
+					{i > 0 && <span className="text-faint"> · </span>}
+					<Link to={l.to} className="hover:text-ink">
+						{l.label}
+					</Link>
+				</Fragment>
+			))}
+		</footer>
 	);
 }
 

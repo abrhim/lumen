@@ -25,3 +25,7 @@ docs/ops/whisper-vs-deepgram/out/
 
 # playwright artifacts
 apps/web/test-results/
+
+# supabase CLI local state (migrations/, seed.sql and config.toml ARE committed)
+supabase/.temp/
+supabase/.branches/

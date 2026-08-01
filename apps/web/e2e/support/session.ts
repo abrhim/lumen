@@ -14,13 +14,22 @@ import type { BrowserContext } from "@playwright/test";
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
-export const SUPABASE_URL = "https://dsoekevnjqjfdntxhdhd.supabase.co";
-export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-";
+
+/**
+ * Endpoint the suite mints users against. Defaults to production so an
+ * unconfigured run behaves exactly as it always has; `pnpm db:start` exports
+ * the local stack's values, which is how the harness stays off prod.
+ */
+export const SUPABASE_URL = process.env.SUPABASE_URL ?? "https://dsoekevnjqjfdntxhdhd.supabase.co";
+export const SUPABASE_PUBLISHABLE_KEY =
+	process.env.SUPABASE_PUBLISHABLE_KEY ?? "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-";
 
 function serviceKey(): string {
+	const fromEnv = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+	if (fromEnv) return fromEnv;
 	const env = readFileSync(join(ROOT, ".env"), "utf8");
 	const key = env.match(/^SUPABASE_SERVICE_ROLE_KEY=(.+)$/m)?.[1]?.trim();
-	if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY missing from root .env");
+	if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY missing from env and root .env");
 	return key;
 }
 

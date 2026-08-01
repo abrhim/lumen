@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { PageFrame, PageHeader } from "~/components/PageFrame";
+import { PageFoot, PageFrame, PageHeader } from "~/components/PageFrame";
 import type { Route } from "./+types/about";
 
 /** About (punch list 16). Plain and factual — no poetic or journalistic
@@ -36,6 +36,7 @@ export default function About() {
 					.
 				</p>
 			</div>
+			<PageFoot />
 		</PageFrame>
 	);
 }

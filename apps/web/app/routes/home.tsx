@@ -1,5 +1,6 @@
 import { getVolumeList, getAllBooks } from "@lumen/scripture";
 import { Link, useRouteLoaderData } from "react-router";
+import { PageFoot } from "~/components/PageFrame";
 import type { Route } from "./+types/home";
 import type { loader as rootLoader } from "../root";
 
@@ -98,19 +99,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 				</section>
 			))}
 
-			<footer className="mt-14 border-t border-rule pt-5 font-ui text-[13px] text-muted-foreground">
-				<Link to="/about" className="hover:text-ink">
-					About
-				</Link>
-				<span className="text-faint"> · </span>
-				<Link to="/roadmap" className="hover:text-ink">
-					Roadmap
-				</Link>
-				<span className="text-faint"> · </span>
-				<Link to="/privacy" className="hover:text-ink">
-					Privacy
-				</Link>
-			</footer>
+			<PageFoot />
 		</main>
 	);
 }

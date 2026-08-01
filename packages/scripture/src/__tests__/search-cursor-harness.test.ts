@@ -7,28 +7,20 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { SearchOptions } from '../search';
+import { lumenReadDsn } from './support/dsn';
 
 /** RED-FIRST: `after` lands in SearchOptions with the implementation; the
  * intersection keeps these call sites compiling on both sides of that edit. */
 type CursorOptions = SearchOptions & { after?: string };
 
-function loadDsn(): string {
-	// CU-2: same key the sibling search-harness.test.ts reads — apps/web/.env
-	// has no DATABASE_URL, only the Hyperdrive local connection string.
-	const env = readFileSync(join(__dirname, '../../../../apps/web/.env'), 'utf8');
-	const m = env.match(/^CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=(.+)$/m);
-	if (!m) throw new Error('no Hyperdrive DSN in apps/web/.env');
-	return m[1].trim();
-}
-
 let client: ReturnType<typeof postgres>;
 let db: any;
 
 beforeAll(async () => {
-	client = postgres(loadDsn(), { max: 1, prepare: false, ssl: 'require' });
+	// CU-2: same DSN the sibling search-harness.test.ts uses
+	const { dsn, ssl } = lumenReadDsn();
+	client = postgres(dsn, { max: 1, prepare: false, ssl });
 	db = drizzle(client);
 	const who = await client`select current_user`;
 	expect(who[0].current_user).toBe('lumen_read');

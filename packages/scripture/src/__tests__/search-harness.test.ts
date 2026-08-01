@@ -1,10 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
+import { lumenReadDsn } from './support/dsn';
 
 // Harness (search-endpoint, step 3; amended at step 6 synthesis — see plan.md
 // ## Decisions). Runs read-only against LIVE prod as lumen_read ONLY (SEC-6:
@@ -16,20 +14,12 @@ import { sql } from 'drizzle-orm';
 // unshaken are public=true in prod by deliberate decision (2026-07-21 launch).
 // H8 tests the *mechanism* with synthetic visibleCollections lists.
 
-const here = dirname(fileURLToPath(import.meta.url));
-
-function loadDsn(): string {
-	const txt = readFileSync(resolve(here, '../../../../apps/web/.env'), 'utf8');
-	const m = txt.match(/^CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=(.+)$/m);
-	if (!m) throw new Error('search-harness: lumen_read DSN not found in apps/web/.env');
-	return m[1].trim();
-}
-
 let client: ReturnType<typeof postgres>;
 let db: { execute(q: unknown): Promise<any> };
 
 beforeAll(async () => {
-	client = postgres(loadDsn(), { prepare: false, ssl: 'require', max: 1 });
+	const { dsn, ssl } = lumenReadDsn();
+	client = postgres(dsn, { prepare: false, ssl, max: 1 });
 	const d = drizzle(client);
 	db = { execute: (q: unknown) => d.execute(q as any) };
 	const who = await client`select current_user`;

@@ -1,0 +1,72 @@
+# Local Supabase stack for the e2e harness.
+#
+# The suite used to run against production Supabase — creating real auth users
+# and leaving vote rows in the PUBLIC roadmap totals. This stack replaces that:
+# Postgres + GoTrue + PostgREST on fixed localhost ports, seeded from a bounded
+# slice of prod, disposable via `supabase db reset`.
+#
+# Start:  pnpm db:start     Reset to a clean seed:  pnpm db:reset
+project_id = "lumen"
+
+[api]
+enabled = true
+port = 54321
+# lumen MUST be here. Every supabase.schema("lumen").rpc(...) call in the app —
+# roadmap_vote, soft_delete_note, create_note_with_anchors — 404s without it.
+schemas = ["public", "graphql_public", "lumen"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# matches production (17.6) — search_vector/tsvector behaviour is version-tied
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1:54321"
+
+# Captures outbound mail instead of sending it. Nothing in the suite reads a
+# mailbox today (users are created pre-confirmed), but a real SMTP leg from a
+# test run is exactly the accident this prevents.
+[inbucket]
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+# the Playwright port — playwright.config.ts pins baseURL to 4179
+site_url = "http://localhost:4179"
+additional_redirect_urls = [
+  "http://localhost:4179/auth/callback",
+  "http://localhost:5173/auth/callback",
+]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+# createE2eUser() mints users with email_confirm: true and signs straight in.
+# Requiring confirmation would strand every throwaway user at the mailbox.
+enable_confirmations = false
+double_confirm_changes = false
+secure_password_change = false
+
+[auth.external.google]
+# The oauth spec asserts only the shape of the /auth/v1/authorize redirect the
+# app builds — it never completes a round trip, so no real client is needed.
+enabled = false
+
+[analytics]
+enabled = false

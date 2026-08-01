@@ -11,7 +11,12 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean",
-    "stress:sweep": "node --import tsx scripts/stress-test-data.mjs --phase=integrity"
+    "stress:sweep": "node --import tsx scripts/stress-test-data.mjs --phase=integrity",
+    "db:start": "npx --yes supabase start && node scripts/local-stack.mjs write",
+    "db:stop": "npx --yes supabase stop",
+    "db:reset": "npx --yes supabase db reset",
+    "db:regen": "node scripts/dump-schema.mjs && node scripts/dump-seed.mjs",
+    "verify": "scripts/verify.sh"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.110.2",

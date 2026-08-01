@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Form, data, redirect, useLocation, useNavigation } from "react-router";
+import { Form, Link, data, redirect, useLocation, useNavigation } from "react-router";
 import type { Route } from "./+types/login";
 import { LintelMark } from "~/components/LintelMark";
 import { getAuth, getSessionUser, safeReturnTo } from "~/lib/auth.server";
@@ -218,6 +218,14 @@ export default function Login({ actionData }: Route.ComponentProps) {
 					</p>
 				</Form>
 			)}
+
+			{/* what happens to the email you're about to hand over, one click away
+			    — and the URL Google's consent screen points at */}
+			<p className="mt-10 text-center font-ui text-[13px] text-muted-foreground">
+				<Link to="/privacy" className="hover:text-ink">
+					Privacy
+				</Link>
+			</p>
 		</main>
 	);
 }
