@@ -478,3 +478,23 @@ a.note-extlink:hover { text-decoration-style: solid; }
 	font-variant-ligatures: none;
 }
 .note-editor:focus { outline: none; }
+
+/* roadmap flame (Comeau-style presses, 2026-08-01): the pop replays per
+   press via keyed remount; sparks are two dots that leap and fade. All
+   three ride motion-safe: — reduced motion sees only the fill rise. */
+@keyframes vote-pop {
+	0% { transform: scale(1); }
+	35% { transform: scale(1.35); }
+	100% { transform: scale(1); }
+}
+@keyframes vote-spark-1 {
+	0% { transform: translate(0, 0); opacity: 1; }
+	100% { transform: translate(-5px, -10px); opacity: 0; }
+}
+@keyframes vote-spark-2 {
+	0% { transform: translate(0, 0); opacity: 1; }
+	100% { transform: translate(6px, -8px); opacity: 0; }
+}
+.animate-vote-pop { display: inline-block; animation: vote-pop 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-vote-spark-1 { animation: vote-spark-1 420ms ease-out forwards; }
+.animate-vote-spark-2 { animation: vote-spark-2 420ms ease-out 40ms forwards; }

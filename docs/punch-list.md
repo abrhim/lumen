@@ -121,3 +121,10 @@ Deliberately NOT today: OAuth/Resend (external, queued), SCI + TSK
 ingests (datasets to source), GC links collection (content sourcing),
 MCP server (own feature), references-workspace redesign (the Panes era,
 its own feature-workflow run), domain (a purchase).
+
+21. **Flames on any entity** (Abram, 2026-08-01): the roadmap's press-flame
+    generalizes — a `lumen.flames` table keyed by the wikilink-grammar ref
+    (verses, entities, episodes, notes, collections) instead of feature_id.
+    Decide what a flame MEANS on canon (favorites? most-pressed heat?)
+    before building. FlameVote extracts from roadmap.tsx when the second
+    surface lands.
