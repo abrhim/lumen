@@ -10,11 +10,14 @@ const { getSessionUser } = vi.hoisted(() => ({
 	getSessionUser: vi.fn(),
 }));
 
+vi.mock("~/lib/log.server", () => ({ logEvent: vi.fn() }));
+
 vi.mock("~/lib/auth.server", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("~/lib/auth.server")>();
 	return { ...actual, getSessionUser };
 });
 
+import { logEvent } from "~/lib/log.server";
 import { loader } from "../admin.users";
 import {
 	PAGE_SIZE,
@@ -303,7 +306,9 @@ describe("H4b — malformed cursors degrade to page 1, never throw", () => {
 
 	it("B3: a NON-cast DB error on a cursor page is NOT swallowed (must surface, not fake page 1)", async () => {
 		// a real fault (e.g. 08006 connection failure) must throw — degrading here
-		// would silently duplicate page 1 onto a fetcher's appended list
+		// would silently duplicate page 1 onto a fetcher's appended list.
+		// Since issue #3 the fault surfaces CLASSIFIED rather than raw; what B3
+		// pins is that it surfaces at all and that no page-1 retry runs.
 		const db = makeDb({ pageRows: [], castErrorCode: "08006" });
 		const forged = encodeCursor({
 			v: 1,
@@ -312,7 +317,12 @@ describe("H4b — malformed cursors degrade to page 1, never throw", () => {
 			k: "2026-01-01 00:00:00+00",
 			id: "00000000-0000-4000-8000-000000000001",
 		});
-		await expect(loader(makeArgs(`?cursor=${forged}`, db))).rejects.toMatchObject({ code: "08006" });
+		await expect(loader(makeArgs(`?cursor=${forged}`, db))).rejects.toMatchObject({
+			init: { status: 503 },
+			data: { cause: "connect_failed", transient: true },
+		});
+		// gate + the keyset page that threw, and NOTHING after it
+		expect(db.execute).toHaveBeenCalledTimes(2);
 	});
 
 	it("loader with a corrupt cursor behaves as page 1: count runs, no keyset predicate, resolves fine", async () => {
@@ -432,5 +442,84 @@ describe("B2 — keyset cursor preserves full microsecond precision", () => {
 		const db = makeDb({ pageRows: [makeUserRow(1)] });
 		const res = (await loader(makeArgs("", db))) as { data: { rows: unknown[] } };
 		expect(res.data.rows[0]).not.toHaveProperty("sort_key");
+	});
+});
+
+describe("issue #3 — the failure says which kind it is", () => {
+	/** How the pooler's session-mode exhaustion actually arrives: drizzle wraps
+	 * the driver error, and the WRAPPER message embeds the query text and the
+	 * bound params. The cause is both the accurate error and the safe one. */
+	function wrapped(driverMessage: string, code: string) {
+		return new Error(`Failed query: SELECT ... params: admin-1`, {
+			cause: Object.assign(new Error(driverMessage), { code }),
+		});
+	}
+	const exhausted = () =>
+		wrapped(
+			"(EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15",
+			"XX000",
+		);
+
+	/** gate passes, then the page query fails */
+	function dbFailingThePage(err: Error) {
+		return {
+			execute: vi.fn(async (q: SQL) => {
+				const sql = compile(q).sql;
+				if (sql.includes("lumen.user_roles ur") && sql.includes("unnest")) {
+					return [{ ent: "admin.users" }];
+				}
+				throw err;
+			}),
+		};
+	}
+
+	it("an exhausted pool is transient: 503, and the cause is named", async () => {
+		const db = dbFailingThePage(exhausted());
+		await expect(loader(makeArgs("", db))).rejects.toMatchObject({
+			init: { status: 503 },
+			data: { cause: "pool_exhausted", transient: true },
+		});
+	});
+
+	it("leaves a trace — and carries NO Postgres free text (B13/CP-14)", async () => {
+		const db = dbFailingThePage(exhausted());
+		await expect(loader(makeArgs("?q=secret", db))).rejects.toBeDefined();
+		const call = (logEvent as unknown as { mock: { calls: [string, Record<string, unknown>][] } }).mock
+			.calls.find((c) => c[0] === "admin_users_degraded");
+		expect(call).toBeDefined();
+		expect(call![1]).toMatchObject({ cause: "pool_exhausted", transient: true });
+		// no message field at all: PG renders offending VALUES into its text, and
+		// drizzle's wrapper adds the query + params on top
+		const serialized = JSON.stringify(call![1]);
+		expect(serialized).not.toContain("Failed query");
+		expect(serialized).not.toContain("EMAXCONNSESSION");
+		expect(serialized).not.toContain("secret");
+	});
+
+	it("a permission failure is NOT transient — no reload will fix it", async () => {
+		const db = dbFailingThePage(wrapped("permission denied for table app_users", "42501"));
+		await expect(loader(makeArgs("", db))).rejects.toMatchObject({
+			init: { status: 500 },
+			data: { cause: "permission", transient: false },
+		});
+	});
+
+	it("classifies the DRIVER error, not drizzle's wrapper (the wrapper has no code)", async () => {
+		// wrapper carries no `code`; only unwrapping to .cause finds 42501
+		const err = wrapped("permission denied for table app_users", "42501");
+		expect("code" in err).toBe(false);
+		const db = dbFailingThePage(err);
+		await expect(loader(makeArgs("", db))).rejects.toMatchObject({
+			data: { cause: "permission" },
+		});
+	});
+
+	it("still degrades a forged cursor to page 1 rather than classifying it (B3 kept)", async () => {
+		const db = makeDb({ pageRows: [makeUserRow(1)], castErrorCode: "22P02" });
+		const cursor = encodeCursor({ k: new Date(Date.UTC(2026, 0, 5)).toISOString(), id: "x" } as never);
+		const res = (await loader(makeArgs(`?cursor=${encodeURIComponent(cursor)}`, db))) as {
+			data: { rows: unknown[] };
+		};
+		expect(res.data.rows.length).toBe(1);
 	});
 });

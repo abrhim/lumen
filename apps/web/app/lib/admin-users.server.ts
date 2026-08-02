@@ -1,5 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
+import { data } from "react-router";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { classifyReadError } from "./db-errors.server";
 import { logEvent } from "./log.server";
 
 /**
@@ -179,7 +181,23 @@ export async function loadUsersPage(
 			logEvent("admin_cursor_rejected", { code, sort });
 			return runPage(db, { q, role, status, sort, dir, cursor: null });
 		}
-		throw err;
+		// Everything else used to be re-thrown bare, so the route rendered one
+		// generic message whatever the cause and left no trace at all (issue #3).
+		// Name the class instead: the route's copy turns on it, and an exhausted
+		// pool now leaves a record. Cause + SQLSTATE only — no PG text, which
+		// carries the offending VALUE (B13/CP-14, same rule notes.server.ts keeps).
+		const failure = classifyReadError(err);
+		logEvent("admin_users_degraded", {
+			cause: failure.cause,
+			pg_code: failure.pgCode,
+			transient: failure.transient,
+		});
+		// NOT a retry: retrying into an exhausted pool is what deepens it. This
+		// only tells the boundary which sentence is true.
+		throw data(
+			{ cause: failure.cause, transient: failure.transient },
+			{ status: failure.transient ? 503 : 500 },
+		);
 	}
 }
 
