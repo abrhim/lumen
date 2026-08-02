@@ -244,10 +244,17 @@ async function runPage(db: PostgresJsDatabase, p: PageParams): Promise<UsersPage
 	// dropped the microseconds `now()` writes → desc pages skipped boundary ties,
 	// asc pages duplicated them. The text round-trips losslessly through the
 	// ${k}::timestamptz bound-param compare above.
+	// roles rides as to_jsonb, NOT as a bare text[]. db.server.ts sets
+	// fetch_types:false to save a round trip per request, and without the type
+	// catalogue postgres.js cannot parse an array — it returns Postgres's
+	// literal as the STRING '{admin}'. '{}' is then a 2-character string, so a
+	// length === 0 guard passes and .map explodes on the first row. That is
+	// exactly how this page 500'd for the first admin ever to reach it. jsonb
+	// has a builtin OID the driver parses whether or not types were fetched.
 	const fetched = (await db.execute(
 		sql`SELECT u.id, u.email, u.display_name, u.full_name, u.created_at,
 		           u.last_sign_in_at, u.is_confirmed, u.is_banned, u.is_anonymous,
-		           u.is_deleted, COALESCE(rr.roles, '{}') AS roles,
+		           COALESCE(to_jsonb(rr.roles), '[]'::jsonb) AS roles,
 		           u.${sql.raw(S.col)}::text AS sort_key
 		    FROM lumen.app_users u
 		    LEFT JOIN (

@@ -16,7 +16,8 @@
     "db:stop": "npx --yes supabase stop",
     "db:reset": "npx --yes supabase db reset",
     "db:regen": "node scripts/dump-schema.mjs && node scripts/dump-seed.mjs",
-    "verify": "scripts/verify.sh"
+    "verify": "scripts/verify.sh",
+    "dev:prod": "scripts/dev-prod.sh"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.110.2",
