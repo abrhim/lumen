@@ -39,14 +39,16 @@ export function lumenReadDsn(): { dsn: string; ssl: 'require' | false } {
 	const fromEnv = process.env.LUMEN_READ_DSN?.trim();
 	if (fromEnv) return { dsn: fromEnv, ssl: isLocal(fromEnv) ? false : 'require' };
 
-	const txt = readFileSync(resolve(here, '../../../../../apps/web/.env'), 'utf8');
-	const m = txt.match(/^CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=(.+)$/m);
-	if (!m) {
-		throw new Error(
-			'lumen_read DSN: set LUMEN_READ_DSN (see scripts/verify.sh) or add ' +
-				'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE to apps/web/.env',
-		);
-	}
-	const dsn = m[1].trim();
-	return { dsn, ssl: isLocal(dsn) ? false : 'require' };
+	// NO FALLBACK, deliberately.
+	//
+	// This used to read apps/web/.env when the variable was missing — and that
+	// file holds the PRODUCTION pooler DSN. A missing local config therefore
+	// succeeded silently against prod, twice in one afternoon, while every guard
+	// upstream reported localhost. Refusing is the whole point: absent config is
+	// a loud failure, never a quiet production read.
+	throw new Error(
+		"LUMEN_READ_DSN is not set. Run the gate via `pnpm verify` (which exports " +
+			"it from the local stack), or set it explicitly. There is no fallback: " +
+			"an unset DSN must never resolve to production.",
+	);
 }

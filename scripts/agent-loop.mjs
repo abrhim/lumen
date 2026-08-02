@@ -24,6 +24,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(ROOT, "package.json"));
 
 const REPO = "abrhim/lumen";
+const OWNER = "abrhim";
 const LABEL_QUEUED = "agent";
 const LABEL_BUILDING = "agent:building";
 const LABEL_REVIEW = "agent:needs-review";
@@ -44,10 +45,22 @@ const MODEL = process.env.AGENT_MODEL || "opus";
  */
 const ALLOWED = [
 	"Read", "Edit", "Write", "Glob", "Grep", "TodoWrite",
-	"Bash(pnpm:*)", "Bash(node:*)", "Bash(npx --yes supabase:*)",
+	// Named invocations, not interpreters. `Bash(node:*)` and `Bash(pnpm:*)`
+	// read as tight and are not: `node -e '<anything>'` and `pnpm exec
+	// <anything>` both mean arbitrary code, which makes every other restriction
+	// here decorative. Enumerate what the work actually needs; widen
+	// deliberately when the agent reports being blocked on something legitimate.
+	"Bash(pnpm verify)", "Bash(pnpm verify --no-e2e)",
+	"Bash(pnpm install --frozen-lockfile)",
+	"Bash(pnpm db:start)", "Bash(pnpm db:reset)",
+	"Bash(pnpm typecheck)", "Bash(pnpm build)",
+	"Bash(pnpm --filter @lumen/web exec vitest:*)",
+	"Bash(pnpm --filter @lumen/web exec playwright test:*)",
+	"Bash(pnpm --filter @lumen/web typecheck)",
+	"Bash(node --test:*)",
 	"Bash(git status)", "Bash(git diff:*)", "Bash(git log:*)",
 	"Bash(git add:*)", "Bash(git commit:*)",
-	"Bash(lsof:*)", "Bash(curl -s -o /dev/null:*)",
+	"Bash(lsof:*)",
 ];
 const DISALLOWED = [
 	"Bash(gh pr merge:*)", "Bash(gh api:*)", "Bash(git push:*)",
@@ -344,6 +357,101 @@ async function build(issue) {
 	}
 }
 
+/** Sessions bookmark: { [issue]: { sessionId, worktree, lastComment } } */
+const readSessions = () => {
+	try { return JSON.parse(readFileSync(SESSIONS, "utf8")); } catch { return {}; }
+};
+const writeSessions = (all) => {
+	try { writeFileSync(SESSIONS, JSON.stringify(all, null, 2)); } catch { /* best effort */ }
+};
+
+/**
+ * The review-feedback leg.
+ *
+ * A PR the agent opened is a conversation, not a delivery. Comments marked
+ * `@agent` are replayed into the SESSION THAT WROTE THE CODE — it still knows
+ * which files it read and why it made each call, which a fresh agent staring at
+ * a diff does not.
+ *
+ * Marker-gated on purpose: without it, every review remark you make to yourself
+ * would start a build.
+ */
+async function tickPRs() {
+	const prs = JSON.parse(
+		gh(["pr", "list", "--repo", REPO, "--state", "open", "--json", "number,headRefName"]) || "[]",
+	).filter((p) => /^agent\/issue-\d+$/.test(p.headRefName));
+
+	for (const pr of prs) {
+		const issue = pr.headRefName.split("-").pop();
+		const all = readSessions();
+		const entry = all[issue];
+		if (!entry?.sessionId) continue;
+
+		const comments = JSON.parse(
+			gh(["pr", "view", String(pr.number), "--repo", REPO, "--json", "comments"]) || "{}",
+		).comments ?? [];
+		const fresh = comments.filter(
+			(c) =>
+				c.body?.includes("@agent") &&
+				c.author?.login === OWNER &&
+				(!entry.lastComment || c.id > entry.lastComment),
+		);
+		if (!fresh.length) continue;
+
+		const ask = fresh.map((c) => c.body).join("\n\n");
+		all[issue] = { ...entry, lastComment: fresh[fresh.length - 1].id };
+		writeSessions(all);
+
+		log(`PR #${pr.number} — ${fresh.length} comment(s) for issue #${issue}`);
+		event("note", { task: `#${issue}`, summary: `review feedback on PR #${pr.number}` });
+
+		try {
+			await new Promise((res, rej) => {
+				const c = spawn(
+					"claude",
+					[
+						"--resume", entry.sessionId,
+						"-p",
+						[
+							"Review feedback on your pull request:",
+							"",
+							ask,
+							"",
+							"---",
+							"Make the change, run `pnpm verify` until it exits 0, and commit.",
+							"Do not push — the dispatcher pushes after re-running the gate itself.",
+							"If you disagree or it should be escalated per CLAUDE.md, say so and change nothing.",
+						].join("\n"),
+						"--model", MODEL,
+						"--allowedTools", ...ALLOWED,
+						"--disallowedTools", ...DISALLOWED,
+						"--permission-mode", "acceptEdits",
+					],
+					{ cwd: entry.worktree, stdio: ["ignore", "inherit", "inherit"], timeout: 30 * 60_000 },
+				);
+				c.on("close", (code) => (code === 0 ? res() : rej(new Error(`resume exited ${code}`))));
+				c.on("error", rej);
+			});
+
+			const ahead = sh("git status --porcelain", entry.worktree).trim();
+			if (ahead) throw new Error(`uncommitted changes left behind:\n${ahead}`);
+
+			// Same rule as a first build: nothing is pushed on the agent's word.
+            sh("bash scripts/verify.sh", entry.worktree, 30 * 60_000);
+			sh(`git push origin ${pr.headRefName}`, entry.worktree);
+			gh(["pr", "comment", String(pr.number), "--repo", REPO, "--body",
+				"Updated and pushed — gate green. Still not merged."]);
+			event("built", { task: `#${issue}`, summary: `updated from review on PR #${pr.number}` });
+			log(`PR #${pr.number} updated`);
+		} catch (err) {
+			const msg = (err.stderr || err.stdout || err.message || String(err)).toString().slice(-1200);
+			gh(["pr", "comment", String(pr.number), "--repo", REPO, "--body",
+				`Could not apply that — left as-is.\n\n\`\`\`\n${msg}\n\`\`\``]);
+			log(`PR #${pr.number} feedback FAILED: ${msg.split("\n")[0]}`);
+		}
+	}
+}
+
 async function tick() {
 	const issues = queued();
 	if (!issues.length) return;
@@ -353,8 +461,11 @@ async function tick() {
 
 log(`agent-loop watching ${REPO} for "${LABEL_QUEUED}"${DRY ? " (dry run)" : ""}`);
 await tick();
+await tickPRs().catch((e) => log("pr tick error:", e.message));
 if (!ONCE) {
 	setInterval(() => {
-		tick().catch((e) => log("tick error:", e.message));
+		tick()
+			.then(() => tickPRs())
+			.catch((e) => log("tick error:", e.message));
 	}, POLL_MS);
 }

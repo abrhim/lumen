@@ -16,21 +16,26 @@ import type { BrowserContext } from "@playwright/test";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 /**
- * Endpoint the suite mints users against. Defaults to production so an
- * unconfigured run behaves exactly as it always has; `pnpm db:start` exports
- * the local stack's values, which is how the harness stays off prod.
+ * Endpoint coordinates the suite mints users against. Required, never defaulted
+ * — `pnpm verify` exports them from the local stack.
  */
-export const SUPABASE_URL = process.env.SUPABASE_URL ?? "https://dsoekevnjqjfdntxhdhd.supabase.co";
-export const SUPABASE_PUBLISHABLE_KEY =
-	process.env.SUPABASE_PUBLISHABLE_KEY ?? "sb_publishable_t7YqqT8Zu727RzviYMTXtQ_GjqYZlp-";
+function required(name: string): string {
+	const v = process.env[name]?.trim();
+	if (v) return v;
+	// No production default. This suite creates real auth users and casts real
+	// roadmap votes; defaulting to prod when unconfigured is how a misconfigured
+	// run becomes damage rather than a failed test.
+	throw new Error(
+		`${name} is not set. Run the suite via \`pnpm verify\`, which exports the ` +
+			"local stack's values. There is deliberately no production default.",
+	);
+}
+
+export const SUPABASE_URL = required("SUPABASE_URL");
+export const SUPABASE_PUBLISHABLE_KEY = required("SUPABASE_PUBLISHABLE_KEY");
 
 function serviceKey(): string {
-	const fromEnv = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-	if (fromEnv) return fromEnv;
-	const env = readFileSync(join(ROOT, ".env"), "utf8");
-	const key = env.match(/^SUPABASE_SERVICE_ROLE_KEY=(.+)$/m)?.[1]?.trim();
-	if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY missing from env and root .env");
-	return key;
+	return required("SUPABASE_SERVICE_ROLE_KEY");
 }
 
 export interface E2eUser {
