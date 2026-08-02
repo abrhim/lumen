@@ -99,14 +99,29 @@ function event(kind, { task, run, summary, ref, risk } = {}) {
 	}
 }
 
-/** Issues labelled and not yet claimed, oldest first. */
+/**
+ * Issues labelled and not yet claimed, oldest first.
+ *
+ * Author-gated as well as label-gated. The label alone is access control only
+ * because GitHub restricts labelling to triage+ — but the issue BODY becomes
+ * the agent's prompt verbatim, so labelling a stranger's report would feed
+ * untrusted text straight into a builder with write access to a branch.
+ *
+ * To act on someone else's report, re-file it in your own words. That is not
+ * bureaucracy: rewriting it IS the vetting step.
+ */
 function queued() {
 	const out = gh([
 		"issue", "list", "--repo", REPO, "--state", "open",
-		"--label", LABEL_QUEUED, "--json", "number,title,body,url",
+		"--label", LABEL_QUEUED, "--json", "number,title,body,url,author",
 		"--limit", "20",
 	]);
-	return JSON.parse(out || "[]").reverse();
+	const all = JSON.parse(out || "[]");
+	const mine = all.filter((i) => i.author?.login === OWNER);
+	for (const skipped of all.filter((i) => i.author?.login !== OWNER)) {
+		log(`  skipping #${skipped.number}: authored by ${skipped.author?.login}, not ${OWNER}`);
+	}
+	return mine.reverse();
 }
 
 function relabel(n, add, remove) {
