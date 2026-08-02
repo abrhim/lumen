@@ -72,6 +72,26 @@ test.describe("admin users page", () => {
 		await expect(body).not.toContainText("{admin}");
 	});
 
+	test("the column header stays put while the page scrolls", async ({ page, context }) => {
+		// shadcn's Table wraps the table in overflow-x-auto, which makes the
+		// wrapper a scroll container in BOTH axes — a sticky thead inside it then
+		// resolves against the wrapper and scrolls away with the page. The route
+		// passes containerClassName="overflow-visible" to prevent that. Measured:
+		// with the escape the header stops at y=0, without it, it reaches -16.5.
+		await admin.install(context);
+		await page.goto("/admin/users");
+		await page.setViewportSize({ width: 1440, height: 260 });
+		await page.waitForTimeout(200);
+		await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+		await page.waitForTimeout(300);
+		const scrolled = await page.evaluate(() => window.scrollY);
+		expect(scrolled).toBeGreaterThan(0);
+		const box = await page.locator("thead").boundingBox();
+		expect(box).not.toBeNull();
+		// never above the viewport top: that is what "sticky" means here
+		expect(box!.y).toBeGreaterThanOrEqual(-1);
+	});
+
 	test("a signed-in NON-admin gets the 404, not the list", async ({ page, context }) => {
 		await plain.install(context);
 		const res = await page.goto("/admin/users");

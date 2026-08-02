@@ -21,6 +21,15 @@ import {
 	SelectValue,
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
+import {
+	Table,
+	TableBody,
+	TableCaption,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "~/components/ui/table";
 import { getSessionUser } from "~/lib/auth.server";
 import { ADMIN_USERS, requireEntitlement } from "~/lib/entitlements.server";
 import {
@@ -520,42 +529,50 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 						</ul>
 
 						{/* desktop: real semantic table — native aria-sort + SR cell headers */}
-						<table className="mt-4 hidden w-full border-collapse font-ui text-sm md:table">
-							<caption className="sr-only">All users. Use column headers to sort.</caption>
-							<thead className="sticky top-0 z-30 bg-panel/95 backdrop-blur">
-								<tr className="border-b border-rule2 text-left align-middle">
-									<th scope="col" aria-sort={ariaSort("email")} className="relative h-9 px-3 font-semibold text-faint">
+						{/* overflow-visible on the container: the wrapper's overflow-x-auto
+						    would make the sticky header resolve against IT rather than the
+						    viewport, and the header is meant to hold while the page scrolls */}
+						<Table
+							containerClassName="mt-4 hidden overflow-visible md:block"
+							className="border-collapse font-ui"
+						>
+							<TableCaption className="sr-only">
+								All users. Use column headers to sort.
+							</TableCaption>
+							<TableHeader className="sticky top-0 z-30 bg-panel/95 backdrop-blur">
+								<TableRow className="border-rule2 hover:bg-transparent">
+									<TableHead scope="col" aria-sort={ariaSort("email")} className="relative h-9 px-3 font-semibold text-faint">
 										{headerButton("email", "User")}
-									</th>
-									<th scope="col" className="h-9 px-3 font-semibold text-faint">
+									</TableHead>
+									<TableHead scope="col" className="h-9 px-3 font-semibold text-faint">
 										Roles
-									</th>
-									<th scope="col" className="h-9 px-3 font-semibold text-faint">
+									</TableHead>
+									<TableHead scope="col" className="h-9 px-3 font-semibold text-faint">
 										Status
-									</th>
-									<th scope="col" aria-sort={ariaSort("created")} className="relative h-9 px-3 font-semibold text-faint">
+									</TableHead>
+									<TableHead scope="col" aria-sort={ariaSort("created")} className="relative h-9 px-3 font-semibold text-faint">
 										{headerButton("created", "Joined")}
-									</th>
-									<th scope="col" aria-sort={ariaSort("seen")} className="relative h-9 px-3 font-semibold text-faint">
+									</TableHead>
+									<TableHead scope="col" aria-sort={ariaSort("seen")} className="relative h-9 px-3 font-semibold text-faint">
 										{headerButton("seen", "Last seen")}
-									</th>
-								</tr>
-							</thead>
+									</TableHead>
+								</TableRow>
+							</TableHeader>
 							{/* tripwire: revisit windowing only if a single session realistically
 							    loads ~2,000+ rows into the DOM — premature before that (D9) */}
-							<tbody>
+							<TableBody>
 								{rows.map((u) => (
-									<tr key={u.id} className="h-14 border-b border-rule">
-										<td className="px-3">
+									<TableRow key={u.id} className="h-14 border-rule">
+										<TableCell className="px-3">
 											<UserCell u={u} />
-										</td>
-										<td className="px-3">
+										</TableCell>
+										<TableCell className="px-3">
 											<RoleBadges roles={u.roles} />
-										</td>
-										<td className="px-3">
+										</TableCell>
+										<TableCell className="px-3">
 											<StatusBadges u={u} />
-										</td>
-										<td className="px-3 tabular-nums text-muted-foreground">
+										</TableCell>
+										<TableCell className="px-3 tabular-nums text-muted-foreground">
 											{isNever(u.created_at) ? (
 												"—"
 											) : (
@@ -563,19 +580,19 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 													{joinedFmt.format(new Date(u.created_at))}
 												</time>
 											)}
-										</td>
-										<td
+										</TableCell>
+										<TableCell
 											className="px-3 tabular-nums text-muted-foreground"
 											title={isNever(u.last_sign_in_at) ? undefined : absoluteFmt.format(new Date(u.last_sign_in_at))}
 										>
 											{isNever(u.last_sign_in_at) ? "—" : relativeSeen(u.last_sign_in_at)}
-										</td>
-									</tr>
+										</TableCell>
+									</TableRow>
 								))}
 								{loadingMore &&
 									SKELETON_KEYS.map((k) => (
-										<tr key={k} className="h-14 border-b border-rule">
-											<td className="px-3">
+										<TableRow key={k} className="h-14 border-rule">
+											<TableCell className="px-3">
 												<div className="flex items-center gap-3">
 													<Skeleton className="size-8 rounded-full" />
 													<div className="space-y-1.5">
@@ -583,23 +600,23 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 														<Skeleton className="h-2.5 w-40" />
 													</div>
 												</div>
-											</td>
-											<td className="px-3">
+											</TableCell>
+											<TableCell className="px-3">
 												<Skeleton className="h-4 w-16" />
-											</td>
-											<td className="px-3">
+											</TableCell>
+											<TableCell className="px-3">
 												<Skeleton className="h-4 w-20" />
-											</td>
-											<td className="px-3">
+											</TableCell>
+											<TableCell className="px-3">
 												<Skeleton className="h-3 w-20" />
-											</td>
-											<td className="px-3">
+											</TableCell>
+											<TableCell className="px-3">
 												<Skeleton className="h-3 w-14" />
-											</td>
-										</tr>
+											</TableCell>
+										</TableRow>
 									))}
-							</tbody>
-						</table>
+							</TableBody>
+						</Table>
 
 						{/* list tail: auto-loading Load-more button (the sentinel) or the
 						    explicit end state — never silence */}
