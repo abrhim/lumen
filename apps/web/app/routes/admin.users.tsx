@@ -663,19 +663,38 @@ export function ErrorBoundary() {
 	// any other failure (a background page-fetch blip): a real reload affordance
 	// instead of root's dead-end "Oops!" — the loaded rows are lost, but reload
 	// re-runs page 1
+	//
+	// issue #3: the sentence has to be TRUE. loadUsersPage names the class it
+	// caught; a connection failure really does clear on its own, and a permission
+	// or query fault never will — offering the same "reload to try again" for
+	// both is a promise the page can't keep. An UNCLASSIFIED error (a network
+	// blip on the background fetcher, which never reaches our classifier) keeps
+	// the original wording and the button: unknown is not the same as hopeless.
+	const payload = isRouteErrorResponse(error) ? (error.data as { cause?: string } | null) : null;
+	const busy = payload?.cause === "pool_exhausted" || payload?.cause === "connect_failed";
+	const permanent =
+		payload?.cause === "permission" ||
+		payload?.cause === "query" ||
+		payload?.cause === "constraint";
 	return (
 		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
 			<h1 className="font-display text-3xl font-medium tracking-tight">Couldn't load users</h1>
 			<p className="mt-2 font-reading text-[17px] text-muted-foreground">
-				Something went wrong. Reload the page to try again.
+				{busy
+					? "The database is busy right now. This usually clears on its own."
+					: permanent
+						? "Something went wrong loading the list. Reloading won't fix this one."
+						: "Something went wrong. Reload the page to try again."}
 			</p>
-			<button
-				type="button"
-				onClick={() => window.location.reload()}
-				className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground outline-none transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
-			>
-				Reload
-			</button>
+			{!permanent && (
+				<button
+					type="button"
+					onClick={() => window.location.reload()}
+					className="mt-6 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-ui text-sm font-semibold text-primary-foreground outline-none transition-opacity hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
+				>
+					Reload
+				</button>
+			)}
 		</main>
 	);
 }
