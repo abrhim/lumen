@@ -141,7 +141,10 @@ test("About and Roadmap exist, framed by the canon, linked from the home foot", 
 		.click();
 	await expect(page).toHaveURL("/about");
 	await expect(page.getByRole("heading", { name: "About", level: 1 })).toBeVisible();
-	await page.getByRole("main").getByRole("link", { name: "roadmap" }).click();
+	// Scoped to the foot, which is what this test is about. `main` stopped being
+	// specific enough once PageFoot landed on every chrome page: the About copy
+	// already links the roadmap in prose, so a main-wide match finds two.
+	await page.locator("footer").getByRole("link", { name: "Roadmap", exact: true }).click();
 	await expect(page).toHaveURL("/roadmap");
 	await expect(page.getByRole("heading", { name: "Roadmap", level: 1 })).toBeVisible();
 	await expect(page.getByText("In rough order. No dates.")).toBeVisible();

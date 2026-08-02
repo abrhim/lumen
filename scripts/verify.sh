@@ -38,7 +38,12 @@ case "$SUPABASE_URL" in
     exit 1
     ;;
 esac
-for dsn_name in DATABASE_URL LUMEN_READ_DSN; do
+# CLOUDFLARE_HYPERDRIVE_* is the one that bit: apps/web/.env holds the
+# PRODUCTION pooler DSN under that exact name and vite auto-loads it, so an
+# unguarded run reads prod for every drizzle query while looking entirely local.
+for dsn_name in DATABASE_URL LUMEN_READ_DSN \
+                CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE \
+                WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE; do
   case "${!dsn_name}" in
     *localhost*|*127.0.0.1*) ;;
     *)
@@ -62,6 +67,19 @@ if [[ "$run_e2e" == "0" ]]; then
 fi
 
 step "e2e"
+# Port hygiene, same spirit as the suite's lumen_read pool cleanup.
+# playwright.config.ts sets reuseExistingServer, so a dev server left over from
+# an earlier run gets adopted along with whatever environment IT started with —
+# a stale server on prod credentials looks identical to a passing local one.
+# And if 4179 is taken, vite silently moves to 4180 while Playwright keeps
+# talking to the stale process on 4179.
+stale=$(lsof -nP -iTCP:4179 -sTCP:LISTEN -t 2>/dev/null || true)
+if [[ -n "$stale" ]]; then
+  echo "terminating stale dev server(s) on 4179: $stale"
+  kill -9 $stale 2>/dev/null || true
+  sleep 1
+fi
+
 pnpm --filter @lumen/web exec playwright test
 
 printf '\n\033[32m✓ verify passed\033[0m\n'

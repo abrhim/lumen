@@ -29,3 +29,6 @@ apps/web/test-results/
 # supabase CLI local state (migrations/, seed.sql and config.toml ARE committed)
 supabase/.temp/
 supabase/.branches/
+
+# project memory copied into agent worktrees at setup — never committed
+.agent-memory/

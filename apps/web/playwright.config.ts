@@ -12,7 +12,13 @@ export default defineConfig({
 	// (dev-server kills leak them; cap 15 — see support/global-setup.ts)
 	globalSetup: "./e2e/support/global-setup.ts",
 	fullyParallel: false,
-	workers: 1, // shared dev DB + session-pool cap 15 — never fan out
+	// Files run in parallel, tests within a file stay serial. The old `workers: 1`
+	// existed because the suite shared the live dev DB behind a session pooler
+	// capped at 15 clients; the local stack removed both constraints. Kept at 4
+	// rather than CPU count because roadmap.spec asserts an exact PUBLIC vote
+	// total, so it cannot tolerate another file voting concurrently — file-level
+	// isolation holds today only because roadmap.spec is the sole voter.
+	workers: 4,
 	timeout: 30_000,
 	retries: process.env.CI ? 1 : 0,
 	reporter: [["list"]],

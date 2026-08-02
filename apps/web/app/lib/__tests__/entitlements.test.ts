@@ -4,7 +4,11 @@ import { logEvent } from "../log.server";
 import {
 	getEntitlements,
 	requireEntitlement,
+	getRoles,
+	hasRole,
+	ADMIN_ROLE,
 	ADMIN_USERS,
+	DEFAULT_ROLE,
 	type Entitlement,
 } from "../entitlements.server";
 
@@ -176,5 +180,45 @@ describe("H2 requireEntitlement — both directions (fail CLOSED, D4)", () => {
 		// compile instead of running the gated query while the 404 floats
 		expect("userId" in pending).toBe(false);
 		await pending;
+	});
+});
+
+describe("getRoles / hasRole — describe, never gate", () => {
+	it("signed out has NO role; signed in with no assignment is the floor role", async () => {
+		const { db, execute } = fakeDb();
+		expect(await getRoles(db, null)).toEqual([]);
+		// not even a query for a signed-out visitor
+		expect(execute).not.toHaveBeenCalled();
+
+		execute.mockResolvedValue(makeRowList([]));
+		expect(await getRoles(db, "u1")).toEqual([DEFAULT_ROLE]);
+	});
+
+	it("returns the assigned slugs when a row exists", async () => {
+		const { db, execute } = fakeDb();
+		execute.mockResolvedValue(makeRowList([{ role_slug: ADMIN_ROLE }]));
+		expect(await getRoles(db, "u1")).toEqual([ADMIN_ROLE]);
+		expect(await hasRole(db, "u1", ADMIN_ROLE)).toBe(true);
+	});
+
+	it("fails CLOSED to the floor role — a DB blip must never make someone an admin", async () => {
+		const { db, execute } = fakeDb();
+		execute.mockRejectedValue(new Error("boom", { cause: new Error("socket hang up") }));
+		expect(await getRoles(db, "u1")).toEqual([DEFAULT_ROLE]);
+		expect(await hasRole(db, "u1", ADMIN_ROLE)).toBe(false);
+		// the driver error is logged, never drizzle's userId-bearing wrapper
+		expect(logEvent).toHaveBeenCalledWith(
+			"roles_degraded",
+			expect.objectContaining({ message: "socket hang up" }),
+		);
+	});
+
+	it("a role slug is NOT an entitlement — holding `admin` still gates on the entitlement set", async () => {
+		const { db, execute } = fakeDb();
+		// user_roles says admin, but the entitlement join yields nothing
+		execute.mockResolvedValue(makeRowList([]));
+		await expect(requireEntitlement(db, "u1", ADMIN_USERS)).rejects.toMatchObject({
+			init: { status: 404 },
+		});
 	});
 });

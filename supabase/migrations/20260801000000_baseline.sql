@@ -535,7 +535,13 @@ create policy "words_read" on lumen.words
   using (true);
 
 -- ── grants ─────────────────────────────────────────────────
-grant usage on schema lumen to anon, authenticated, service_role, lumen_read;
+grant usage on schema extensions to anon;
+grant usage on schema extensions to authenticated;
+grant usage on schema extensions to lumen_read;
+grant usage on schema extensions to service_role;
+grant usage on schema lumen to anon;
+grant usage on schema lumen to authenticated;
+grant usage on schema lumen to lumen_read;
 grant select on lumen.app_users to lumen_read;
 grant select on lumen.books to lumen_read;
 grant select on lumen.chapters to lumen_read;

@@ -53,31 +53,79 @@ const CHAPTERS = [
  * transcript rows have nothing to hang from.
  */
 const EPISODE = `(select episode_id from lumen.transcripts group by episode_id order by count(*) asc, episode_id asc limit 1)`;
-const ENTITY_CORE = `select id from lumen.entities order by id limit 300`;
+
+/** Entities specs name outright, so they cannot depend on the graph slice. */
+const NAMED_ENTITIES = ["Rameumptom"];
+
+const SEEDED_VERSES = `select id from lumen.verses where chapter_id = any($1)`;
+
+/**
+ * Edges are the whole point of the linked rail, and from_id/to_id are free text
+ * with no FK — they reference verses, chapters and entities alike. Take the
+ * edges that actually touch the seeded canon rather than an arbitrary slab, so
+ * the graph the specs traverse is coherent with the verses they read.
+ */
+const EDGE_TOUCHES_SEED = `(
+  from_id in (${SEEDED_VERSES}) or to_id in (${SEEDED_VERSES})
+  or from_id = any($1) or to_id = any($1)
+)`;
+const EDGE_ENDPOINTS = `
+  select from_id as id from lumen.edges where ${EDGE_TOUCHES_SEED}
+  union
+  select to_id from lumen.edges where ${EDGE_TOUCHES_SEED}`;
 
 const SLICES = [
-	["volumes", "select * from lumen.volumes"],
-	["books", "select * from lumen.books"],
-	["chapters", "select * from lumen.chapters"],
-	["kjv_variants", "select * from lumen.kjv_variants"],
-	["verses", `select * from lumen.verses where chapter_id = any($1)`],
-	["words", `select * from lumen.words where verse_id in (select id from lumen.verses where chapter_id = any($1))`],
-	["word_tags", `select * from lumen.word_tags where word_id in (select w.id from lumen.words w join lumen.verses v on v.id = w.verse_id where v.chapter_id = any($1))`],
-	// /strongs opens on the H1–H100 page and the nav spec clicks into it
-	["strongs_lexicon", `select * from lumen.strongs_lexicon where strongs_no ~ '^[HG][0-9]{1,3}$' order by strongs_no limit 400`],
+	["volumes", "select * from lumen.volumes", []],
+	["books", "select * from lumen.books", []],
+	["chapters", "select * from lumen.chapters", []],
+	["kjv_variants", "select * from lumen.kjv_variants", []],
+	["verses", `select * from lumen.verses where chapter_id = any($1)`, [CHAPTERS]],
+	["words", `select * from lumen.words where verse_id in (${SEEDED_VERSES})`, [CHAPTERS]],
+	[
+		"word_tags",
+		`select * from lumen.word_tags where word_id in (select w.id from lumen.words w join lumen.verses v on v.id = w.verse_id where v.chapter_id = any($1))`,
+		[CHAPTERS],
+	],
+	// /strongs opens on the 1–100 range door. strongs_no is TEXT, so ordering by
+	// it gives H1, H10, H100, H1000 — never a contiguous range. Compare the
+	// numeric part instead.
+	[
+		"strongs_lexicon",
+		`select * from lumen.strongs_lexicon
+     where strongs_no ~ '^[HG][0-9]+$'
+       and substring(strongs_no from 2)::int between 1 and 120`,
+		[],
+	],
 	// collections first: entities.collection_id and edges.collection_id are FKs
 	// to it, and /art shelves collections by book+chapter
-	["collections", "select * from lumen.collections"],
-	["entities", `select * from lumen.entities where id in (${ENTITY_CORE}) or id = ${EPISODE}`],
-	["edges", `select * from lumen.edges where from_id in (${ENTITY_CORE}) and to_id in (${ENTITY_CORE})`],
-	["entity_degree", `select * from lumen.entity_degree where entity_id in (${ENTITY_CORE})`],
+	["collections", "select * from lumen.collections", []],
+	[
+		"entities",
+		`select * from lumen.entities
+     where id in (${EDGE_ENDPOINTS}) or name = any($2) or id = ${EPISODE}`,
+		[CHAPTERS, NAMED_ENTITIES],
+	],
+	["edges", `select * from lumen.edges where ${EDGE_TOUCHES_SEED}`, [CHAPTERS]],
+	// Scoped to raw edge endpoints, not to the seeded entities: nesting the
+	// entities predicate inside this one expands EDGE_ENDPOINTS twice more and
+	// times out against production. entity_degree has no FK, so the extra rows
+	// for non-entity endpoints are inert.
+	[
+		"entity_degree",
+		`select * from lumen.entity_degree where entity_id in (${EDGE_ENDPOINTS})`,
+		[CHAPTERS],
+	],
 	// one full episode — enough that the /media specs run instead of skipping,
 	// and transcripts are by far the heaviest thing in the slice
-	["transcripts", `select * from lumen.transcripts where episode_id = ${EPISODE}`],
+	["transcripts", `select * from lumen.transcripts where episode_id = ${EPISODE}`, []],
 	// /search?q=faith — the suite's only full-text assertion
-	["search_index", `select * from lumen.search_index where tsv @@ plainto_tsquery('english','faith') limit 300`],
-	["roadmap_features", "select * from lumen.roadmap_features"],
-	["roles", "select * from lumen.roles"],
+	[
+		"search_index",
+		`select * from lumen.search_index where tsv @@ plainto_tsquery('english','faith') limit 300`,
+		[],
+	],
+	["roadmap_features", "select * from lumen.roadmap_features", []],
+	["roles", "select * from lumen.roles", []],
 ];
 
 const c = new Client({ connectionString: dsn });
@@ -109,8 +157,8 @@ w("-- kjv_variants has to land before the first verse.");
 w();
 
 const counts = [];
-for (const [table, sql] of SLICES) {
-	const { rows, fields } = await c.query(sql, sql.includes("$1") ? [CHAPTERS] : []);
+for (const [table, sql, params] of SLICES) {
+	const { rows, fields } = await c.query(sql, params);
 	counts.push([table, rows.length]);
 	if (!rows.length) {
 		w(`-- ${table}: no rows matched the slice`);

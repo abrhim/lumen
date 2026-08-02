@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Form, Link, data, useLocation } from "react-router";
 import { getSessionUser } from "~/lib/auth.server";
+import { getRoles } from "~/lib/entitlements.server";
 import { PageFoot, PageFrame, PageHeader } from "~/components/PageFrame";
 import type { Route } from "./+types/me";
 
@@ -13,6 +14,9 @@ import type { Route } from "./+types/me";
  */
 
 const THEMES = ["paper", "parchment", "linen", "ink"] as const;
+/** two roles today; an unknown slug renders as itself rather than vanishing */
+const ROLE_LABEL: Record<string, string> = { admin: "Administrator", user: "Reader" };
+
 const THEME_SWATCH: Record<(typeof THEMES)[number], string> = {
 	paper: "#fafaf7",
 	parchment: "#f3ede1",
@@ -23,7 +27,9 @@ const THEME_SWATCH: Record<(typeof THEMES)[number], string> = {
 export async function loader({ request, context }: Route.LoaderArgs) {
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	headers.set("Cache-Control", "private, no-store");
-	return data({ email: user?.email ?? null }, { headers });
+	// the role DESCRIBES the account here — it is not what gates anything
+	const roles = await getRoles(context.db, user?.id ?? null);
+	return data({ email: user?.email ?? null, roles }, { headers });
 }
 
 export function meta(_args: Route.MetaArgs) {
@@ -31,7 +37,7 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export default function Me({ loaderData }: Route.ComponentProps) {
-	const { email } = loaderData;
+	const { email, roles } = loaderData;
 	const location = useLocation();
 	const [theme, setTheme] = useState<string>("paper");
 	useEffect(() => {
@@ -92,7 +98,14 @@ export default function Me({ loaderData }: Route.ComponentProps) {
 				</h2>
 				{email ? (
 					<div className="mt-4 flex items-baseline justify-between gap-4">
-						<p className="min-w-0 truncate font-reading text-[15px] text-ink">{email}</p>
+						<p className="min-w-0 truncate font-reading text-[15px] text-ink">
+							{email}
+							{roles.length > 0 && (
+								<span className="ml-2 font-ui text-[13px] text-muted-foreground">
+									{roles.map((r) => ROLE_LABEL[r] ?? r).join(", ")}
+								</span>
+							)}
+						</p>
 						<Form method="post" action="/logout">
 							<input type="hidden" name="returnTo" value={location.pathname} />
 							<button

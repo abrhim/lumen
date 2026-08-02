@@ -180,7 +180,23 @@ for (const p of await rows(`
 w();
 
 w("-- ── grants ─────────────────────────────────────────────────");
-w("grant usage on schema lumen to anon, authenticated, service_role, lumen_read;");
+// Schema-level grants, dumped rather than assumed — `extensions` matters as
+// much as `lumen`. pg_trgm and unaccent live there, and the search route calls
+// extensions.word_similarity / OPERATOR(extensions.%) directly. Without USAGE
+// for lumen_read, six of the seven search groups fail and the route DEGRADES
+// rather than erroring, so the page still renders and the specs still pass.
+for (const g of await rows(`
+  select n.nspname, x.grantee,
+         string_agg(distinct x.privilege_type, ', ' order by x.privilege_type) as privs
+  from pg_namespace n
+  cross join lateral aclexplode(n.nspacl) a
+  cross join lateral (select pg_get_userbyid(a.grantee) as grantee, a.privilege_type) x
+  where n.nspname in ('lumen', 'extensions')
+    and x.grantee in ('anon','authenticated','service_role','lumen_read')
+  group by n.nspname, x.grantee
+  order by n.nspname, x.grantee`)) {
+	w(`grant ${g.privs.toLowerCase()} on schema ${g.nspname} to ${g.grantee};`);
+}
 // Read the ACLs straight off pg_class rather than information_schema.
 // role_table_grants is permission-FILTERED — it only reports grants visible to
 // the connecting role, so the `authenticated` grants came back empty and the

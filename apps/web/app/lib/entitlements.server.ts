@@ -54,6 +54,56 @@ export async function getEntitlements(
 	}
 }
 
+/** The two roles (2026-08-01). `admin` carries the entitlements; `user` is
+ * the deliberately powerless floor — and the DEFAULT: a signed-in account
+ * with no lumen.user_roles row IS a user. Resolving the default here rather
+ * than writing a row per account means no trigger on auth.users and no
+ * backfill that can drift out of sync. */
+export const ADMIN_ROLE = "admin";
+export const DEFAULT_ROLE = "user";
+
+/**
+ * The user's role slugs. Signed out is [] — no role at all; signed in with
+ * no assignment is [DEFAULT_ROLE].
+ *
+ * These DESCRIBE a user (for an admin list, or to decide whether to render
+ * an admin link). They do NOT gate: the gate is requireEntitlement(), so
+ * there stays exactly ONE enforcement path and adding a role can never
+ * quietly become a second way in. Fail-CLOSED like getEntitlements — any
+ * error resolves to the floor role, never to admin.
+ */
+export async function getRoles(
+	db: PostgresJsDatabase,
+	userId: string | null,
+): Promise<string[]> {
+	if (!userId) return [];
+	try {
+		const rows = (await db.execute(
+			sql`SELECT role_slug FROM lumen.user_roles WHERE user_id = ${userId}`,
+		)) as unknown as { role_slug: string }[];
+		const slugs = rows.map((r) => r.role_slug).filter(Boolean);
+		return slugs.length > 0 ? slugs : [DEFAULT_ROLE];
+	} catch (err) {
+		// same discipline as getEntitlements: log the driver error, not
+		// drizzle's wrapper (it embeds the query text + the userId)
+		const cause = err instanceof Error && err.cause !== undefined ? err.cause : err;
+		logEvent("roles_degraded", {
+			message: cause instanceof Error ? cause.message : String(cause),
+			userId,
+		});
+		return [DEFAULT_ROLE];
+	}
+}
+
+/** Describes, does not gate — see getRoles. */
+export async function hasRole(
+	db: PostgresJsDatabase,
+	userId: string | null,
+	slug: string,
+): Promise<boolean> {
+	return (await getRoles(db, userId)).includes(slug);
+}
+
 /**
  * Gate a loader on an entitlement. Throws a 404 (NOT 403 — don't confirm the
  * route exists to non-admins, plan D10) when absent. MUST be the loader's
