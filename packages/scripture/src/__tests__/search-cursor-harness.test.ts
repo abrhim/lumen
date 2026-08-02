@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type { SearchOptions } from '../search';
-import { lumenReadDsn } from './support/dsn';
+import { FULL_CORPUS, lumenReadDsn } from './support/dsn';
 
 /** RED-FIRST: `after` lands in SearchOptions with the implementation; the
  * intersection keeps these call sites compiling on both sides of that edit. */
@@ -108,7 +108,7 @@ async function episodesOracle(q: string, visible: string[], limit: number): Prom
 	return rows.map((r: any) => r.id as string);
 }
 
-describe('F1/F5/F15 — keyset continuity on the live verse corpus', () => {
+describe.skipIf(!FULL_CORPUS)('F1/F5/F15 — keyset continuity on the live verse corpus', () => {
 	it('page 2 continues exactly after page 1: no dup, no gap, order preserved (independent raw-SQL oracle)', async () => {
 		// RED: searchAll has no `after`; groups have no `nextCursor`.
 		const { searchAll } = await import('../search');
@@ -224,7 +224,7 @@ describe('F1/F5/F15 — keyset continuity on the live verse corpus', () => {
 	});
 });
 
-describe('F16 — cursor visibility re-gate (SU-1/SU-2)', () => {
+describe.skipIf(!FULL_CORPUS)('F16 — cursor visibility re-gate (SU-1/SU-2)', () => {
 	it('a cursor minted under wider visibility silently re-gates when replayed narrower', async () => {
 		const { searchAll } = await import('../search');
 		// 'Halverson' matches 11 unshaken transcript rows live (probed
@@ -256,7 +256,7 @@ describe('F16 — cursor visibility re-gate (SU-1/SU-2)', () => {
 	});
 });
 
-describe('B1/B30 — episodes-leg keyset continuity across a collation-divergent score tie', () => {
+describe.skipIf(!FULL_CORPUS)('B1/B30 — episodes-leg keyset continuity across a collation-divergent score tie', () => {
 	it('page 2 continues exactly after page 1 with mixed-case ref_ids: no dup, no gap (independent C-order oracle)', async () => {
 		// B30 fixture (live 2026-07-22, prod-reproduced): q=israel scope=episodes
 		// limit=8 has 848 matching rows, and page 1 fills EXACTLY at a 3-way score
@@ -298,7 +298,7 @@ describe('B1/B30 — episodes-leg keyset continuity across a collation-divergent
 	});
 });
 
-describe('B20 — decodeSearchCursor rejects non-finite score bits', () => {
+describe.skipIf(!FULL_CORPUS)('B20 — decodeSearchCursor rejects non-finite score bits', () => {
 	it('a tampered cursor with NaN/±Infinity score → cursor_invalid, never accepted', async () => {
 		const { encodeSearchCursor, decodeSearchCursor, SearchCursorError } = (await import(
 			'../search'
@@ -335,7 +335,7 @@ describe('B20 — decodeSearchCursor rejects non-finite score bits', () => {
 	});
 });
 
-describe('B11 — words leg payload carries render-ready original script (translit/original/lang/dir)', () => {
+describe.skipIf(!FULL_CORPUS)('B11 — words leg payload carries render-ready original script (translit/original/lang/dir)', () => {
 	it('Hebrew (rtl) and Greek (ltr) strongs rows ship separate script fields, not a split title', async () => {
 		// The page must render the original script with a correct lang/dir instead
 		// of string-splitting `title` ("be.rit בְּרִית") — 354 multi-word titles
@@ -377,7 +377,7 @@ describe('B11 — words leg payload carries render-ready original script (transl
 	});
 });
 
-describe('B12 — book/volume reference lead headlines the canonical DB name, not the raw input', () => {
+describe.skipIf(!FULL_CORPUS)('B12 — book/volume reference lead headlines the canonical DB name, not the raw input', () => {
 	it('bare book/volume references resolve display from lumen.books / lumen.volumes', async () => {
 		// The 2xl reference lead parroted the raw-cased input ("moses"/"MOSES"/"pgp"),
 		// while chapter/verse already use the DB-proper name. RED before: display is

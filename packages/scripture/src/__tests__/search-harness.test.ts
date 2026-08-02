@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
-import { lumenReadDsn } from './support/dsn';
+import { FULL_CORPUS, lumenReadDsn } from './support/dsn';
 
 // Harness (search-endpoint, step 3; amended at step 6 synthesis — see plan.md
 // ## Decisions). Runs read-only against LIVE prod as lumen_read ONLY (SEC-6:
@@ -37,7 +37,7 @@ const ALL_PUBLIC = ['canon', 'jst', 'naves', 'openbible', 'phase-b', 'strongs', 
 const NO_UNSHAKEN = ALL_PUBLIC.filter((c) => c !== 'unshaken');
 const NO_JST = ALL_PUBLIC.filter((c) => c !== 'jst');
 
-describe('M2 — KJV delta-index (verses + entities)', () => {
+describe.skipIf(!FULL_CORPUS)('M2 — KJV delta-index (verses + entities)', () => {
 	it('H1: modern query matches archaic verse — believe → John 3:16 (believeth)', async () => {
 		const r = await rows(sql`
 			SELECT id FROM lumen.verses
@@ -101,7 +101,7 @@ describe('M2 — KJV delta-index (verses + entities)', () => {
 	});
 });
 
-describe('M1 — trgm fuzzy tier (production predicate form, PER-1/PER-8)', () => {
+describe.skipIf(!FULL_CORPUS)('M1 — trgm fuzzy tier (production predicate form, PER-1/PER-8)', () => {
 	it('H5: typo melchisedek finds Melchizedek via the production % + word_similarity predicate', async () => {
 		// Production form (plan amendment 1): the % operator is index-served at
 		// its default threshold; extensions.word_similarity >= 0.45 refines.
@@ -116,7 +116,7 @@ describe('M1 — trgm fuzzy tier (production predicate form, PER-1/PER-8)', () =
 	});
 });
 
-describe('M3 — transcript moments in search_index', () => {
+describe.skipIf(!FULL_CORPUS)('M3 — transcript moments in search_index', () => {
 	it('H4: phrase spanning a caption boundary matches a moment (seq 100/101 of 4pSrikfJ5Yw)', async () => {
 		const r = await rows(sql`
 			SELECT ref_id FROM lumen.search_index
@@ -158,7 +158,7 @@ describe('M3 — transcript moments in search_index', () => {
 	});
 });
 
-describe('M4 — projections', () => {
+describe.skipIf(!FULL_CORPUS)('M4 — projections', () => {
 	it('H6: artwork searchable by scene keywords — pentecost → met-471845', async () => {
 		const r = await rows(sql`
 			SELECT ref_id FROM lumen.search_index
@@ -186,7 +186,7 @@ describe('M4 — projections', () => {
 	});
 });
 
-describe('M5 — searchAll contract', () => {
+describe.skipIf(!FULL_CORPUS)('M5 — searchAll contract', () => {
 	const loadSearch = () => import('../search');
 
 	it('groups arrive in GROUP_KEYS order on a LIVE unscoped search (decision 5 MUST, B1)', async () => {

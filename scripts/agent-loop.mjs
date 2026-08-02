@@ -14,8 +14,8 @@
  *
  * Usage: node scripts/agent-loop.mjs [--once] [--dry-run]
  */
-import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { execFileSync, execSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -32,6 +32,10 @@ const WORKTREES = join(process.env.HOME, ".lumen-agent/worktrees");
 const POLL_MS = 30_000;
 const ONCE = process.argv.includes("--once");
 const DRY = process.argv.includes("--dry-run");
+// Pinned, not inherited. Without this the builder silently takes whatever
+// ~/.claude/settings.json happens to say — and this repo's own
+// .claude/settings.local.json is gitignored, so the worktree never sees it.
+const MODEL = process.env.AGENT_MODEL || "opus";
 
 /**
  * Mirrors the tool policy we settled on while vetting Cyrus. The Bash list is
@@ -102,14 +106,154 @@ function relabel(n, add, remove) {
 const comment = (n, body) =>
 	gh(["issue", "comment", String(n), "--repo", REPO, "--body", body]);
 
-function buildPrompt(issue) {
+/**
+ * The memory index, inlined into the prompt.
+ *
+ * `.agent-memory/` is copied into the worktree by agent-setup.sh, but nothing
+ * loads it: Claude Code keys its own project memory by path, and a worktree
+ * resolves to an empty one. Pointing at the directory from CLAUDE.md makes it
+ * discoverable, not loaded — the agent has to choose to look.
+ *
+ * So the INDEX rides in the prompt, where it cannot be missed. One line per
+ * memory is small; the 28 full files are not, and most are irrelevant to any
+ * given task. The agent reads the ones that match what it is doing.
+ */
+function memoryIndex(wt) {
+	try {
+		const idx = readFileSync(join(wt, ".agent-memory/MEMORY.md"), "utf8").trim();
+		return [
+			"",
+			"## What this project already knows",
+			"",
+			"Full notes are in `.agent-memory/<name>.md`. Read the ones that touch",
+			"what you are about to change — each has already cost someone a day.",
+			"",
+			idx,
+			"",
+		].join("\n");
+	} catch {
+		return "";
+	}
+}
+
+const SESSIONS = join(process.env.HOME, ".lumen-agent/sessions.json");
+
+/**
+ * Run the builder with a structured event stream instead of opaque text.
+ *
+ * Two things this buys that `-p` alone does not: a readable live feed of what
+ * the agent is actually doing, and the session id — which is what makes the
+ * run answerable afterwards (`scripts/agent-ask.mjs`). Without the id the
+ * session is written to disk but unreachable.
+ */
+function runBuilder(wt, prompt, issueNumber) {
+	return new Promise((resolve, reject) => {
+		// Progress digest. A long run is otherwise a black box, and "is it stuck
+		// or is it thinking?" is the question you actually have at minute twelve.
+		// Summarised, not streamed: the raw event feed is unreadable on a phone
+		// and would bury the issue thread.
+		const started = Date.now();
+		const touched = new Set();
+		const ran = new Set();
+		let since = 0;
+		const digest = setInterval(() => {
+			if (since === 0) return; // nothing happened; silence is the honest report
+			const mins = Math.round((Date.now() - started) / 60000);
+			const files = [...touched].slice(-8).map((f) => `\`${f}\``).join(", ");
+			const cmds = [...ran].slice(-6).map((c) => `\`${c}\``).join(", ");
+			const body = [
+				`**${mins}m in** — ${since} step${since === 1 ? "" : "s"} since the last update.`,
+				files ? `\nTouched: ${files}` : "",
+				cmds ? `\nRan: ${cmds}` : "",
+				lastText ? `\n\n> ${lastText.split("\n")[0].slice(0, 300)}` : "",
+			].join("");
+			try { comment(issueNumber, body); } catch { /* never let reporting kill the run */ }
+			since = 0;
+			touched.clear();
+			ran.clear();
+		}, 10 * 60_000);
+		const done = (fn) => (v) => { clearInterval(digest); fn(v); };
+		const _resolve = resolve, _reject = reject;
+		resolve = done(_resolve); reject = done(_reject);
+		const child = spawn(
+			"claude",
+			[
+				"-p", prompt,
+				"--model", MODEL,
+				"--output-format", "stream-json",
+				"--verbose",
+				"--allowedTools", ...ALLOWED,
+				"--disallowedTools", ...DISALLOWED,
+				"--permission-mode", "acceptEdits",
+			],
+			{ cwd: wt, stdio: ["ignore", "pipe", "pipe"] },
+		);
+
+		let sessionId = null;
+		let buf = "";
+		let lastText = "";
+
+		child.stdout.on("data", (chunk) => {
+			buf += chunk;
+			const lines = buf.split("\n");
+			buf = lines.pop() ?? "";
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				let ev;
+				try { ev = JSON.parse(line); } catch { continue; }
+
+				if (ev.session_id && !sessionId) {
+					sessionId = ev.session_id;
+					try {
+						const all = existsSync(SESSIONS)
+							? JSON.parse(readFileSync(SESSIONS, "utf8"))
+							: {};
+						all[issueNumber] = { sessionId, worktree: wt };
+						writeFileSync(SESSIONS, JSON.stringify(all, null, 2));
+					} catch { /* feed matters more than the bookmark */ }
+					log(`  session ${sessionId.slice(0, 8)} — ask with: node scripts/agent-ask.mjs ${issueNumber} "..."`);
+				}
+
+				for (const b of ev.message?.content ?? []) {
+					if (b.type === "tool_use") {
+						const d = b.input?.file_path ?? b.input?.command ?? b.input?.pattern ?? "";
+						log(`  ${b.name}${d ? ` ${String(d).slice(0, 90)}` : ""}`);
+						since++;
+						if (b.input?.file_path) touched.add(String(b.input.file_path).replace(wt + "/", ""));
+						else if (b.input?.command) ran.add(String(b.input.command).split("\n")[0].slice(0, 60));
+					} else if (b.type === "text" && b.text?.trim()) {
+						lastText = b.text.trim();
+						for (const l of lastText.split("\n").slice(0, 4)) {
+							if (l.trim()) log(`  · ${l.slice(0, 110)}`);
+						}
+					}
+				}
+
+				if (ev.type === "result") {
+					if (ev.is_error) return reject(new Error(ev.result || "builder reported an error"));
+					resolve({ sessionId, summary: lastText });
+				}
+			}
+		});
+
+		let err = "";
+		child.stderr.on("data", (c) => { err += c; });
+		child.on("close", (code) => {
+			if (code !== 0) reject(new Error(`builder exited ${code}: ${err.slice(-800)}`));
+			else resolve({ sessionId, summary: lastText });
+		});
+		child.on("error", reject);
+	});
+}
+
+function buildPrompt(issue, wt) {
 	return [
 		`Implement GitHub issue #${issue.number} in this repository.`,
 		"",
 		`## ${issue.title}`,
 		"",
 		issue.body || "(no description)",
-		"",
+		memoryIndex(wt),
 		"---",
 		"",
 		"Read CLAUDE.md first and follow it — especially the voice rules for any",
@@ -150,17 +294,8 @@ async function build(issue) {
 		event("planned", { task: `#${n}`, run, summary: `worktree ${branch}` });
 
 		log(`#${n} running builder…`);
-		execFileSync(
-			"claude",
-			[
-				"-p", buildPrompt(issue),
-				"--allowedTools", ...ALLOWED,
-				"--disallowedTools", ...DISALLOWED,
-				"--permission-mode", "acceptEdits",
-			],
-			{ cwd: wt, stdio: ["ignore", "inherit", "inherit"], timeout: 45 * 60_000 },
-		);
-		event("built", { task: `#${n}`, run });
+		const built = await runBuilder(wt, buildPrompt(issue, wt), n);
+		event("built", { task: `#${n}`, run, summary: built.summary?.slice(0, 300) });
 
 		// Independent re-run. The agent was told to verify; this is the check that
 		// it actually did, and the one that decides whether anything is pushed.
@@ -193,8 +328,16 @@ async function build(issue) {
 		event("pr_opened", { task: `#${n}`, run, ref: pr, summary: `${files.length} files` });
 		log(`#${n} PR: ${pr}`);
 	} catch (err) {
-		const msg = (err.stderr || err.stdout || err.message || String(err)).toString().slice(-1500);
-		log(`#${n} FAILED: ${msg.split("\n")[0]}`);
+		const raw = (err.stderr || "") + (err.stdout || "") || err.message || String(err);
+		const msg = raw.toString().slice(-1800);
+		// Report the last ERROR-ish line, not the first line of stderr — supabase
+		// prints deprecation warnings before anything real happens, and those were
+		// masquerading as the failure.
+		const signal =
+			msg.split("\n").filter((l) => /ERROR|Error:|failed|✘|not found/i.test(l)).pop() ||
+			msg.split("\n").filter(Boolean).pop() ||
+			"unknown failure";
+		log(`#${n} FAILED: ${signal.trim().slice(0, 200)}`);
 		relabel(n, [LABEL_FAILED], [LABEL_BUILDING]);
 		comment(n, `Agent run failed — left for you.\n\n\`\`\`\n${msg}\n\`\`\``);
 		event("failed", { task: `#${n}`, run, summary: msg.split("\n")[0] });

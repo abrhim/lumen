@@ -4,6 +4,22 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Whether a FULL scripture corpus is behind the DSN.
+ *
+ * The two live-DB harnesses pin regression floors measured against production
+ * — faith>=810, jerusalem>=1686 — so they are meaningful only against the whole
+ * corpus. The local stack carries a deliberately bounded slice (~162 verses),
+ * against which those floors cannot pass and never could.
+ *
+ * Historically they "passed" locally only because turbo's strict env mode
+ * starved them of LUMEN_READ_DSN and they fell back to the PRODUCTION pooler in
+ * apps/web/.env. That made the gate green by reading prod. Opt in explicitly
+ * instead: set LUMEN_FULL_CORPUS=1 when the DSN really does point at a full
+ * corpus.
+ */
+export const FULL_CORPUS = process.env.LUMEN_FULL_CORPUS === "1";
+
 /** localhost DSNs are the local stack, which has no TLS in front of it. */
 const isLocal = (dsn: string) => /@(localhost|127\.0\.0\.1)[:/]/.test(dsn);
 
