@@ -391,13 +391,12 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 					    same overlay trick as root.tsx's ThemeSelect */}
 					<Select value={role || "all"} onValueChange={(v) => setParam("role", v === "all" ? "" : v)}>
 						<SelectTrigger
-							size="sm"
 							aria-label="Filter by role"
-							className="relative bg-surface font-ui text-xs after:absolute after:-inset-2 after:content-['']"
+							className="relative bg-surface after:absolute after:-inset-2 after:content-['']"
 						>
 							<SelectValue placeholder="Role" />
 						</SelectTrigger>
-						<SelectContent className="font-ui text-xs">
+						<SelectContent>
 							<SelectItem value="all">All roles</SelectItem>
 							{(rolesCatalog ?? []).map((r) => (
 								<SelectItem key={r.slug} value={r.slug}>
@@ -411,13 +410,12 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 						onValueChange={(v) => setParam("status", v === "all" ? "" : v)}
 					>
 						<SelectTrigger
-							size="sm"
 							aria-label="Filter by status"
-							className="relative bg-surface font-ui text-xs after:absolute after:-inset-2 after:content-['']"
+							className="relative bg-surface after:absolute after:-inset-2 after:content-['']"
 						>
 							<SelectValue placeholder="Status" />
 						</SelectTrigger>
-						<SelectContent className="font-ui text-xs">
+						<SelectContent>
 							<SelectItem value="all">Any status</SelectItem>
 							{Object.entries(STATUS_LABELS).map(([k, label]) => (
 								<SelectItem key={k} value={k}>
@@ -431,13 +429,12 @@ export default function AdminUsers({ loaderData }: Route.ComponentProps) {
 					<div className="md:hidden">
 						<Select value={`${sort}-${dir}`} onValueChange={setSort}>
 							<SelectTrigger
-								size="sm"
-								aria-label="Sort"
-								className="relative bg-surface font-ui text-xs after:absolute after:-inset-2 after:content-['']"
+									aria-label="Sort"
+								className="relative bg-surface after:absolute after:-inset-2 after:content-['']"
 							>
 								<SelectValue />
 							</SelectTrigger>
-							<SelectContent className="font-ui text-xs">
+							<SelectContent>
 								{MOBILE_SORTS.map((o) => (
 									<SelectItem key={o.value} value={o.value}>
 										Sort: {o.label}
