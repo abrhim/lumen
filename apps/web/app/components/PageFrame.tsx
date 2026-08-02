@@ -64,10 +64,11 @@ const FOOT_LINKS = [
 	{ to: "/about", label: "About" },
 	{ to: "/roadmap", label: "Roadmap" },
 	{ to: "/privacy", label: "Privacy" },
+	{ to: "/terms", label: "Terms" },
 ] as const;
 
 /**
- * The quiet foot: the three pages that explain the app and what it does
+ * The quiet foot: the four pages that explain the app and what it does
  * with your data. It belongs on the pages that ARE the app's chrome —
  * home, about, roadmap, privacy, me — and NOT inside the reading, which
  * owns its own bottom. The page you're standing on drops out rather than
