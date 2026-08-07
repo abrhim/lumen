@@ -1,0 +1,128 @@
+import { HIGHLIGHT_COLORS } from "~/lib/highlight-colors";
+
+/**
+ * The selection menu (docs/design/highlighting.md, step 3).
+ *
+ * Two axes, not thirty buttons: a row of ten colours and a three-way style
+ * toggle. Gospel Library does the same, and thirty targets on a phone would be
+ * unusable.
+ *
+ * Placement is viewport-clamped: a selection near the top of the screen puts
+ * the menu below it, and one near an edge slides in rather than overflowing.
+ */
+
+export type MarkStyle = "highlight" | "underline" | "text";
+
+const STYLE_LABEL: Record<MarkStyle, string> = {
+	highlight: "Highlight",
+	underline: "Underline",
+	text: "Colour",
+};
+
+export function MarkMenu({
+	rect,
+	style,
+	activeColor,
+	canSave,
+	onStyle,
+	onColor,
+	onCopy,
+	onRemove,
+	onLookUp,
+}: {
+	/** the selection's bounding box, in viewport coordinates */
+	rect: { top: number; bottom: number; left: number; width: number };
+	style: MarkStyle;
+	activeColor?: string;
+	/** signed out, the colours are a door rather than a control */
+	canSave: boolean;
+	onStyle: (s: MarkStyle) => void;
+	onColor: (c: string) => void;
+	onCopy: () => void;
+	onRemove?: () => void;
+	/** single-word selections only — word study from the selection */
+	onLookUp?: () => void;
+}) {
+	const MENU_W = 268;
+	const MENU_H = 132;
+	const vw = typeof window === "undefined" ? 1024 : window.innerWidth;
+	const vh = typeof window === "undefined" ? 768 : window.innerHeight;
+	// above the selection when there is room, below when there is not
+	const above = rect.top > MENU_H + 16;
+	const rawTop = above ? rect.top - 12 : rect.bottom + 12;
+	// clamp BOTH axes. A fixed element takes viewport coordinates, and a
+	// selection can sit off-screen — the page scrolls after the rect is read,
+	// or the reader scrolls while the menu is open — which parks the menu
+	// somewhere nobody can reach.
+	const top = Math.min(Math.max(above ? MENU_H + 8 : 8, rawTop), vh - (above ? 8 : MENU_H + 8));
+	const left = Math.min(Math.max(8, rect.left + rect.width / 2 - MENU_W / 2), vw - MENU_W - 8);
+
+	return (
+		<div
+			role="dialog"
+			aria-label="Mark the selected text"
+			// mousedown, NOT pointerdown. Both stop the browser clearing the
+			// selection this menu exists to act on, but preventDefault on
+			// pointerdown also suppresses the compatibility mouse events — click
+			// included — so the buttons became unclickable. Caught by e2e.
+			onMouseDown={(e) => e.preventDefault()}
+			style={{
+				position: "fixed",
+				top,
+				left,
+				width: MENU_W,
+				transform: above ? "translateY(-100%)" : undefined,
+			}}
+			className="z-50 rounded-lg border border-rule2 bg-panel p-2 shadow-lg"
+		>
+			<div className="flex items-center gap-1">
+				{(Object.keys(STYLE_LABEL) as MarkStyle[]).map((s) => (
+					<button
+						key={s}
+						type="button"
+						onClick={() => onStyle(s)}
+						aria-pressed={style === s}
+						className={`flex-1 rounded-md px-2 py-1 font-ui text-[11px] transition-colors ${
+							style === s ? "bg-sel text-ink" : "text-muted-foreground hover:text-ink"
+						}`}
+					>
+						{STYLE_LABEL[s]}
+					</button>
+				))}
+			</div>
+			<div className="mt-2 flex flex-wrap items-center gap-1.5">
+				{HIGHLIGHT_COLORS.map((c) => (
+					<button
+						key={c}
+						type="button"
+						onClick={() => onColor(c)}
+						aria-label={canSave ? `Mark ${c}` : `Sign in to mark ${c}`}
+						aria-pressed={activeColor === c}
+						className={`hl-${c} hl-swatch size-[20px] rounded-[3px] outline-none transition-[box-shadow] focus-visible:ring-2 focus-visible:ring-selbar ${
+							activeColor === c ? "ring-2 ring-ink/50" : "hover:ring-2 hover:ring-rule2"
+						}`}
+					/>
+				))}
+			</div>
+			<div className="mt-2 flex items-center gap-3 border-t border-rule pt-2 font-ui text-[11px]">
+				<button type="button" onClick={onCopy} className="text-muted-foreground hover:text-ink">
+					Copy
+				</button>
+				{onLookUp && (
+					<button type="button" onClick={onLookUp} className="text-muted-foreground hover:text-ink">
+						Look up
+					</button>
+				)}
+				{onRemove && (
+					<button
+						type="button"
+						onClick={onRemove}
+						className="ml-auto text-muted-foreground hover:text-destructive"
+					>
+						Remove
+					</button>
+				)}
+			</div>
+		</div>
+	);
+}

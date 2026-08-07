@@ -37,25 +37,26 @@ test.describe("signed in", () => {
 		const gutter = page.locator('[data-hl="21"]');
 		await expect(gutter).toBeVisible();
 
-		const verseRow = page.locator("#v21 [role=button]").first();
-		await expect(verseRow).not.toHaveClass(/hl-yellow/);
+		// the mark paints on the segment span inside the verse, not the row
+		const painted = page.locator("#v21 .hl-row");
+		await expect(painted).toHaveCount(0);
 
 		// mark it — and the tap must NOT navigate to ?verse=21
 		await gutter.click();
-		await expect(verseRow).toHaveClass(/hl-yellow/);
+		await expect(painted).toHaveClass(/hl-yellow/);
 		expect(new URL(page.url()).searchParams.get("verse")).toBeNull();
 
 		// the assertion the design exists for: still there after a full reload
 		await page.waitForTimeout(600);
 		await page.reload();
-		await expect(page.locator("#v21 [role=button]").first()).toHaveClass(/hl-yellow/);
+		await expect(page.locator("#v21 .hl-row")).toHaveClass(/hl-yellow/);
 
 		// tapping again clears it, and that also persists
 		await page.locator('[data-hl="21"]').click();
-		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-yellow/);
+		await expect(page.locator("#v21 .hl-row")).toHaveCount(0);
 		await page.waitForTimeout(600);
 		await page.reload();
-		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-yellow/);
+		await expect(page.locator("#v21 .hl-row")).toHaveCount(0);
 	});
 
 	test("a mark does not steal the word-study tap or the verse select", async ({ page }) => {
@@ -92,7 +93,7 @@ test.describe("the colour picker", () => {
 	test("a colour marks, a different colour recolours, the same colour clears", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
 		await page.waitForSelector("html[data-hydrated]");
-		const row = page.locator("#v21 [role=button]").first();
+		const row = page.locator("#v21 .hl-row");
 
 		await page.getByRole("button", { name: "Mark green" }).click();
 		await expect(row).toHaveClass(/hl-green/);
@@ -105,20 +106,76 @@ test.describe("the colour picker", () => {
 		const blue = page.getByRole("button", { name: "Remove the blue mark" });
 		await expect(blue).toHaveAttribute("aria-pressed", "true");
 		await blue.click();
-		await expect(row).not.toHaveClass(/hl-blue/);
+		await expect(page.locator("#v21 .hl-row")).toHaveCount(0);
 
 		await page.waitForTimeout(600);
 		await page.reload();
-		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-(blue|green)/);
+		await expect(page.locator("#v21 .hl-row")).toHaveCount(0);
 	});
 
 	test("the gutter shortcut clears whatever colour is there", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
 		await page.waitForSelector("html[data-hydrated]");
 		await page.getByRole("button", { name: "Mark pink" }).click();
-		await expect(page.locator("#v21 [role=button]").first()).toHaveClass(/hl-pink/);
+		await expect(page.locator("#v21 .hl-row")).toHaveClass(/hl-pink/);
 		// the number tap carries no picker — it must still clear a pink mark
 		await page.locator('[data-hl="21"]').click();
-		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-pink/);
+		await expect(page.locator("#v21 .hl-row")).toHaveCount(0);
+	});
+});
+
+test.describe("passage marks", () => {
+	let user: E2eUser;
+	test.beforeAll(async () => {
+		user = await createE2eUser("passage");
+	});
+	test.afterAll(async () => {
+		await user?.cleanup();
+	});
+	test.beforeEach(async ({ context }) => {
+		await user.install(context);
+	});
+
+	test("selecting part of a verse marks the WORDS, not the row", async ({ page }) => {
+		await page.goto(CHAPTER);
+		await page.waitForSelector("html[data-hydrated]");
+		// a reader selects what they can see
+		await page.locator("#v21").scrollIntoViewIfNeeded();
+		await page.waitForTimeout(300);
+
+		await page.evaluate(() => {
+			const el = document.querySelector("#v21 [data-verse-text]")!;
+			const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+			const nodes: Text[] = [];
+			let n: Node | null;
+			while ((n = walker.nextNode())) nodes.push(n as Text);
+			const r = document.createRange();
+			const last = nodes[nodes.length - 1];
+			r.setStart(nodes[0], 8);
+			r.setEnd(last, nodes.length === 1 ? 34 : Math.min(6, last.length));
+			const sel = window.getSelection()!;
+			sel.removeAllRanges();
+			sel.addRange(r);
+			document.dispatchEvent(new Event("selectionchange"));
+		});
+
+		const menu = page.getByRole("dialog", { name: "Mark the selected text" });
+		await expect(menu).toBeVisible();
+		await menu.getByRole("button", { name: "Mark green" }).click();
+
+		const painted = page.locator("#v21 .hl-green");
+		await expect(painted).toHaveCount(1);
+
+		// the mark must be SHORTER than the verse — that is the whole point, and
+		// the thing v1 got wrong
+		const verseText = await page.locator("#v21 [data-verse-text]").innerText();
+		const markedText = await painted.innerText();
+		expect(markedText.length).toBeLessThan(verseText.length);
+		expect(verseText).toContain(markedText);
+
+		// and it survives a reload, which is what the read path is designed for
+		await page.reload();
+		await expect(page.locator("#v21 .hl-green")).toHaveCount(1);
+		expect(await page.locator("#v21 .hl-green").innerText()).toBe(markedText);
 	});
 });
