@@ -149,8 +149,11 @@ own text, and `VerseWords` builds its spans from those same numbers.
 - The result is ONE contiguous range. Interior punctuation is inside it, because
   the range is a single interval and not a set of tokens. "verily, verily" must
   paint as one band, not two with a white gap.
-- If an endpoint falls in a gap between tokens, move it OUTWARD to the nearest
-  token edge.
+- If an endpoint falls in a gap between words, move it INWARD, not outward: a
+  start moves FORWARD to the next word, an end moves BACK to the previous one.
+  Outward was wrong — it swallows a word the reader never touched. The result
+  covers exactly the words the selection reached. (Corrected while implementing;
+  the unit tests pin both directions.)
 - If the whole selection falls in a gap, there is no mark. Do not post.
 
 ## Render

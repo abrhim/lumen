@@ -1203,7 +1203,13 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											</span>
 										)}
 										</span>
-										{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
+										{/* the ONLY element offsets may be counted from. The link also holds
+										    the verse NUMBER (first, in the gutter) and a screen-reader
+										    ", your note"; counting those shifts every offset and puts
+										    marks on the wrong words (docs/design/highlighting.md). */}
+										<span data-verse-text>
+											{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
+										</span>
 										{/* Margin dots (spike): one per KIND of reference behind the
 										    verse — stable order, first text line, outside the prose.
 										    Hinting, not data: no counts, no labels. */}
