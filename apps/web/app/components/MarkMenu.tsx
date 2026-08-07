@@ -39,6 +39,7 @@ export function MarkMenu({
 	onStyle: (s: MarkStyle) => void;
 	onColor: (c: string) => void;
 	onCopy: () => void;
+	/** present when the menu opened ON a mark rather than a new selection */
 	onRemove?: () => void;
 	/** single-word selections only — word study from the selection */
 	onLookUp?: () => void;
@@ -46,16 +47,19 @@ export function MarkMenu({
 	const MENU_W = 268;
 	const MENU_H = 132;
 	const vw = typeof window === "undefined" ? 1024 : window.innerWidth;
-	const vh = typeof window === "undefined" ? 768 : window.innerHeight;
-	// above the selection when there is room, below when there is not
+	const scrollX = typeof window === "undefined" ? 0 : window.scrollX;
+	const scrollY = typeof window === "undefined" ? 0 : window.scrollY;
+	// The menu belongs to the TEXT, not the screen. position:fixed left it
+	// hanging in place while the reading scrolled away underneath (Abram).
+	// Document coordinates + position:absolute means it travels with the words
+	// it is about, which is what a reader expects of something anchored to a
+	// passage.
 	const above = rect.top > MENU_H + 16;
-	const rawTop = above ? rect.top - 12 : rect.bottom + 12;
-	// clamp BOTH axes. A fixed element takes viewport coordinates, and a
-	// selection can sit off-screen — the page scrolls after the rect is read,
-	// or the reader scrolls while the menu is open — which parks the menu
-	// somewhere nobody can reach.
-	const top = Math.min(Math.max(above ? MENU_H + 8 : 8, rawTop), vh - (above ? 8 : MENU_H + 8));
-	const left = Math.min(Math.max(8, rect.left + rect.width / 2 - MENU_W / 2), vw - MENU_W - 8);
+	const top = (above ? rect.top - 12 : rect.bottom + 12) + scrollY;
+	// horizontal still clamps to the viewport: a menu that runs off the right
+	// edge is unreachable no matter what it is anchored to
+	const left =
+		Math.min(Math.max(8, rect.left + rect.width / 2 - MENU_W / 2), vw - MENU_W - 8) + scrollX;
 
 	return (
 		<div
@@ -67,7 +71,7 @@ export function MarkMenu({
 			// included — so the buttons became unclickable. Caught by e2e.
 			onMouseDown={(e) => e.preventDefault()}
 			style={{
-				position: "fixed",
+				position: "absolute",
 				top,
 				left,
 				width: MENU_W,

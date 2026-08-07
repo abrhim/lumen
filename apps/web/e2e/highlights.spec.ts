@@ -178,4 +178,46 @@ test.describe("passage marks", () => {
 		await expect(page.locator("#v21 .hl-green")).toHaveCount(1);
 		expect(await page.locator("#v21 .hl-green").innerText()).toBe(markedText);
 	});
+
+	test("clicking an existing mark opens its menu — recolour and remove", async ({ page }) => {
+		await page.goto(CHAPTER);
+		await page.waitForSelector("html[data-hydrated]");
+		await page.locator("#v22").scrollIntoViewIfNeeded();
+		await page.waitForTimeout(300);
+
+		await page.evaluate(() => {
+			const el = document.querySelector("#v22 [data-verse-text]")!;
+			const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+			const nodes: Text[] = [];
+			let n: Node | null;
+			while ((n = w.nextNode())) nodes.push(n as Text);
+			const r = document.createRange();
+			r.setStart(nodes[0], 0);
+			r.setEnd(nodes[nodes.length - 1], 20);
+			const sel = window.getSelection()!;
+			sel.removeAllRanges();
+			sel.addRange(r);
+			document.dispatchEvent(new Event("selectionchange"));
+		});
+		const menu = page.getByRole("dialog", { name: "Mark the selected text" });
+		await expect(menu).toBeVisible();
+		await menu.getByRole("button", { name: "Mark blue" }).click();
+		await expect(page.locator("#v22 .hl-blue")).toHaveCount(1);
+
+		// click the mark itself — the menu returns, now offering Remove
+		await page.locator("#v22 [data-mark-id]").first().click();
+		const editing = page.getByRole("dialog", { name: "Mark the selected text" });
+		await expect(editing).toBeVisible();
+		await expect(editing.getByRole("button", { name: "Remove" })).toBeVisible();
+
+		// recolour in place, not a second mark
+		await editing.getByRole("button", { name: "Mark red" }).click();
+		await expect(page.locator("#v22 .hl-red")).toHaveCount(1);
+		await expect(page.locator("#v22 .hl-blue")).toHaveCount(0);
+
+		// and remove it
+		await page.locator("#v22 [data-mark-id]").first().click();
+		await page.getByRole("button", { name: "Remove" }).click();
+		await expect(page.locator("#v22 .hl-red")).toHaveCount(0);
+	});
 });

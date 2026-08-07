@@ -803,10 +803,14 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	 * actually reached.
 	 */
 	const [pick, setPick] = useState<{
+		/** set when the menu opened ON an existing mark, not on a new selection */
+		editing?: string;
 		spans: Array<{ verseId: string; start: number; end: number }>;
 		quote: string;
 		rect: { top: number; bottom: number; left: number; width: number };
 		singleWord: boolean;
+		color?: string;
+		style?: MarkStyle;
 	} | null>(null);
 	const [pickStyle, setPickStyle] = useState<MarkStyle>("highlight");
 
@@ -815,7 +819,10 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 		const read = () => {
 			const sel = window.getSelection();
 			if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-				setPick(null);
+				// clicking a mark collapses the selection, which lands here 180ms
+				// later and would close the very menu that click just opened. An
+				// editing menu is dismissed by clicking away, not by this.
+				setPick((p) => (p?.editing ? p : null));
 				return;
 			}
 			const range = sel.getRangeAt(0);
@@ -858,15 +865,31 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			clearTimeout(t);
 			t = setTimeout(read, 180);
 		};
+		// a click that is neither on the menu nor on a mark dismisses it
+		const onDown = (e: Event) => {
+			const t = e.target as HTMLElement;
+			if (t.closest?.("[role=dialog]") || t.closest?.("[data-mark-id]")) return;
+			setPick((p) => (p?.editing ? null : p));
+		};
+		document.addEventListener("mousedown", onDown);
 		document.addEventListener("selectionchange", onChange);
 		return () => {
 			clearTimeout(t);
+			document.removeEventListener("mousedown", onDown);
 			document.removeEventListener("selectionchange", onChange);
 		};
 	}, [canMark, verses]);
 
 	const markSelection = (color: string) => {
 		if (!pick) return;
+		if (pick.editing) {
+			markFetcher.submit(
+				{ intent: "update", id: pick.editing, color, style: pickStyle },
+				{ method: "post", action: "/api/highlight" },
+			);
+			setPick(null);
+			return;
+		}
 		// spans repeat, which a plain object cannot express
 		const body = new FormData();
 		body.set("intent", "create");
@@ -1278,6 +1301,25 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												toggleMark(verse.verse_number, verse.id);
 												return;
 											}
+											// a click ON a mark edits that mark. This is also what puts
+											// word study "a second click away" inside a mark: the menu
+											// carries Look up, so nothing is lost by the mark winning.
+											const painted = (e.target as HTMLElement).closest?.("[data-mark-id]");
+											const markId = painted?.getAttribute("data-mark-id");
+											if (markId) {
+												const box = painted!.getBoundingClientRect();
+												const found = (marks[verse.verse_number] ?? []).find((m) => m.id === markId);
+												setPick({
+													editing: markId,
+													spans: [],
+													quote: "",
+													rect: { top: box.top, bottom: box.bottom, left: box.left, width: box.width },
+													singleWord: false,
+													color: found?.color,
+													style: (found?.style as MarkStyle) ?? "highlight",
+												});
+												return;
+											}
 											const span = (e.target as HTMLElement).closest?.("[data-wpos]");
 											if (span && isBibleBook) {
 												navigate(
@@ -1415,15 +1457,37 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 					{pick && (
 						<MarkMenu
 							rect={pick.rect}
-							style={pickStyle}
+							style={pick.style ?? pickStyle}
+							activeColor={pick.color}
 							canSave={canMark}
-							onStyle={setPickStyle}
+							onStyle={(st) => {
+								setPickStyle(st);
+								// editing restyles in place; selecting just arms the next mark
+								if (pick.editing) {
+									markFetcher.submit(
+										{ intent: "update", id: pick.editing, style: st },
+										{ method: "post", action: "/api/highlight" },
+									);
+									setPick(null);
+								}
+							}}
 							onColor={markSelection}
 							onCopy={() => {
 								navigator.clipboard?.writeText(pick.quote);
 								window.getSelection()?.removeAllRanges();
 								setPick(null);
 							}}
+							{...(pick.editing
+								? {
+										onRemove: () => {
+											markFetcher.submit(
+												{ intent: "delete", id: pick.editing! },
+												{ method: "post", action: "/api/highlight" },
+											);
+											setPick(null);
+										},
+									}
+								: {})}
 						/>
 					)}
 
@@ -2064,10 +2128,14 @@ function VerseText({
 				// a piece with nothing on it stays a bare string: fewer elements in
 				// the reading, and the prose keeps its own line-breaking
 				if (!cls && seg.wordPosition === undefined) return body;
+				// the LAST mark is the one painted on top, so it is the one a
+				// click on this piece is aiming at
+				const top = seg.marks[seg.marks.length - 1];
 				return (
 					<span
 						key={seg.start}
 						{...(seg.wordPosition !== undefined ? { "data-wpos": seg.wordPosition } : {})}
+						{...(top ? { "data-mark-id": top.id } : {})}
 						className={cls || undefined}
 					>
 						{body}
