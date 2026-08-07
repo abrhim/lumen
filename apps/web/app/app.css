@@ -574,3 +574,15 @@ a.note-extlink:hover { text-decoration-style: solid; }
 /* The picker chip is the same hue at strength: 18px carrying a 20% tint reads
    as white, so the row and the chip cannot share one alpha. */
 .hl-swatch { background-color: color-mix(in oklab, var(--hl) 72%, transparent); }
+
+/* Selecting verse text (docs/design/highlighting.md).
+   draggable={false} is the HTML half and it is NOT sufficient on WebKit: a
+   drag STARTED on the link still grabs the link, so words only select when the
+   drag begins outside the verse and runs in. -webkit-user-drag is the property
+   that actually stops it, and user-select must be stated rather than inherited,
+   because an <a> is not a plain text container. */
+.verse-row {
+	-webkit-user-drag: none;
+	-webkit-user-select: text;
+	user-select: text;
+}

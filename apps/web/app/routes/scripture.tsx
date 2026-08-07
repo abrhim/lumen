@@ -1142,7 +1142,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												);
 											}
 										}}
-										className={`group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
+										className={`verse-row group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
 											isActive ? `bg-sel ${mark ? `hl-${mark} hl-edge` : ""}` : mark ? `hl-${mark} hl-row` : ""
 										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
