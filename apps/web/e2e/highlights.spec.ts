@@ -63,3 +63,56 @@ test.describe("signed in", () => {
 		await expect(page).toHaveURL(/\?verse=21/);
 	});
 });
+
+test.describe("the colour picker", () => {
+	let user: E2eUser;
+	test.beforeAll(async () => {
+		user = await createE2eUser("hl-colors");
+	});
+	test.afterAll(async () => {
+		await user?.cleanup();
+	});
+	test.beforeEach(async ({ context }) => {
+		await user.install(context);
+	});
+
+	test("the panel offers five colours, and they are real buttons", async ({ page }) => {
+		await page.goto(`${CHAPTER}?verse=21`);
+		const swatches = page.getByRole("button", { name: /^Mark (yellow|green|blue|pink|grey)$/ });
+		await expect(swatches).toHaveCount(5);
+		// keyboard-reachable, which the gutter-number span is not
+		await swatches.first().focus();
+		await expect(swatches.first()).toBeFocused();
+	});
+
+	test("a colour marks, a different colour recolours, the same colour clears", async ({ page }) => {
+		await page.goto(`${CHAPTER}?verse=21`);
+		const row = page.locator("#v21 a").first();
+
+		await page.getByRole("button", { name: "Mark green" }).click();
+		await expect(row).toHaveClass(/hl-green/);
+
+		await page.getByRole("button", { name: "Mark blue" }).click();
+		await expect(row).toHaveClass(/hl-blue/);
+		await expect(row).not.toHaveClass(/hl-green/);
+
+		// pressing the colour in force clears it, and the label says so
+		const blue = page.getByRole("button", { name: "Remove the blue mark" });
+		await expect(blue).toHaveAttribute("aria-pressed", "true");
+		await blue.click();
+		await expect(row).not.toHaveClass(/hl-blue/);
+
+		await page.waitForTimeout(600);
+		await page.reload();
+		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-(blue|green)/);
+	});
+
+	test("the gutter shortcut clears whatever colour is there", async ({ page }) => {
+		await page.goto(`${CHAPTER}?verse=21`);
+		await page.getByRole("button", { name: "Mark pink" }).click();
+		await expect(page.locator("#v21 a").first()).toHaveClass(/hl-pink/);
+		// the number tap carries no picker — it must still clear a pink mark
+		await page.locator('[data-hl="21"]').click();
+		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-pink/);
+	});
+});
