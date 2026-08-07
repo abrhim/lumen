@@ -48,6 +48,7 @@ import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
 import { cachedJson, isBotUA } from "../lib/cache.server";
+import { chapterHighlights, type HighlightColor } from "~/lib/highlights.server";
 import { getSessionUser, hasAuthCookie } from "../lib/auth.server";
 import { getChapterNoteAnchors } from "../lib/notes.server";
 import { notesEnabled } from "../lib/notes-enabled";
@@ -615,7 +616,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals, noteCapture] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals, noteCapture, highlights] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		// always fetched now (cheap, 8 rows): the graph filter AND the media-
@@ -661,6 +662,10 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		// personal-notes A5: the user's anchors for this chapter (PostgREST,
 		// not db.execute — CPERF-6 counts it separately); degraded-as-value
 		loadChapterNoteAnchors(request, context.cloudflare.env, bookId, chapter),
+		// whole-verse marks for THIS reader. Rides the caller's own PostgREST
+		// client, never context.db — Hyperdrive caches reads ~60s and a mark must
+		// survive a reload immediately (docs/design/highlighting.md). Fail-soft.
+		chapterHighlights(request, context.cloudflare.env, `${bookId}-${chapter}`),
 	] as const);
 
 	if (verses.length === 0) {
@@ -728,6 +733,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		// A5: separate additive fields — never merged into verseSignals
 		noteAnchors: noteCapture.anchors,
 		canCapture: noteCapture.canCapture,
+		highlights,
 		graphId,
 		graphDepth,
 		graph,
@@ -746,7 +752,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, noteAnchors, canCapture, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, noteAnchors, canCapture, highlights, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
 	// A15: which verses carry the user's note dot (verse-kind anchors only)
 	const notedVerses = new Set<number>();
@@ -760,6 +766,36 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const navigationType = useNavigationType();
 	const navigate = useNavigate();
 	const isMobile = useIsMobile();
+
+	/**
+	 * Whole-verse marks (docs/design/highlighting.md, slice 1). The server truth
+	 * arrives with the chapter; `pending` is the optimistic layer laid over it.
+	 *
+	 * The mark posts to a RESOURCE route, so the chapter loader never
+	 * revalidates — a mark costs one small write, not a chapter re-read. That is
+	 * also why the optimistic layer has to exist: nothing else refreshes it.
+	 */
+	const markFetcher = useFetcher<{ ok: boolean; color: string | null; verse: string }>();
+	const [pendingMarks, setPendingMarks] = useState<Record<number, string | null>>({});
+	// a chapter change retires the optimistic layer — the new loader owns it
+	useEffect(() => {
+		setPendingMarks({});
+	}, [bookId, chapter]);
+	const marks: Record<number, string> = { ...highlights };
+	for (const [n, color] of Object.entries(pendingMarks)) {
+		if (color === null) delete marks[Number(n)];
+		else marks[Number(n)] = color;
+	}
+	// signed-out readers get no control at all (the loader returns no marks)
+	const canMark = canCapture;
+	const toggleMark = (verseNumber: number, verseId: string) => {
+		const next = marks[verseNumber] ? null : "yellow";
+		setPendingMarks((p) => ({ ...p, [verseNumber]: next }));
+		markFetcher.submit(
+			{ verse: verseId, chapter: `${bookId}-${chapter}`, color: "yellow" },
+			{ method: "post", action: "/api/highlight" },
+		);
+	};
 
 	const chapterUrl = `/scripture/${bookId}/${chapter}`;
 	// Bible chapters get the in-body word-study layer (BoM/D&C have no tags)
@@ -1056,6 +1092,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							// carry it at every width, never color alone.
 							const signals = verseSignals?.[verse.verse_number];
 							const hasNote = notedVerses.has(verse.verse_number);
+							const mark = marks[verse.verse_number];
 							const hasDepth =
 								hasNote || (signals !== undefined && Object.values(signals).some(Boolean));
 							return (
@@ -1074,6 +1111,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 												e.preventDefault();
 												return;
 											}
+											const hl = (e.target as HTMLElement).closest?.("[data-hl]");
+											if (hl) {
+												e.preventDefault();
+												toggleMark(verse.verse_number, verse.id);
+												return;
+											}
 											const span = (e.target as HTMLElement).closest?.("[data-wpos]");
 											if (span && isBibleBook) {
 												e.preventDefault();
@@ -1084,7 +1127,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											}
 										}}
 										className={`group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
-											isActive ? "bg-sel" : ""
+											isActive ? "bg-sel" : mark ? `hl-${mark}` : ""
 										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
 										{/* ONE gutter container owns the number AND the mobile dot
@@ -1092,7 +1135,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										    column below lg, the right-aligned number column at lg. */}
 										<span className="absolute left-2 top-3 flex w-6 flex-col items-center lg:left-4 lg:w-7 lg:items-end">
 										<span
-											className={`font-ui text-xs font-semibold transition-colors duration-150 ${
+											data-hl={canMark ? verse.verse_number : undefined}
+										title={canMark ? (mark ? "Remove the mark" : "Mark this verse") : undefined}
+										className={`font-ui text-xs font-semibold transition-colors duration-150 ${canMark ? "cursor-pointer" : ""} ${
 												isActive
 													? "text-selbar"
 													: hasDepth

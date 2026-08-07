@@ -531,3 +531,13 @@ a.note-extlink:hover { text-decoration-style: solid; }
 	30% { transform: scale(1.06) rotate(-2deg); }
 	60% { transform: scale(0.96) rotate(1.5deg); }
 }
+
+/* whole-verse marks (docs/design/highlighting.md). A mark is a DECISION and
+   the blue selection is transient, so selection wins the row while it is
+   active — the mark returns the moment the selection moves on. Tints are
+   deliberately weak: reading ink must stay the darkest thing on the line. */
+.hl-yellow { background-color: color-mix(in oklab, #f2c94c 22%, transparent); }
+.hl-green  { background-color: color-mix(in oklab, #6fcf97 20%, transparent); }
+.hl-blue   { background-color: color-mix(in oklab, #56ccf2 20%, transparent); }
+.hl-pink   { background-color: color-mix(in oklab, #ef7fa8 18%, transparent); }
+.hl-grey   { background-color: color-mix(in oklab, #98a2b3 22%, transparent); }
