@@ -537,10 +537,15 @@ a.note-extlink:hover { text-decoration-style: solid; }
    active — the mark returns the moment the selection moves on. Tints are
    deliberately weak: reading ink must stay the darkest thing on the line. */
 .hl-yellow { --hl: #f2c94c; }
-.hl-green  { --hl: #6fcf97; }
-.hl-blue   { --hl: #56ccf2; }
-.hl-pink   { --hl: #ef7fa8; }
-.hl-grey   { --hl: #98a2b3; }
+.hl-orange { --hl: #f2994a; }
+.hl-red { --hl: #eb5757; }
+.hl-pink { --hl: #ef7fa8; }
+.hl-purple { --hl: #9b7ede; }
+.hl-blue { --hl: #56ccf2; }
+.hl-teal { --hl: #2fbfa8; }
+.hl-green { --hl: #6fcf97; }
+.hl-brown { --hl: #b08968; }
+.hl-grey { --hl: #98a2b3; }
 
 /* The colour classes above carry ONLY the variable. These three paint it, so a
    mark can appear as a row, an edge, or a chip without three colour tables. */
@@ -554,6 +559,17 @@ a.note-extlink:hover { text-decoration-style: solid; }
    gives no feedback at all until you select something else. Mixing the two
    backgrounds instead would turn both to mud. */
 .hl-edge { box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--hl) 85%, transparent); }
+
+/* underline and text-colour marks paint no background. <mark> carries a
+   user-agent background, so it must be cleared or every style looks filled. */
+.hl-underline {
+	background-color: transparent;
+	text-decoration: underline;
+	text-decoration-color: color-mix(in oklab, var(--hl) 90%, transparent);
+	text-decoration-thickness: 2px;
+	text-underline-offset: 3px;
+}
+.hl-text { background-color: transparent; color: color-mix(in oklab, var(--hl) 85%, var(--color-ink)); }
 
 /* The picker chip is the same hue at strength: 18px carrying a 20% tint reads
    as white, so the row and the chip cannot share one alpha. */

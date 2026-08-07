@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ReactNode, useEffect } from "react";
 import {
 	isRouteErrorResponse,
 	Links,
@@ -92,6 +92,14 @@ class SearchChromeBoundary extends Component<{ children: ReactNode }, { failed: 
 }
 
 export default function App() {
+	// Hydration marker. Server-rendered markup is interactive-LOOKING before
+	// React attaches, so a click that lands in that window is silently dropped.
+	// Real users rarely notice a ~100ms gap; Playwright hits it constantly and
+	// the failure reads as a product bug ("the colour did not apply"). Tests
+	// wait for html[data-hydrated] instead of racing it.
+	useEffect(() => {
+		document.documentElement.dataset.hydrated = "true";
+	}, []);
 	return (
 		<>
 			{/* triggerless: the nav's Search word (and / + ⌘K) summon it; a
