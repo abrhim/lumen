@@ -8,6 +8,7 @@ import {
 	useNavigate,
 	useNavigation,
 	useNavigationType,
+	useRevalidator,
 } from "react-router";
 import { ArrowLeftIcon, HeadphonesIcon, ImageIcon, LightbulbIcon, Link2Icon, NotebookPenIcon, UsersIcon, XIcon } from "lucide-react";
 import { sql } from "drizzle-orm";
@@ -48,8 +49,17 @@ import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
 import { cachedJson, isBotUA } from "../lib/cache.server";
-import { chapterHighlights } from "~/lib/highlights.server";
+import { chapterMarks, type ChapterMarks } from "~/lib/highlights.server";
 import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS } from "~/lib/highlight-colors";
+import { segmentClasses, segmentVerse, type MarkRange } from "~/lib/verse-segments";
+import {
+	indexTextPieces,
+	offsetOfPosition,
+	quoteOf,
+	snapSpans,
+	type VerseSpanInput,
+} from "~/lib/verse-offsets";
+import { MarkMenu, type MarkStyle } from "~/components/MarkMenu";
 import { getSessionUser, hasAuthCookie } from "../lib/auth.server";
 import { getChapterNoteAnchors } from "../lib/notes.server";
 import { notesEnabled } from "../lib/notes-enabled";
@@ -617,7 +627,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// Public collection ids resolve in the critical path (COR-2): the Postgres
 	// connection closes via waitUntil once the handler returns, so deferred
 	// promises must never touch it. Cheap (5 rows), parallel, graph loads only.
-	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals, noteCapture, highlights] = await Promise.all([
+	const [verses, summary, publicCollections, artRows, chapterRows, crossRefsRaw, wordTagsRaw, mediaRefsRaw, verseSignals, noteCapture, marks] = await Promise.all([
 		getVersesByChapter(context.db, bookId, chapter) as Promise<VerseRow[]>,
 		getChapterSummary(context.db, bookId, chapter) as Promise<{ description?: string } | null>,
 		// always fetched now (cheap, 8 rows): the graph filter AND the media-
@@ -666,7 +676,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		// whole-verse marks for THIS reader. Rides the caller's own PostgREST
 		// client, never context.db — Hyperdrive caches reads ~60s and a mark must
 		// survive a reload immediately (docs/design/highlighting.md). Fail-soft.
-		chapterHighlights(request, context.cloudflare.env, `${bookId}-${chapter}`),
+		chapterMarks(request, context.cloudflare.env, `${bookId}-${chapter}`),
 	] as const);
 
 	if (verses.length === 0) {
@@ -734,7 +744,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		// A5: separate additive fields — never merged into verseSignals
 		noteAnchors: noteCapture.anchors,
 		canCapture: noteCapture.canCapture,
-		highlights,
+		marks,
 		graphId,
 		graphDepth,
 		graph,
@@ -753,7 +763,7 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 export default function Scripture({ loaderData }: Route.ComponentProps) {
-	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, noteAnchors, canCapture, highlights, graphId, graphDepth, graph, art, maxChapter } =
+	const { bookId, chapter, reference, summary, verses, selectedVerse, selectedWord, connections, crossRefs, wordTags, mediaRefs, verseSignals, noteAnchors, canCapture, marks: loadedMarks, graphId, graphDepth, graph, art, maxChapter } =
 		loaderData;
 	// A15: which verses carry the user's note dot (verse-kind anchors only)
 	const notedVerses = new Set<number>();
@@ -769,40 +779,169 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const isMobile = useIsMobile();
 
 	/**
-	 * Whole-verse marks (docs/design/highlighting.md, slice 1). The server truth
-	 * arrives with the chapter; `pending` is the optimistic layer laid over it.
-	 *
-	 * The mark posts to a RESOURCE route, so the chapter loader never
-	 * revalidates — a mark costs one small write, not a chapter re-read. That is
-	 * also why the optimistic layer has to exist: nothing else refreshes it.
+	 * Passage marks (docs/design/highlighting.md v2). Marks come from the
+	 * loader; a write posts to a resource route and then revalidates, so the
+	 * painted state is always the database's rather than a guess. Marks paint
+	 * as SEGMENTS now — a hand-maintained optimistic copy would have to
+	 * re-derive overlap, which is exactly the arithmetic worth not duplicating.
 	 */
-	const markFetcher = useFetcher<{ ok: boolean; color: string | null; verse: string }>();
-	const [pendingMarks, setPendingMarks] = useState<Record<number, string | null>>({});
-	// a chapter change retires the optimistic layer — the new loader owns it
-	useEffect(() => {
-		setPendingMarks({});
-	}, [bookId, chapter]);
-	const marks: Record<number, string> = { ...highlights };
-	for (const [n, color] of Object.entries(pendingMarks)) {
-		if (color === null) delete marks[Number(n)];
-		else marks[Number(n)] = color;
-	}
-	// signed-out readers get no control at all (the loader returns no marks)
+	const markFetcher = useFetcher<{ ok: boolean; id: string | null }>();
+	const revalidator = useRevalidator();
+	const marks: ChapterMarks = loadedMarks;
 	const canMark = canCapture;
-	/** Send a colour. The server toggles: the SAME colour clears the mark, a
-	 * different one recolours it. The optimistic layer mirrors that rule. */
-	const setMark = (verseNumber: number, verseId: string, color: string) => {
-		const next = marks[verseNumber] === color ? null : color;
-		setPendingMarks((p) => ({ ...p, [verseNumber]: next }));
+	useEffect(() => {
+		if (markFetcher.state === "idle" && markFetcher.data?.ok) revalidator.revalidate();
+	}, [markFetcher.state, markFetcher.data]);
+
+	/**
+	 * Selection → spans (docs/design/highlighting.md, step 3).
+	 *
+	 * Reads the live selection, works out which verses it touches and where, and
+	 * snaps each slice to whole words. Endpoints outside any verse — the chapter
+	 * summary or the art strip sit above the list — are clamped rather than
+	 * rejected, so a drag that begins in the summary still marks the verses it
+	 * actually reached.
+	 */
+	const [pick, setPick] = useState<{
+		spans: Array<{ verseId: string; start: number; end: number }>;
+		quote: string;
+		rect: { top: number; bottom: number; left: number; width: number };
+		singleWord: boolean;
+	} | null>(null);
+	const [pickStyle, setPickStyle] = useState<MarkStyle>("highlight");
+
+	useEffect(() => {
+		if (!canMark) return;
+		const read = () => {
+			const sel = window.getSelection();
+			if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+				setPick(null);
+				return;
+			}
+			const range = sel.getRangeAt(0);
+			const inputs: VerseSpanInput[] = [];
+			for (const el of document.querySelectorAll("[data-verse-text]")) {
+				if (!range.intersectsNode(el)) continue;
+				const li = el.closest("li[id^='v']");
+				const n = Number.parseInt(li?.id.slice(1) ?? "", 10);
+				const verse = verses.find((v) => v.verse_number === n);
+				if (!verse) continue;
+				const pieces = indexTextPieces(el);
+				const startsHere = el.contains(range.startContainer);
+				const endsHere = el.contains(range.endContainer);
+				const start = startsHere
+					? (offsetOfPosition(pieces, el, range.startContainer, range.startOffset) ?? 0)
+					: 0;
+				const end = endsHere
+					? (offsetOfPosition(pieces, el, range.endContainer, range.endOffset) ??
+						verse.text.length)
+					: verse.text.length;
+				inputs.push({ verseId: verse.id, text: verse.text, start, end });
+			}
+			const spans = snapSpans(inputs);
+			if (spans.length === 0) {
+				setPick(null);
+				return;
+			}
+			const r = range.getBoundingClientRect();
+			const quote = quoteOf(inputs, spans);
+			setPick({
+				spans,
+				quote,
+				rect: { top: r.top, bottom: r.bottom, left: r.left, width: r.width },
+				singleWord: spans.length === 1 && !/\s/.test(quote.trim()),
+			});
+		};
+		// settle: iOS fires selectionchange continuously while the handles move
+		let t: ReturnType<typeof setTimeout>;
+		const onChange = () => {
+			clearTimeout(t);
+			t = setTimeout(read, 180);
+		};
+		document.addEventListener("selectionchange", onChange);
+		return () => {
+			clearTimeout(t);
+			document.removeEventListener("selectionchange", onChange);
+		};
+	}, [canMark, verses]);
+
+	const markSelection = (color: string) => {
+		if (!pick) return;
+		// spans repeat, which a plain object cannot express
+		const body = new FormData();
+		body.set("intent", "create");
+		body.set("chapter", `${bookId}-${chapter}`);
+		body.set("color", color);
+		body.set("style", pickStyle);
+		body.set("quote", pick.quote);
+		for (const s of pick.spans) body.append("span", `${s.verseId}:${s.start}:${s.end}`);
+		markFetcher.submit(body, { method: "post", action: "/api/highlight" });
+		window.getSelection()?.removeAllRanges();
+		setPick(null);
+	};
+
+	/** The panel picker. Recolours the whole-verse mark if there is one, adds
+	 * one if there is not, and clears it when the colour already in force is
+	 * pressed again — the same toggle the picker had before passage marks. */
+	const recolourVerse = (verseNumber: number, verseId: string, color: string) => {
+		const verse = verses.find((v) => v.verse_number === verseNumber);
+		if (!verse) return;
+		const whole = (marks[verseNumber] ?? []).find(
+			(m) => m.start === 0 && m.end === verse.text.length && m.style === "highlight",
+		);
+		if (whole && whole.color === color) {
+			markFetcher.submit(
+				{ intent: "delete", id: whole.id },
+				{ method: "post", action: "/api/highlight" },
+			);
+			return;
+		}
+		if (whole) {
+			markFetcher.submit(
+				{ intent: "update", id: whole.id, color },
+				{ method: "post", action: "/api/highlight" },
+			);
+			return;
+		}
 		markFetcher.submit(
-			{ verse: verseId, chapter: `${bookId}-${chapter}`, color },
+			{
+				intent: "create",
+				chapter: `${bookId}-${chapter}`,
+				color,
+				style: "highlight",
+				quote: verse.text.slice(0, 4000),
+				span: `${verseId}:0:${verse.text.length}`,
+			},
 			{ method: "post", action: "/api/highlight" },
 		);
 	};
-	/** The gutter shortcut has no picker, so it sends back whatever colour is
-	 * already there (which clears it) or lays down the default. */
+
+	/** The gutter shortcut: mark the whole verse, or clear the whole-verse mark
+	 * already on it. It carries no picker, so it uses the default colour. */
 	const toggleMark = (verseNumber: number, verseId: string) => {
-		setMark(verseNumber, verseId, marks[verseNumber] ?? DEFAULT_HIGHLIGHT);
+		const verse = verses.find((v) => v.verse_number === verseNumber);
+		if (!verse) return;
+		const whole = (marks[verseNumber] ?? []).find(
+			(m) => m.start === 0 && m.end === verse.text.length,
+		);
+		if (whole) {
+			markFetcher.submit(
+				{ intent: "delete", id: whole.id },
+				{ method: "post", action: "/api/highlight" },
+			);
+			return;
+		}
+		markFetcher.submit(
+			{
+				intent: "create",
+				chapter: `${bookId}-${chapter}`,
+				color: DEFAULT_HIGHLIGHT,
+				style: "highlight",
+				quote: verse.text.slice(0, 4000),
+				span: `${verseId}:0:${verse.text.length}`,
+			},
+			{ method: "post", action: "/api/highlight" },
+		);
 	};
 
 	const chapterUrl = `/scripture/${bookId}/${chapter}`;
@@ -977,8 +1116,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			notesDegraded={canCapture && noteAnchors === null}
 			captureVerseId={verse.id}
 			captureVerseRef={verse.reference}
-			mark={marks[verse.verse_number]}
-			onMark={(color) => setMark(verse.verse_number, verse.id, color)}
+			mark={(marks[verse.verse_number] ?? []).filter((m) => m.style === "highlight").at(-1)?.color}
+			onMark={(color) => recolourVerse(verse.verse_number, verse.id, color)}
 		/>
 	);
 
@@ -1150,7 +1289,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											selectVerse();
 										}}
 										className={`verse-row group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
-											isActive ? `bg-sel ${mark ? `hl-${mark} hl-edge` : ""}` : mark ? `hl-${mark} hl-row` : ""
+											isActive ? "bg-sel" : ""
 										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
 										{/* ONE gutter container owns the number AND the mobile dot
@@ -1215,7 +1354,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										    ", your note"; counting those shifts every offset and puts
 										    marks on the wrong words (docs/design/highlighting.md). */}
 										<span data-verse-text>
-											{isBibleBook ? <VerseWords text={verse.text} highlight={wordGroup} /> : verse.text}
+											<VerseText
+												text={verse.text}
+												words={isBibleBook}
+												wordGroup={wordGroup}
+												marks={marks[verse.verse_number] ?? []}
+											/>
 										</span>
 										{/* Margin dots (spike): one per KIND of reference behind the
 										    verse — stable order, first text line, outside the prose.
@@ -1268,6 +1412,20 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							);
 						})}
 					</ol>
+					{pick && (
+						<MarkMenu
+							rect={pick.rect}
+							style={pickStyle}
+							canSave={canMark}
+							onStyle={setPickStyle}
+							onColor={markSelection}
+							onCopy={() => {
+								navigator.clipboard?.writeText(pick.quote);
+								window.getSelection()?.removeAllRanges();
+								setPick(null);
+							}}
+						/>
+					)}
 
 					{/* The page-turn lives where the reading ends (navigation.md §4):
 					    in-content foot nav, never a bar. Mirrors the header's real
@@ -1870,6 +2028,56 @@ function PanelBody({
 		</>
 	);
 }
+/**
+ * Verse text, cut at every mark and word boundary (docs/design/highlighting.md).
+ *
+ * Marks overlap and nest, so the text cannot be painted by wrapping the word
+ * spans — a mark can start and end inside one, and can cross the punctuation
+ * between them. segmentVerse does the cutting; this only turns pieces into
+ * elements. `words` is false for books with no word tags, which then cut on
+ * mark edges alone.
+ */
+function VerseText({
+	text,
+	words,
+	wordGroup,
+	marks,
+}: {
+	text: string;
+	words: boolean;
+	wordGroup?: ReadonlySet<number>;
+	marks: MarkRange[];
+}) {
+	const tokens = words
+		? tokenize(text).map((t) => ({ position: t.position, start: t.char_start, end: t.char_end }))
+		: [];
+	const segments = segmentVerse(text.length, tokens, marks);
+	return (
+		<>
+			{segments.map((seg) => {
+				const painted = segmentClasses(seg);
+				const inGroup = seg.wordPosition !== undefined && wordGroup?.has(seg.wordPosition);
+				const cls = [painted, inGroup ? "rounded-[3px] bg-selbar/20" : ""]
+					.filter(Boolean)
+					.join(" ");
+				const body = text.slice(seg.start, seg.end);
+				// a piece with nothing on it stays a bare string: fewer elements in
+				// the reading, and the prose keeps its own line-breaking
+				if (!cls && seg.wordPosition === undefined) return body;
+				return (
+					<span
+						key={seg.start}
+						{...(seg.wordPosition !== undefined ? { "data-wpos": seg.wordPosition } : {})}
+						className={cls || undefined}
+					>
+						{body}
+					</span>
+				);
+			})}
+		</>
+	);
+}
+
 /** Bible verse text as word-boundary spans (client-side, SAME tokenizer as
  * the ingest — offsets agree by construction). Spans carry data-wpos for the
  * verse Link's click router; hover underline is CSS, hover-capable only.
