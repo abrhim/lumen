@@ -37,7 +37,7 @@ test.describe("signed in", () => {
 		const gutter = page.locator('[data-hl="21"]');
 		await expect(gutter).toBeVisible();
 
-		const verseRow = page.locator("#v21 a").first();
+		const verseRow = page.locator("#v21 [role=button]").first();
 		await expect(verseRow).not.toHaveClass(/hl-yellow/);
 
 		// mark it — and the tap must NOT navigate to ?verse=21
@@ -48,21 +48,21 @@ test.describe("signed in", () => {
 		// the assertion the design exists for: still there after a full reload
 		await page.waitForTimeout(600);
 		await page.reload();
-		await expect(page.locator("#v21 a").first()).toHaveClass(/hl-yellow/);
+		await expect(page.locator("#v21 [role=button]").first()).toHaveClass(/hl-yellow/);
 
 		// tapping again clears it, and that also persists
 		await page.locator('[data-hl="21"]').click();
-		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-yellow/);
+		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-yellow/);
 		await page.waitForTimeout(600);
 		await page.reload();
-		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-yellow/);
+		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-yellow/);
 	});
 
 	test("a mark does not steal the word-study tap or the verse select", async ({ page }) => {
 		await page.goto(CHAPTER);
 		await page.waitForSelector("html[data-hydrated]");
 		// tapping the verse TEXT still selects the verse
-		await page.locator("#v21 a").first().click();
+		await page.locator("#v21 [role=button]").first().click();
 		await expect(page).toHaveURL(/\?verse=21/);
 	});
 });
@@ -92,7 +92,7 @@ test.describe("the colour picker", () => {
 	test("a colour marks, a different colour recolours, the same colour clears", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
 		await page.waitForSelector("html[data-hydrated]");
-		const row = page.locator("#v21 a").first();
+		const row = page.locator("#v21 [role=button]").first();
 
 		await page.getByRole("button", { name: "Mark green" }).click();
 		await expect(row).toHaveClass(/hl-green/);
@@ -109,16 +109,16 @@ test.describe("the colour picker", () => {
 
 		await page.waitForTimeout(600);
 		await page.reload();
-		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-(blue|green)/);
+		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-(blue|green)/);
 	});
 
 	test("the gutter shortcut clears whatever colour is there", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
 		await page.waitForSelector("html[data-hydrated]");
 		await page.getByRole("button", { name: "Mark pink" }).click();
-		await expect(page.locator("#v21 a").first()).toHaveClass(/hl-pink/);
+		await expect(page.locator("#v21 [role=button]").first()).toHaveClass(/hl-pink/);
 		// the number tap carries no picker — it must still clear a pink mark
 		await page.locator('[data-hl="21"]').click();
-		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-pink/);
+		await expect(page.locator("#v21 [role=button]").first()).not.toHaveClass(/hl-pink/);
 	});
 });

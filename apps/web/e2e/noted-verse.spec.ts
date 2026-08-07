@@ -30,8 +30,11 @@ test.beforeEach(async ({ context }) => {
 test("noted verse: accessible name suffix, register h3, ring dot first", async ({ page }) => {
 	await page.goto("/scripture/alma/32?verse=21");
 
-	// CF-21(a): the verse link's accessible name says so
-	const verse21 = page.getByRole("link", { name: /your note/ });
+	// CF-21(a): the verse row's accessible name says so. The row is a BUTTON,
+	// not a link, since 2026-08-02 — an anchor's cursor promised navigation
+	// while the real gesture is select-and-drag. The name suffix is the
+	// invariant here; the role that carries it is not.
+	const verse21 = page.getByRole("button", { name: /your note/ });
 	await expect(verse21).toHaveCount(1);
 
 	// register: real h3, row is a door to the note, gloss names the scope
