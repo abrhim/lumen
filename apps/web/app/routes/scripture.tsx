@@ -1105,42 +1105,49 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 							const mark = marks[verse.verse_number];
 							const hasDepth =
 								hasNote || (signals !== undefined && Object.values(signals).some(Boolean));
+							// the anchor's old destination, now pushed by hand
+							const selectVerse = () =>
+								navigate(isActive ? chapterUrl : `${chapterUrl}?verse=${verse.verse_number}`, {
+									preventScrollReset: true,
+								});
 							return (
 								<li key={verse.id} id={`v${verse.verse_number}`}>
-									<Link
-										to={isActive ? chapterUrl : `${chapterUrl}?verse=${verse.verse_number}`}
-										preventScrollReset
-										viewTransition
-										// an <a> is implicitly draggable, so a drag starting on verse text
-										// picks up the LINK instead of selecting words — the one gesture
-										// people reach for, and the gesture part-verse marks will need.
-										// The only loss is dragging a verse to the bookmark bar; href,
-										// keyboard, middle-click and the context menu all stay.
-										draggable={false}
+									{/* NOT a Link (Abram, 2026-08-02). An anchor's cursor promises
+								    navigation, but the real gesture on scripture is select-and-drag —
+								    and the anchor swallowed the mousedown that begins a selection.
+								    Deep links are unchanged: the same URL is pushed programmatically
+								    below, so ?verse=N still shares, still restores, and Back still
+								    deselects. */}
+									<div
+										role="button"
+										tabIndex={0}
 										aria-current={isActive ? "true" : undefined}
+										onKeyDown={(e) => {
+											// keyboard parity with the anchor this replaces
+											if (e.key !== "Enter" && e.key !== " ") return;
+											e.preventDefault();
+											selectVerse();
+										}}
 										onClick={(e) => {
 											// Abram's click rules: an active text selection never
 											// navigates; a WORD click opens word study (and selects
 											// the verse); anything else is a plain verse select.
 											const sel = window.getSelection();
-											if (sel && !sel.isCollapsed) {
-												e.preventDefault();
-												return;
-											}
+											if (sel && !sel.isCollapsed) return;
 											const hl = (e.target as HTMLElement).closest?.("[data-hl]");
 											if (hl) {
-												e.preventDefault();
 												toggleMark(verse.verse_number, verse.id);
 												return;
 											}
 											const span = (e.target as HTMLElement).closest?.("[data-wpos]");
 											if (span && isBibleBook) {
-												e.preventDefault();
 												navigate(
 													`${chapterUrl}?verse=${verse.verse_number}&word=${span.getAttribute("data-wpos")}`,
 													{ preventScrollReset: true },
 												);
+												return;
 											}
+											selectVerse();
 										}}
 										className={`verse-row group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
 											isActive ? `bg-sel ${mark ? `hl-${mark} hl-edge` : ""}` : mark ? `hl-${mark} hl-row` : ""
@@ -1243,7 +1250,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										{/* CF-21: SR parity — the dots are aria-hidden, so the noted
 										    verse says so in its accessible name */}
 										{hasNote && <span className="sr-only">, your note</span>}
-									</Link>
+									</div>
 									{showWordCard && (
 										<InlineWordCard
 											// on mobile ?verse alone means "drawer open", so the X

@@ -585,4 +585,8 @@ a.note-extlink:hover { text-decoration-style: solid; }
 	-webkit-user-drag: none;
 	-webkit-user-select: text;
 	user-select: text;
+	/* the row is a container now, not a link: the caret must say "you can
+	   select this", not "this navigates" (Abram — the pointer cursor was the
+	   tell that the affordance was wrong) */
+	cursor: text;
 }
