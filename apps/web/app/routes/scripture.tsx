@@ -48,7 +48,8 @@ import { ArtImage } from "~/components/ArtImage";
 import { toArtItem, pickArtStack, artTransitionName, type ArtItem, type ArtworkRow } from "~/lib/art";
 import { strongsLanguage, primaryEntry, wordGroupPositions } from "~/lib/word-study";
 import { cachedJson, isBotUA } from "../lib/cache.server";
-import { chapterHighlights, type HighlightColor } from "~/lib/highlights.server";
+import { chapterHighlights } from "~/lib/highlights.server";
+import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS } from "~/lib/highlight-colors";
 import { getSessionUser, hasAuthCookie } from "../lib/auth.server";
 import { getChapterNoteAnchors } from "../lib/notes.server";
 import { notesEnabled } from "../lib/notes-enabled";
@@ -788,13 +789,20 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	}
 	// signed-out readers get no control at all (the loader returns no marks)
 	const canMark = canCapture;
-	const toggleMark = (verseNumber: number, verseId: string) => {
-		const next = marks[verseNumber] ? null : "yellow";
+	/** Send a colour. The server toggles: the SAME colour clears the mark, a
+	 * different one recolours it. The optimistic layer mirrors that rule. */
+	const setMark = (verseNumber: number, verseId: string, color: string) => {
+		const next = marks[verseNumber] === color ? null : color;
 		setPendingMarks((p) => ({ ...p, [verseNumber]: next }));
 		markFetcher.submit(
-			{ verse: verseId, chapter: `${bookId}-${chapter}`, color: "yellow" },
+			{ verse: verseId, chapter: `${bookId}-${chapter}`, color },
 			{ method: "post", action: "/api/highlight" },
 		);
+	};
+	/** The gutter shortcut has no picker, so it sends back whatever colour is
+	 * already there (which clears it) or lays down the default. */
+	const toggleMark = (verseNumber: number, verseId: string) => {
+		setMark(verseNumber, verseId, marks[verseNumber] ?? DEFAULT_HIGHLIGHT);
 	};
 
 	const chapterUrl = `/scripture/${bookId}/${chapter}`;
@@ -969,6 +977,8 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			notesDegraded={canCapture && noteAnchors === null}
 			captureVerseId={verse.id}
 			captureVerseRef={verse.reference}
+			mark={marks[verse.verse_number]}
+			onMark={(color) => setMark(verse.verse_number, verse.id, color)}
 		/>
 	);
 
@@ -1127,7 +1137,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 											}
 										}}
 										className={`group relative block rounded-lg py-[9px] pl-10 pr-4 font-reading text-[20px] leading-relaxed text-ink outline-none transition-[box-shadow,background-color] duration-150 hover:bg-sel/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-selbar/60 lg:pl-14 ${
-											isActive ? "bg-sel" : mark ? `hl-${mark}` : ""
+											isActive ? `bg-sel ${mark ? `hl-${mark} hl-edge` : ""}` : mark ? `hl-${mark} hl-row` : ""
 										} ${signals || hasNote ? "lg:rounded-r-none lg:hover:rounded-r-none" : ""}`}
 									>
 										{/* ONE gutter container owns the number AND the mobile dot
@@ -1641,6 +1651,8 @@ function PanelBody({
 	notesDegraded,
 	captureVerseId,
 	captureVerseRef,
+	mark,
+	onMark,
 }: {
 	verseText: string;
 	isPending: boolean;
@@ -1656,6 +1668,10 @@ function PanelBody({
 	notesDegraded: boolean;
 	captureVerseId: string;
 	captureVerseRef: string;
+	/** the colour now on this verse, or undefined */
+	mark: string | undefined;
+	/** same colour again clears it — the toggle lives in the caller */
+	onMark: (color: string) => void;
 }) {
 	return (
 		<>
@@ -1665,7 +1681,30 @@ function PanelBody({
 			<blockquote className="mt-3 border-l-2 border-rule2 pl-3 font-reading text-[15px] leading-relaxed text-muted-foreground lg:hidden">
 				{verseText}
 			</blockquote>
-			{/* personal-notes A15 (gate-ratified): the personal register leads,
+			{/* Marks (docs/design/highlighting.md, slice 2). These are the
+			    KEYBOARD-reachable control — the gutter-number tap is a pointer
+			    shortcut on top of it, and a span cannot be focused. Pressing the
+			    colour already in force clears the mark. */}
+			{canCapture && (
+				<div className="mt-[18px] flex items-center gap-2">
+					<h3 className="font-ui text-[13px] font-normal text-muted-foreground">Mark</h3>
+					<div className="flex items-center gap-1.5">
+						{HIGHLIGHT_COLORS.map((color) => (
+							<button
+								key={color}
+								type="button"
+								onClick={() => onMark(color)}
+								aria-pressed={mark === color}
+								aria-label={mark === color ? `Remove the ${color} mark` : `Mark ${color}`}
+								className={`hl-${color} hl-swatch size-[18px] rounded-[3px] outline-none ring-offset-1 ring-offset-paper transition-[box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-selbar ${
+									mark === color ? "ring-2 ring-ink/50" : "hover:ring-2 hover:ring-rule2"
+								}`}
+							/>
+						))}
+					</div>
+				</div>
+			)}
+					{/* personal-notes A15 (gate-ratified): the personal register leads,
 			    above art. Rows print only when notes exist; the capture VERBS are
 			    affordances exempt from the print-nothing law — they are the scent
 			    (CF-20). Signed-out: neither prints (noteRows empty, canCapture

@@ -1,4 +1,5 @@
 import { getAuth, type AuthEnv } from "./auth.server";
+import { isHighlightColor, type HighlightColor } from "./highlight-colors";
 import { logEvent } from "./log.server";
 
 /**
@@ -12,12 +13,8 @@ import { logEvent } from "./log.server";
  * is enforced by the database, not by discipline.
  */
 
-export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink", "grey"] as const;
-export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
-
-export function isHighlightColor(v: string): v is HighlightColor {
-	return (HIGHLIGHT_COLORS as readonly string[]).includes(v);
-}
+export { HIGHLIGHT_COLORS, isHighlightColor, DEFAULT_HIGHLIGHT } from "./highlight-colors";
+export type { HighlightColor } from "./highlight-colors";
 
 export interface Highlight {
 	id: string;
