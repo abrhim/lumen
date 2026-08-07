@@ -1,0 +1,65 @@
+import { test, expect } from "@playwright/test";
+import { createE2eUser, type E2eUser } from "./support/session";
+
+/**
+ * Whole-verse marks — docs/design/highlighting.md, slice 1.
+ *
+ * The reload assertion is the point of the whole design. Marks are read through
+ * the caller's own PostgREST client rather than over Hyperdrive, because
+ * Hyperdrive caches reads ~60s and a mark that vanishes on reload is worthless.
+ * That is the failure this test exists to catch.
+ */
+
+const CHAPTER = "/scripture/alma/32";
+
+test("signed out: verse numbers carry no mark control", async ({ page }) => {
+	await page.goto(CHAPTER);
+	await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+	expect(await page.locator("[data-hl]").count()).toBe(0);
+});
+
+test.describe("signed in", () => {
+	let user: E2eUser;
+	test.beforeAll(async () => {
+		user = await createE2eUser("highlights");
+	});
+	test.afterAll(async () => {
+		await user?.cleanup();
+	});
+	test.beforeEach(async ({ context }) => {
+		await user.install(context);
+	});
+
+	test("a mark lands, survives a reload, and toggles off", async ({ page }) => {
+		await page.goto(CHAPTER);
+		const gutter = page.locator('[data-hl="21"]');
+		await expect(gutter).toBeVisible();
+
+		const verseRow = page.locator("#v21 a").first();
+		await expect(verseRow).not.toHaveClass(/hl-yellow/);
+
+		// mark it — and the tap must NOT navigate to ?verse=21
+		await gutter.click();
+		await expect(verseRow).toHaveClass(/hl-yellow/);
+		expect(new URL(page.url()).searchParams.get("verse")).toBeNull();
+
+		// the assertion the design exists for: still there after a full reload
+		await page.waitForTimeout(600);
+		await page.reload();
+		await expect(page.locator("#v21 a").first()).toHaveClass(/hl-yellow/);
+
+		// tapping again clears it, and that also persists
+		await page.locator('[data-hl="21"]').click();
+		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-yellow/);
+		await page.waitForTimeout(600);
+		await page.reload();
+		await expect(page.locator("#v21 a").first()).not.toHaveClass(/hl-yellow/);
+	});
+
+	test("a mark does not steal the word-study tap or the verse select", async ({ page }) => {
+		await page.goto(CHAPTER);
+		// tapping the verse TEXT still selects the verse
+		await page.locator("#v21 a").first().click();
+		await expect(page).toHaveURL(/\?verse=21/);
+	});
+});
