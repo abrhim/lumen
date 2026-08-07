@@ -1111,6 +1111,12 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 										to={isActive ? chapterUrl : `${chapterUrl}?verse=${verse.verse_number}`}
 										preventScrollReset
 										viewTransition
+										// an <a> is implicitly draggable, so a drag starting on verse text
+										// picks up the LINK instead of selecting words — the one gesture
+										// people reach for, and the gesture part-verse marks will need.
+										// The only loss is dragging a verse to the bookmark bar; href,
+										// keyboard, middle-click and the context menu all stay.
+										draggable={false}
 										aria-current={isActive ? "true" : undefined}
 										onClick={(e) => {
 											// Abram's click rules: an active text selection never
