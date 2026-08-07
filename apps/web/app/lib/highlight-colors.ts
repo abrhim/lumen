@@ -6,9 +6,21 @@
  * and the page dies on hydration (the same way VOTE_CAP did on /roadmap).
  * Same reason entitlements-keys.ts sits beside entitlements.server.ts.
  *
- * The SQL CHECK in scripts/migrate-highlights.mjs holds the same five names.
+ * The SQL CHECK in scripts/migrate-highlight-marks.mjs holds the same ten names,
+ * and app.css defines a --hl variable for each.
  */
-export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink", "grey"] as const;
+export const HIGHLIGHT_COLORS = [
+	"yellow",
+	"orange",
+	"red",
+	"pink",
+	"purple",
+	"blue",
+	"teal",
+	"green",
+	"brown",
+	"grey",
+] as const;
 export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
 
 export function isHighlightColor(v: string): v is HighlightColor {

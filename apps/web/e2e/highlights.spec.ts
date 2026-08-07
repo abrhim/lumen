@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { createE2eUser, type E2eUser } from "./support/session";
+import { HIGHLIGHT_COLORS } from "../app/lib/highlight-colors";
 
 /**
  * Whole-verse marks — docs/design/highlighting.md, slice 1.
@@ -32,6 +33,7 @@ test.describe("signed in", () => {
 
 	test("a mark lands, survives a reload, and toggles off", async ({ page }) => {
 		await page.goto(CHAPTER);
+		await page.waitForSelector("html[data-hydrated]");
 		const gutter = page.locator('[data-hl="21"]');
 		await expect(gutter).toBeVisible();
 
@@ -58,6 +60,7 @@ test.describe("signed in", () => {
 
 	test("a mark does not steal the word-study tap or the verse select", async ({ page }) => {
 		await page.goto(CHAPTER);
+		await page.waitForSelector("html[data-hydrated]");
 		// tapping the verse TEXT still selects the verse
 		await page.locator("#v21 a").first().click();
 		await expect(page).toHaveURL(/\?verse=21/);
@@ -78,8 +81,9 @@ test.describe("the colour picker", () => {
 
 	test("the panel offers five colours, and they are real buttons", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
-		const swatches = page.getByRole("button", { name: /^Mark (yellow|green|blue|pink|grey)$/ });
-		await expect(swatches).toHaveCount(5);
+		await page.waitForSelector("html[data-hydrated]");
+		const swatches = page.getByRole("button", { name: new RegExp(`^Mark (${HIGHLIGHT_COLORS.join("|")})$`) });
+		await expect(swatches).toHaveCount(HIGHLIGHT_COLORS.length);
 		// keyboard-reachable, which the gutter-number span is not
 		await swatches.first().focus();
 		await expect(swatches.first()).toBeFocused();
@@ -87,6 +91,7 @@ test.describe("the colour picker", () => {
 
 	test("a colour marks, a different colour recolours, the same colour clears", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
+		await page.waitForSelector("html[data-hydrated]");
 		const row = page.locator("#v21 a").first();
 
 		await page.getByRole("button", { name: "Mark green" }).click();
@@ -109,6 +114,7 @@ test.describe("the colour picker", () => {
 
 	test("the gutter shortcut clears whatever colour is there", async ({ page }) => {
 		await page.goto(`${CHAPTER}?verse=21`);
+		await page.waitForSelector("html[data-hydrated]");
 		await page.getByRole("button", { name: "Mark pink" }).click();
 		await expect(page.locator("#v21 a").first()).toHaveClass(/hl-pink/);
 		// the number tap carries no picker — it must still clear a pink mark
