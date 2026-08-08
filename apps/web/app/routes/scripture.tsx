@@ -5,6 +5,7 @@ import {
 	data,
 	isRouteErrorResponse,
 	useFetcher,
+	useLocation,
 	useNavigate,
 	useNavigation,
 	useNavigationType,
@@ -776,6 +777,7 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const navigation = useNavigation();
 	const navigationType = useNavigationType();
 	const navigate = useNavigate();
+	const location = useLocation();
 	const isMobile = useIsMobile();
 
 	/**
@@ -815,7 +817,9 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const [pickStyle, setPickStyle] = useState<MarkStyle>("highlight");
 
 	useEffect(() => {
-		if (!canMark) return;
+		// no canMark gate: a signed-out reader still gets Copy and Look up, and
+		// the colours become a sign-in door. Gating the whole listener made the
+		// feature invisible to exactly the audience arriving from search.
 		const read = () => {
 			const sel = window.getSelection();
 			if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
@@ -878,10 +882,15 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 			document.removeEventListener("mousedown", onDown);
 			document.removeEventListener("selectionchange", onChange);
 		};
-	}, [canMark, verses]);
+	}, [verses]);
 
 	const markSelection = (color: string) => {
 		if (!pick) return;
+		if (!canMark) {
+			// keep the reading they were in: sign in, come back, mark it
+			navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+			return;
+		}
 		if (pick.editing) {
 			markFetcher.submit(
 				{ intent: "update", id: pick.editing, color, style: pickStyle },

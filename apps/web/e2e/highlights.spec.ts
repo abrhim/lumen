@@ -13,10 +13,40 @@ import { HIGHLIGHT_COLORS } from "../app/lib/highlight-colors";
 
 const CHAPTER = "/scripture/alma/32";
 
-test("signed out: verse numbers carry no mark control", async ({ page }) => {
+test("signed out: no gutter shortcut, but the menu is still a door", async ({ page }) => {
 	await page.goto(CHAPTER);
+	await page.waitForSelector("html[data-hydrated]");
 	await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+	// the gutter shortcut writes immediately, so it stays signed-in only
 	expect(await page.locator("[data-hl]").count()).toBe(0);
+
+	// but selecting text must still offer something — this audience arrives
+	// from search and would otherwise never learn the feature exists
+	await page.locator("#v21").scrollIntoViewIfNeeded();
+	await page.evaluate(() => {
+		const el = document.querySelector("#v21 [data-verse-text]")!;
+		const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+		const nodes: Text[] = [];
+		let n: Node | null;
+		while ((n = w.nextNode())) nodes.push(n as Text);
+		const r = document.createRange();
+		r.setStart(nodes[0], 0);
+		r.setEnd(nodes[nodes.length - 1], 20);
+		const sel = window.getSelection()!;
+		sel.removeAllRanges();
+		sel.addRange(r);
+		document.dispatchEvent(new Event("selectionchange"));
+	});
+	const menu = page.getByRole("dialog", { name: "Mark the selected text" });
+	await expect(menu).toBeVisible();
+	await expect(menu.getByText("Pick a colour to sign in and keep it.")).toBeVisible();
+	await expect(menu.getByRole("button", { name: "Copy" })).toBeVisible();
+	// the style toggle is hidden — it decides nothing you can save
+	await expect(menu.getByRole("button", { name: "Underline" })).toHaveCount(0);
+
+	// a colour is a door back to this exact chapter, not a silent no-op
+	await menu.getByRole("button", { name: /Sign in to mark yellow/ }).click();
+	await expect(page).toHaveURL(/\/login\?next=%2Fscripture%2Falma%2F32/);
 });
 
 test.describe("signed in", () => {

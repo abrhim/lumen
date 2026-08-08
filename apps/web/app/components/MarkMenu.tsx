@@ -44,7 +44,7 @@ export function MarkMenu({
 	/** single-word selections only — word study from the selection */
 	onLookUp?: () => void;
 }) {
-	const MENU_W = 268;
+	const MENU_W = 288;
 	const MENU_H = 132;
 	const vw = typeof window === "undefined" ? 1024 : window.innerWidth;
 	const scrollX = typeof window === "undefined" ? 0 : window.scrollX;
@@ -79,6 +79,7 @@ export function MarkMenu({
 			}}
 			className="z-50 rounded-lg border border-rule2 bg-panel p-2 shadow-lg"
 		>
+			{canSave && (
 			<div className="flex items-center gap-1">
 				{(Object.keys(STYLE_LABEL) as MarkStyle[]).map((s) => (
 					<button
@@ -94,7 +95,8 @@ export function MarkMenu({
 					</button>
 				))}
 			</div>
-			<div className="mt-2 flex flex-wrap items-center gap-1.5">
+			)}
+			<div className={`flex items-center gap-1.5${canSave ? " mt-2" : ""}`}>
 				{HIGHLIGHT_COLORS.map((c) => (
 					<button
 						key={c}
@@ -108,6 +110,11 @@ export function MarkMenu({
 					/>
 				))}
 			</div>
+			{!canSave && (
+				<p className="mt-2 font-ui text-[11px] leading-snug text-muted-foreground">
+					Pick a colour to sign in and keep it.
+				</p>
+			)}
 			<div className="mt-2 flex items-center gap-3 border-t border-rule pt-2 font-ui text-[11px]">
 				<button type="button" onClick={onCopy} className="text-muted-foreground hover:text-ink">
 					Copy
