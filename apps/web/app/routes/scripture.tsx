@@ -61,6 +61,13 @@ import {
 	type VerseSpanInput,
 } from "~/lib/verse-offsets";
 import { MarkMenu, type MarkStyle } from "~/components/MarkMenu";
+import {
+	addGuestMark,
+	allGuestMarks,
+	clearGuestMarks,
+	guestKey,
+	guestMarksFor,
+} from "~/lib/guest-marks";
 import { getSessionUser, hasAuthCookie } from "../lib/auth.server";
 import { getChapterNoteAnchors } from "../lib/notes.server";
 import { notesEnabled } from "../lib/notes-enabled";
@@ -789,7 +796,38 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	 */
 	const markFetcher = useFetcher<{ ok: boolean; id: string | null }>();
 	const revalidator = useRevalidator();
-	const marks: ChapterMarks = loadedMarks;
+	const chapterId = `${bookId}-${chapter}`;
+	// guest marks are client-only: reading localStorage during SSR would be a
+	// hydration mismatch, so they arrive on the first effect instead
+	const [guest, setGuest] = useState<ChapterMarks>({});
+	useEffect(() => {
+		if (canCapture) return;
+		const byVerse: ChapterMarks = {};
+		for (const m of guestMarksFor(chapterId)) {
+			for (const sp of m.spans) {
+				const n = Number.parseInt(sp.verseId.slice(chapterId.length + 1), 10);
+				if (!Number.isFinite(n)) continue;
+				(byVerse[n] ??= []).push({
+					id: guestKey(m),
+					start: sp.start,
+					end: sp.end,
+					color: m.color,
+					style: m.style,
+				});
+			}
+		}
+		setGuest(byVerse);
+	}, [canCapture, chapterId]);
+
+	/** the account's marks and the guest's, painted by the same renderer */
+	const marks: ChapterMarks = canCapture
+		? loadedMarks
+		: (Object.fromEntries(
+				[...new Set([...Object.keys(loadedMarks), ...Object.keys(guest)])].map((k) => [
+					Number(k),
+					[...(loadedMarks[Number(k)] ?? []), ...(guest[Number(k)] ?? [])],
+				]),
+			) as ChapterMarks);
 	const canMark = canCapture;
 	useEffect(() => {
 		if (markFetcher.state === "idle" && markFetcher.data?.ok) revalidator.revalidate();
@@ -887,8 +925,29 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 	const markSelection = (color: string) => {
 		if (!pick) return;
 		if (!canMark) {
-			// keep the reading they were in: sign in, come back, mark it
-			navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+			// keep it locally. An account is needed to KEEP a mark across devices,
+			// not to make one — the posture guest notes already have.
+			addGuestMark({ chapterId, color, style: pickStyle, quote: pick.quote, spans: pick.spans });
+			setGuest((g) => {
+				const next: ChapterMarks = { ...g };
+				for (const sp of pick.spans) {
+					const n = Number.parseInt(sp.verseId.slice(chapterId.length + 1), 10);
+					if (!Number.isFinite(n)) continue;
+					next[n] = [
+						...(next[n] ?? []),
+						{
+							id: guestKey({ spans: pick.spans }),
+							start: sp.start,
+							end: sp.end,
+							color,
+							style: pickStyle,
+						},
+					];
+				}
+				return next;
+			});
+			window.getSelection()?.removeAllRanges();
+			setPick(null);
 			return;
 		}
 		if (pick.editing) {
@@ -911,6 +970,38 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 		window.getSelection()?.removeAllRanges();
 		setPick(null);
 	};
+
+	/**
+	 * Adopt whatever was marked before signing in. The store is cleared only
+	 * after every mark lands, so a failure keeps them for the next attempt
+	 * rather than dropping a reader's work.
+	 */
+	const adopting = useRef(false);
+	useEffect(() => {
+		if (!canCapture || adopting.current) return;
+		const pending = allGuestMarks();
+		if (pending.length === 0) return;
+		adopting.current = true;
+		void (async () => {
+			let ok = true;
+			for (const m of pending) {
+				const body = new FormData();
+				body.set("intent", "create");
+				body.set("chapter", m.chapterId);
+				body.set("color", m.color);
+				body.set("style", m.style);
+				body.set("quote", m.quote);
+				for (const sp of m.spans) body.append("span", `${sp.verseId}:${sp.start}:${sp.end}`);
+				const res = await fetch("/api/highlight", { method: "post", body });
+				if (!res.ok) ok = false;
+			}
+			if (ok) {
+				clearGuestMarks();
+				revalidator.revalidate();
+			}
+			adopting.current = false;
+		})();
+	}, [canCapture]);
 
 	/** The panel picker. Recolours the whole-verse mark if there is one, adds
 	 * one if there is not, and clears it when the colour already in force is
@@ -1481,6 +1572,17 @@ export default function Scripture({ loaderData }: Route.ComponentProps) {
 								}
 							}}
 							onColor={markSelection}
+							{...(canMark && pick.spans.length > 0
+								? {
+										onNote: () => {
+											// the mark first, so the passage is kept even if the note
+											// is abandoned; then the composer, anchored to the verse
+											// the passage begins in
+											markSelection(pick.color ?? DEFAULT_HIGHLIGHT);
+											navigate(`/notes/new?anchor=${pick.spans[0].verseId}`);
+										},
+									}
+								: {})}
 							onCopy={() => {
 								navigator.clipboard?.writeText(pick.quote);
 								window.getSelection()?.removeAllRanges();

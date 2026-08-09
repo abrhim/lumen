@@ -589,4 +589,8 @@ a.note-extlink:hover { text-decoration-style: solid; }
 	   select this", not "this navigates" (Abram — the pointer cursor was the
 	   tell that the affordance was wrong) */
 	cursor: text;
+	/* iOS shows its own callout on a long press, which competes with the mark
+	   menu for the same gesture. Suppressing it removes the system Copy too —
+	   which is exactly why the mark menu carries Copy of its own. */
+	-webkit-touch-callout: none;
 }
