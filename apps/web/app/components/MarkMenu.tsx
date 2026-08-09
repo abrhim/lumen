@@ -29,6 +29,7 @@ export function MarkMenu({
 	onCopy,
 	onRemove,
 	onLookUp,
+	onNote,
 }: {
 	/** the selection's bounding box, in viewport coordinates */
 	rect: { top: number; bottom: number; left: number; width: number };
@@ -43,6 +44,8 @@ export function MarkMenu({
 	onRemove?: () => void;
 	/** single-word selections only — word study from the selection */
 	onLookUp?: () => void;
+	/** write a note about this passage; signed-in only */
+	onNote?: () => void;
 }) {
 	const MENU_W = 288;
 	const MENU_H = 132;
@@ -102,7 +105,7 @@ export function MarkMenu({
 						key={c}
 						type="button"
 						onClick={() => onColor(c)}
-						aria-label={canSave ? `Mark ${c}` : `Sign in to mark ${c}`}
+						aria-label={`Mark ${c}`}
 						aria-pressed={activeColor === c}
 						className={`hl-${c} hl-swatch size-[20px] rounded-[3px] outline-none transition-[box-shadow] focus-visible:ring-2 focus-visible:ring-selbar ${
 							activeColor === c ? "ring-2 ring-ink/50" : "hover:ring-2 hover:ring-rule2"
@@ -112,10 +115,15 @@ export function MarkMenu({
 			</div>
 			{!canSave && (
 				<p className="mt-2 font-ui text-[11px] leading-snug text-muted-foreground">
-					Pick a colour to sign in and keep it.
+					Marks are kept on this device. Sign in to keep them everywhere.
 				</p>
 			)}
 			<div className="mt-2 flex items-center gap-3 border-t border-rule pt-2 font-ui text-[11px]">
+				{onNote && (
+					<button type="button" onClick={onNote} className="text-muted-foreground hover:text-ink">
+						Note
+					</button>
+				)}
 				<button type="button" onClick={onCopy} className="text-muted-foreground hover:text-ink">
 					Copy
 				</button>

@@ -13,7 +13,7 @@ import { HIGHLIGHT_COLORS } from "../app/lib/highlight-colors";
 
 const CHAPTER = "/scripture/alma/32";
 
-test("signed out: no gutter shortcut, but the menu is still a door", async ({ page }) => {
+test("signed out: the menu keeps a mark locally, and it survives a reload", async ({ page }) => {
 	await page.goto(CHAPTER);
 	await page.waitForSelector("html[data-hydrated]");
 	await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -39,14 +39,21 @@ test("signed out: no gutter shortcut, but the menu is still a door", async ({ pa
 	});
 	const menu = page.getByRole("dialog", { name: "Mark the selected text" });
 	await expect(menu).toBeVisible();
-	await expect(menu.getByText("Pick a colour to sign in and keep it.")).toBeVisible();
+	await expect(menu.getByText("Marks are kept on this device. Sign in to keep them everywhere.")).toBeVisible();
 	await expect(menu.getByRole("button", { name: "Copy" })).toBeVisible();
 	// the style toggle is hidden — it decides nothing you can save
 	await expect(menu.getByRole("button", { name: "Underline" })).toHaveCount(0);
 
-	// a colour is a door back to this exact chapter, not a silent no-op
-	await menu.getByRole("button", { name: /Sign in to mark yellow/ }).click();
-	await expect(page).toHaveURL(/\/login\?next=%2Fscripture%2Falma%2F32/);
+	// a colour KEEPS the mark locally — no account, no bounce to /login
+	await menu.getByRole("button", { name: "Mark yellow" }).click();
+	await expect(page).toHaveURL(/\/scripture\/alma\/32$/);
+	await expect(page.locator("#v21 .hl-yellow")).toHaveCount(1);
+
+	// and it is still there after a reload, which is the whole point of keeping
+	// it: a stranger from search can try the feature and not lose it
+	await page.reload();
+	await page.waitForSelector("html[data-hydrated]");
+	await expect(page.locator("#v21 .hl-yellow")).toHaveCount(1);
 });
 
 test.describe("signed in", () => {
@@ -249,5 +256,60 @@ test.describe("passage marks", () => {
 		await page.locator("#v22 [data-mark-id]").first().click();
 		await page.getByRole("button", { name: "Remove" }).click();
 		await expect(page.locator("#v22 .hl-red")).toHaveCount(0);
+	});
+});
+
+test.describe("guest marks are adopted on sign in", () => {
+	let user: E2eUser;
+	test.beforeAll(async () => {
+		user = await createE2eUser("adopt");
+	});
+	test.afterAll(async () => {
+		await user?.cleanup();
+	});
+
+	test("a mark made signed OUT becomes an account mark, and stops being local", async ({
+		page,
+		context,
+	}) => {
+		// signed out: make a mark
+		await page.goto(CHAPTER);
+		await page.waitForSelector("html[data-hydrated]");
+		await page.evaluate(() => {
+			const el = document.querySelector("#v23 [data-verse-text]")!;
+			const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+			const nodes: Text[] = [];
+			let n: Node | null;
+			while ((n = w.nextNode())) nodes.push(n as Text);
+			const r = document.createRange();
+			r.setStart(nodes[0], 0);
+			r.setEnd(nodes[nodes.length - 1], 18);
+			const sel = window.getSelection()!;
+			sel.removeAllRanges();
+			sel.addRange(r);
+			document.dispatchEvent(new Event("selectionchange"));
+		});
+		await page.getByRole("dialog", { name: "Mark the selected text" }).getByRole("button", { name: "Mark teal" }).click();
+		await expect(page.locator("#v23 .hl-teal")).toHaveCount(1);
+		expect(await page.evaluate(() => localStorage.getItem("lumen-guest-marks") !== null)).toBe(true);
+
+		// now sign in, in the same browser
+		await user.install(context);
+		await page.reload();
+		await page.waitForSelector("html[data-hydrated]");
+
+		// the mark is still on the page, and the local copy is gone: it was adopted
+		await expect(page.locator("#v23 .hl-teal")).toHaveCount(1, { timeout: 8000 });
+		await expect
+			.poll(async () => page.evaluate(() => localStorage.getItem("lumen-guest-marks")), {
+				timeout: 8000,
+			})
+			.toBeNull();
+
+		// and it is the ACCOUNT's now — it survives clearing the device store
+		await page.evaluate(() => localStorage.clear());
+		await page.reload();
+		await page.waitForSelector("html[data-hydrated]");
+		await expect(page.locator("#v23 .hl-teal")).toHaveCount(1);
 	});
 });
