@@ -3,13 +3,6 @@ import { Link, data, isRouteErrorResponse, useSearchParams } from "react-router"
 import { sql } from "drizzle-orm";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
-import {
-	Accordion,
-	AccordionContent,
-	AccordionItem,
-	AccordionTrigger,
-} from "~/components/ui/accordion";
-import { RefRow } from "~/components/RefRow";
 import { getSessionUser } from "~/lib/auth.server";
 import { notesEnabled } from "~/lib/notes-enabled";
 import { canViewCollection, getCollectionAccess } from "~/lib/collection-access.server";
@@ -63,6 +56,10 @@ interface Para {
 	t: number;
 	chapter?: { label: string; t: number };
 	refs: { ref: string; book: string; chapter: number; verse: number; t: number }[];
+	/** people/places (MENTIONS) and principles (TEACHES) said in this
+	 * paragraph — the margin shows them WHERE they are said (phase 1 of the
+	 * collection pitch), not as an aggregate side list */
+	ents: { id: string; name: string; kind: "teaches" | "mentions"; t: number }[];
 	frags: Frag[];
 }
 
@@ -148,7 +145,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			words + w > 200;
 		const frag = { t: r1(t), e: r1(e), text };
 		if (breakHere) {
-			cur = { seq, t: r1(t), chapter: pendingChapter, refs: [], frags: [frag] };
+			cur = { seq, t: r1(t), chapter: pendingChapter, refs: [], ents: [], frags: [frag] };
 			pendingChapter = undefined;
 			paras.push(cur);
 			words = w;
@@ -189,26 +186,30 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		}
 	}
 
-	// References index: people/places and principles with moment counts.
-	const people: { id: string; name: string; type: string; count: number }[] = [];
-	const principles: { id: string; name: string; type: string; count: number }[] = [];
+	// Entity mentions annotate their paragraph, exactly as verse refs do —
+	// one chip per entity per paragraph, at its first moment there. The
+	// aggregate people/principles index is gone on purpose (Abram): the margin
+	// IS the index now, placed where the words are said.
 	const lensMoments: Moment[] = [];
 	let lensName: string | null = null;
 	let lensType = "person";
 	for (const e of entityEdges as any[]) {
 		const mentions = jb(e.metadata).mentions as Moment[];
-		const type = e.rel_type === "TEACHES" ? "principle" : String(e.entity_type);
-		if (e.rel_type === "TEACHES")
-			principles.push({ id: e.to_id, name: e.name, type, count: mentions.length });
-		else people.push({ id: e.to_id, name: e.name, type, count: mentions.length });
+		const kind = e.rel_type === "TEACHES" ? ("teaches" as const) : ("mentions" as const);
+		const seen = new Set<number>();
+		for (const m of mentions) {
+			const pi = paraOf(num(m.seq));
+			if (seen.has(pi)) continue;
+			seen.add(pi);
+			paras[pi].ents.push({ id: String(e.to_id), name: String(e.name), kind, t: num(m.t) });
+		}
 		if (lensId === e.to_id) {
 			lensName = e.name;
-			lensType = type;
+			lensType = e.rel_type === "TEACHES" ? "principle" : String(e.entity_type);
 			lensMoments.push(...mentions);
 		}
 	}
-	people.sort((a, b) => b.count - a.count);
-	principles.sort((a, b) => b.count - a.count);
+	for (const p of paras) p.ents.sort((a, b) => a.t - b.t);
 
 	// Lens: which paragraphs survive the filter.
 	let lens: { id: string; name: string; type: string; count: number; paraIdx: number[] } | null =
@@ -230,8 +231,6 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			durationS,
 			paras,
 			chapters: chapters.map(({ label, t }) => ({ label, t })),
-			people,
-			principles,
 			lens,
 		},
 		{ headers },
@@ -397,80 +396,13 @@ function MobileVideoBar({
 	);
 }
 
-/** Option B rows: the whole row applies the lens (filtering is the episode-
- * native action); the node page is reached from the lens bar's "About X →". */
-function IndexList({
-	items,
-	lensHref,
-}: {
-	items: { id: string; name: string; type: string; count: number }[];
-	lensHref: (id: string) => string;
-}) {
-	return (
-		<ul className="list-none">
-			{items.map((it) => (
-				<li key={it.id}>
-					<RefRow to={lensHref(it.id)} ariaLabel={`Show the ${it.count} passages about ${it.name}`}>
-						<span className="font-reading text-[15px] text-ink">{it.name}</span>
-						<span className="font-ui text-xs tabular-nums text-faint">{it.count}</span>
-					</RefRow>
-				</li>
-			))}
-		</ul>
-	);
-}
 
-/** Flat variant for the mobile sheet (the sheet is already an opt-in layer;
- * accordions inside it would be friction on friction). */
-function IndexRows({
-	heading,
-	items,
-	lensHref,
-}: {
-	heading: string;
-	items: { id: string; name: string; type: string; count: number }[];
-	lensHref: (id: string) => string;
-}) {
-	return (
-		<section className="min-w-0 flex-1">
-			<h3 className="font-reading text-sm italic text-faint">{heading}</h3>
-			<div className="mt-2">
-				<IndexList items={items} lensHref={lensHref} />
-			</div>
-		</section>
-	);
-}
 
-/** Desktop rail: each reference KIND is an accordion section. */
-function IndexAccordionItem({
-	value,
-	heading,
-	items,
-	lensHref,
-}: {
-	value: string;
-	heading: string;
-	items: { id: string; name: string; type: string; count: number }[];
-	lensHref: (id: string) => string;
-}) {
-	if (items.length === 0) return null;
-	return (
-		<AccordionItem value={value} className="border-rule">
-			<AccordionTrigger className="py-2.5 hover:no-underline">
-				<span className="flex items-baseline gap-2 font-reading text-base text-ink">
-					{heading}
-					<span className="font-ui text-xs not-italic tabular-nums">{items.length}</span>
-				</span>
-			</AccordionTrigger>
-			<AccordionContent className="pb-3">
-				<IndexList items={items} lensHref={lensHref} />
-			</AccordionContent>
-		</AccordionItem>
-	);
-}
 
 interface ParaBlockProps {
 	p: Para;
+	/** lens links need the episode; captureEpisodeId is empty signed out */
+	episodeId: string;
 	active: boolean;
 	/** playhead seconds; only meaningful when active (−1 otherwise, kept stable
 	 * so the memo comparator lets inactive paragraphs skip re-render) */
@@ -485,7 +417,7 @@ interface ParaBlockProps {
 }
 
 const ParaBlock = memo(
-	function ParaBlock({ p, active, posT, showGap, lensed, onSeek, captureEpisodeId }: ParaBlockProps) {
+	function ParaBlock({ p, episodeId, active, posT, showGap, lensed, onSeek, captureEpisodeId }: ParaBlockProps) {
 		// The fragment the playhead is inside — last one started at-or-before posT.
 		const uIdx = active ? p.frags.reduce((acc, f, i) => (f.t <= posT ? i : acc), -1) : -1;
 		return (
@@ -504,7 +436,7 @@ const ParaBlock = memo(
 					</h3>
 				)}
 				<div className={`group relative mt-4 rounded px-2 py-1 ${active ? "bg-sel" : ""}`}>
-					{p.refs.length > 0 && (
+					{(p.refs.length > 0 || p.ents.length > 0) && (
 						<span className="float-right ml-4 mt-0.5 hidden text-right font-ui text-xs leading-5 sm:block">
 							{p.refs.map((r) => (
 								<Link
@@ -513,6 +445,25 @@ const ParaBlock = memo(
 									className="block whitespace-nowrap text-primary decoration-rule2 underline-offset-2 hover:underline"
 								>
 									{r.ref}
+								</Link>
+							))}
+							{/* the margin speaks the reader's dot language: blue = a
+							    principle TAUGHT here, green = a person/place mentioned.
+							    Each chip lenses the episode to its passages. */}
+							{p.ents.map((en) => (
+								<Link
+									key={`${en.id}${en.t}`}
+									to={`/media/${episodeId}?lens=${encodeURIComponent(en.id)}`}
+									aria-label={`Show every passage about ${en.name}`}
+									className="block max-w-[10rem] truncate text-muted-foreground decoration-rule2 underline-offset-2 hover:text-ink hover:underline"
+								>
+									<span
+										aria-hidden
+										className={`mr-1.5 inline-block size-[5px] rounded-full align-middle ${
+											en.kind === "teaches" ? "bg-dot-teaches" : "bg-dot-mentions"
+										}`}
+									/>
+									{en.name}
 								</Link>
 							))}
 						</span>
@@ -558,7 +509,7 @@ const ParaBlock = memo(
 							</span>
 						))}
 					</span>
-					{p.refs.length > 0 && (
+					{(p.refs.length > 0 || p.ents.length > 0) && (
 						<span className="mt-1 block font-ui text-xs sm:hidden">
 							<span className="text-faint">— </span>
 							{p.refs.map((r, i) => (
@@ -569,7 +520,24 @@ const ParaBlock = memo(
 									>
 										{r.ref}
 									</Link>
-									{i < p.refs.length - 1 ? ", " : ""}
+									{i < p.refs.length - 1 || p.ents.length > 0 ? ", " : ""}
+								</span>
+							))}
+							{p.ents.map((en, i) => (
+								<span key={`${en.id}${en.t}`}>
+									<Link
+										to={`/media/${episodeId}?lens=${encodeURIComponent(en.id)}`}
+										className="text-muted-foreground decoration-rule2 underline-offset-2 hover:underline"
+									>
+										<span
+											aria-hidden
+											className={`mr-1 inline-block size-[5px] rounded-full align-middle ${
+												en.kind === "teaches" ? "bg-dot-teaches" : "bg-dot-mentions"
+											}`}
+										/>
+										{en.name}
+									</Link>
+									{i < p.ents.length - 1 ? ", " : ""}
 								</span>
 							))}
 						</span>
@@ -580,6 +548,7 @@ const ParaBlock = memo(
 	},
 	(prev, next) =>
 		prev.p === next.p &&
+		prev.episodeId === next.episodeId &&
 		prev.showGap === next.showGap &&
 		prev.lensed === next.lensed &&
 		prev.onSeek === next.onSeek &&
@@ -590,6 +559,7 @@ const ParaBlock = memo(
 
 function Transcript({
 	paras,
+	episodeId,
 	activeIdx,
 	posT,
 	onSeek,
@@ -597,6 +567,7 @@ function Transcript({
 	captureEpisodeId,
 }: {
 	paras: Para[];
+	episodeId: string;
 	activeIdx: number;
 	posT: number;
 	onSeek: (t: number) => void;
@@ -615,6 +586,7 @@ function Transcript({
 					<ParaBlock
 						key={p.seq}
 						p={p}
+						episodeId={episodeId}
 						active={active}
 						posT={active ? posT : -1}
 						showGap={showGap}
@@ -638,8 +610,6 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 		durationS,
 		paras,
 		chapters,
-		people,
-		principles,
 		lens,
 		canCapture,
 	} = loaderData;
@@ -654,7 +624,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	const [autoScroll, setAutoScroll] = useState(true);
 	const iframeRef = useRef<HTMLIFrameElement | null>(null);
 	const isMobile = useIsMobile();
-	const [sheet, setSheet] = useState<null | "chapters" | "refs">(null);
+	const [sheet, setSheet] = useState<null | "chapters">(null);
 
 	useEffect(() => {
 		const onMessage = (ev: MessageEvent) => {
@@ -719,7 +689,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	);
 
 	return (
-		<main data-plate="wide" className="mx-auto max-w-6xl px-6 pb-20 pt-10 lg:pb-10">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 pb-20 pt-10 lg:pb-10">
 			{header}
 			{isMobile && hasVideo && (
 				<MobileVideoBar
@@ -754,7 +724,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 					</p>
 				</div>
 			)}
-			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)_14rem]">
+			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
 				<nav aria-label="Chapters" className="hidden lg:block">
 					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
 					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -792,6 +762,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 				<div>
 					<Transcript
 						paras={paras}
+						episodeId={episodeId}
 						activeIdx={activeIdx}
 						posT={followT ?? -1}
 						onSeek={seek}
@@ -799,26 +770,6 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						captureEpisodeId={canCapture ? episodeId : ""}
 					/>
 				</div>
-				<aside className="mt-12 hidden lg:mt-0 lg:block">
-					{/* The rail scrolls independently of the reading column. */}
-					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-						<h2 className="font-display text-lg font-medium tracking-tight text-ink">References</h2>
-						<Accordion type="multiple" className="mt-2">
-							<IndexAccordionItem
-								value="people"
-								heading="People & places"
-								items={people}
-								lensHref={lensHref}
-							/>
-							<IndexAccordionItem
-								value="principles"
-								heading="Principles"
-								items={principles}
-								lensHref={lensHref}
-							/>
-						</Accordion>
-					</div>
-				</aside>
 			</div>
 
 			{/* Mobile bottom bar: the rails, reachable from any scroll depth. */}
@@ -829,9 +780,6 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 				<button type="button" onClick={() => setSheet("chapters")} className="hover:underline">
 					Chapters
 				</button>
-				<button type="button" onClick={() => setSheet("refs")} className="hover:underline">
-					References
-				</button>
 			</nav>
 			{/* Sheets are MOUNT-GATED on isMobile (portals escape hidden wrappers). */}
 			{isMobile && sheet !== null && (
@@ -840,12 +788,11 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						<SheetHeader className="px-0">
 							<SheetTitle asChild>
 								<h2 className="font-display text-lg font-medium tracking-tight text-ink">
-									{sheet === "chapters" ? "Chapters" : "References"}
+									Chapters
 								</h2>
 							</SheetTitle>
 						</SheetHeader>
-						{sheet === "chapters" ? (
-							<ul className="list-none border-l border-rule">
+						<ul className="list-none border-l border-rule">
 								{chapters.map((c) => (
 									<li key={c.label}>
 										<button
@@ -862,18 +809,6 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 									</li>
 								))}
 							</ul>
-						) : (
-							// Any link tap inside closes the sheet — the lens result should be visible.
-							<div
-								className="space-y-8"
-								onClickCapture={(e) => {
-									if ((e.target as HTMLElement).closest("a")) setSheet(null);
-								}}
-							>
-								<IndexRows heading="People & places" items={people} lensHref={lensHref} />
-								<IndexRows heading="Principles" items={principles} lensHref={lensHref} />
-							</div>
-						)}
 					</SheetContent>
 				</Sheet>
 			)}
