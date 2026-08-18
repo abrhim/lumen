@@ -510,6 +510,23 @@ export function runDeterministicExtraction(utterances, ctx) {
 		name.length <= 2 && !new RegExp(`\\b${name}\\b`).test(text);
 	// (9) self-correction — "not Lamoni," retracts the mention.
 	const selfCorrected = (name, text) => new RegExp(`\\bnot\\s+${name}\\b`, 'i').test(text);
+	// (10) preceding-capital (round 2: "Jackson Paul" the podcaster, "Quick
+	//      Media" the company, "Father Gabriel" the guest) — a capitalized
+	//      token immediately before the name makes it the tail of a modern
+	//      full name or title. Honorifics canon actually uses are exempt.
+	// exempt honorifics canon uses AND capitalized discourse-starters —
+	// spoken transcripts begin sentences with these constantly ("And
+	// Abraham built an altar")
+	const PRECEDING_EXEMPT = new Set([
+		'King', 'Queen', 'Prophet',
+		'And', 'But', 'So', 'The', 'Then', 'When', 'Now', 'For', 'Behold',
+		'Because', 'If', 'As', 'Or', 'Like', 'Well', 'Yeah', 'That', 'This',
+		'With', 'From', 'In', 'On', 'At', 'To', 'By', 'Of', 'Where', 'While',
+	]);
+	const precedingCapital = (name, text) => {
+		const m = new RegExp(`([A-Z][a-z]+)\\s+${name}\\b`).exec(text);
+		return m !== null && !PRECEDING_EXEMPT.has(m[1]);
+	};
 	for (const u of utterances) {
 		for (const hit of aliasMatchCandidates(u.text, baseTable)) {
 			const kind = kindById.get(hit.id);
@@ -521,6 +538,7 @@ export function runDeterministicExtraction(utterances, ctx) {
 			}
 			const nameEsc = matchedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 			if (
+				precedingCapital(nameEsc, u.text) ||
 				surnameFollows(nameEsc, u.text) ||
 				FIXED_PHRASES.some((re) => re.test(u.text)) ||
 				prepositionBook(matchedName, u.text) ||
