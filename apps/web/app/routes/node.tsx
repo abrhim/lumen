@@ -79,7 +79,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	if (!KNOWN_SLUGS.has(params.type ?? "")) throw data(null, { status: 404 });
 
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
-	const [[entity], verseEdges, entityEdges, collectionEdges, access] = await Promise.all([
+	const [[entity], verseEdges, entityEdges, collectionEdges, hostEdges, access] = await Promise.all([
 		db.execute(sql`SELECT id, entity_type, name, description, collection_id
 			FROM lumen.entities WHERE id = ${id}`),
 		// Verse-side references: any edge whose other end is a verse.
@@ -108,6 +108,16 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			JOIN lumen.entities ep ON ep.id = g.from_id
 			JOIN lumen.collections c ON c.id = g.collection_id
 			WHERE g.to_id = ${id} AND g.source = g.collection_id || '-extraction'`),
+		// Curated host attribution (SoJ phase 3): episodes FEATURE their
+		// presenters via host-curated edges — a fifth query rather than a
+		// widened Connections gate, and deliberately not the -extraction path
+		// (whose metadata contract requires a mentions array).
+		db.execute(sql`SELECT g.from_id AS episode_id, ep.name AS episode_name,
+				ep.metadata AS episode_meta, g.collection_id, c.name AS collection_name
+			FROM lumen.edges g
+			JOIN lumen.entities ep ON ep.id = g.from_id
+			JOIN lumen.collections c ON c.id = g.collection_id
+			WHERE g.to_id = ${id} AND g.rel_type = 'FEATURES' AND g.source = 'host-curated'`),
 		getCollectionAccess(db, user?.id ?? null),
 	]);
 	if (!entity) throw data(null, { status: 404, headers });
@@ -205,6 +215,18 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		lensEpisode: [...g.byEpisode.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
 	})).sort((a, b) => b.total - a.total);
 
+	// Hosted episodes: per-collection visibility, newest first.
+	const hostedEpisodes = (hostEdges as any[])
+		.filter((e) => canViewCollection(access, String(e.collection_id)))
+		.map((e) => ({
+			id: String(e.episode_id),
+			name: String(e.episode_name),
+			collectionId: String(e.collection_id),
+			collectionName: String(e.collection_name),
+			uploadDate: String(jb(e.episode_meta)?.upload_date ?? ""),
+		}))
+		.sort((a, b) => b.uploadDate.localeCompare(a.uploadDate));
+
 	// Opt-in graph view (?graph=1&depth=N): the node page hosts the local graph.
 	let graph: { degraded: boolean; neighborhood?: unknown; entityId: string; depth: 1 | 2 | 3 } | null =
 		null;
@@ -230,6 +252,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			scripture,
 			verseRefCount,
 			groups: [...groups.entries()].map(([label, items]) => ({ label, items })),
+			hostedEpisodes,
 			collections: collectionGroups,
 			mentionTotal,
 			graph,
@@ -253,7 +276,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function NodeDetail({ loaderData }: Route.ComponentProps) {
-	const { entity, scripture, verseRefCount, groups, collections, graph } = loaderData;
+	const { entity, scripture, verseRefCount, groups, hostedEpisodes, collections, graph } = loaderData;
 	const navigate = useNavigate();
 	const location = useLocation();
 	const graphInvoker = useRef<HTMLElement | null>(null);
@@ -299,6 +322,28 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 						onReadVerse={(t) => navigate(`/scripture/${t.book}/${t.chapter}?verse=${t.verse}`)}
 					/>
 				</Suspense>
+			)}
+
+			{hostedEpisodes.length > 0 && (
+				<section className="mt-10">
+					<h2 className="font-reading text-sm text-muted-foreground">
+						Episodes <span className="not-italic">· {hostedEpisodes.length}</span>
+					</h2>
+					<ul className="mt-3 list-none">
+						{hostedEpisodes.map((ep) => (
+							<li key={ep.id}>
+								<RefRow to={`/media/${ep.id}`} ariaLabel={`Open ${ep.name}`}>
+									<span className="min-w-0 flex-initial truncate font-reading text-[15px] text-ink">
+										{ep.name}
+									</span>
+									<span className="whitespace-nowrap font-ui text-xs text-faint">
+										{ep.collectionName}
+									</span>
+								</RefRow>
+							</li>
+						))}
+					</ul>
+				</section>
 			)}
 
 			{scripture.length > 0 && (
