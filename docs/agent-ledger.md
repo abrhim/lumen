@@ -40,3 +40,22 @@ next port when 4179 is taken, so a stale dev server means your tooling is
 talking to a different process than you think.
 
 Runbook: `docs/ops/local-stack.md`.
+
+## 2026-08-18 — YouTube media downloads 403 on stable yt-dlp
+
+The brew-installed yt-dlp (2026.07.04, latest stable) still reads metadata
+fine — discover resolves all 58 SoJ episodes — but every actual media
+download returns 403. YouTube's SABR/PO-token enforcement rotated past the
+stable release; `web_safari`/`ios`/`tv` clients yield only storyboards or
+DRM, `android_vr` lists real m4a formats whose URLs still 403. The fix that
+worked: yt-dlp **nightly** via `uv tool install --force -p 3.12
+--prerelease=allow "yt-dlp[default]"` (ships yt-dlp-ejs, the JS challenge
+solver; node is already present). The nightly lands in `~/.local/bin`,
+which shadows `/opt/homebrew/bin` in PATH, and the pipeline's `childEnv`
+is subtractive so child processes inherit that PATH — no code change.
+
+Implications: the weekly Unshaken re-run fetches nothing new most weeks so
+it will look healthy until the next new episode 403s; and any environment
+without `~/.local/bin` early in PATH (cron, a fresh shell profile) silently
+falls back to the stale brew binary. Check `yt-dlp --version` before
+blaming the pipeline.
