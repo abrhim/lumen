@@ -35,7 +35,9 @@ const VERDICT_SCHEMA = {
 	},
 }
 
-const packet = (i) => `data/podcasts/unshaken/eval/round-${round}/shard-${String(i).padStart(2, '0')}.json`
+const show = parsedArgs?.show ?? 'unshaken'
+if (!/^[a-z0-9-]+$/.test(show)) throw new Error(`unsafe show id: ${show}`)
+const packet = (i) => `data/podcasts/${show}/eval/round-${round}/shard-${String(i).padStart(2, '0')}.json`
 
 const evaluatorPrompt = (i) => `Read docs/features/unshaken-extraction/eval-prompt.md and execute it
 EXACTLY, with this single parameter:

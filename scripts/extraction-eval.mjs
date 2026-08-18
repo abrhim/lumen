@@ -15,9 +15,12 @@ import { scrubSecrets, writeArtifactAtomic } from './ingest-podcast/util.mjs';
 import { spokenNumberToInt } from './ingest-podcast/extract-lib.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DIR = join(ROOT, 'data', 'podcasts', 'unshaken');
-const SHOW = 'unshaken';
-const EPISODES = JSON.parse(readFileSync(join(DIR, 'episodes.json'), 'utf8')).episodes.map((e) => e.id);
+// Parameterized by --show (second-show): resolved in main() BEFORE any
+// derivation runs; every reader below goes through these. The eval PROMPT
+// and its drift baseline stay shared across shows deliberately — the
+// evaluator rubric is show-independent, so one hash pin guards all shows.
+let DIR = join(ROOT, 'data', 'podcasts', 'unshaken');
+let EPISODES = [];
 
 // gate strata (plan §eval, Decisions A5): pass = point ≥ gate AND Wilson LB
 // ≥ gate−0.08 AND n ≥ floor. Trap floor: ≥2 missed traps of a stratum VOIDS it.
@@ -266,7 +269,22 @@ async function buildContext(sql, artifacts) {
 		chapterCount: Object.fromEntries(chapterRows.map((c) => [c.book_id, Number(c.n)])),
 	};
 	const blockChaptersByEpisode = new Map();
-	for (const ep of episodesMeta) blockChaptersByEpisode.set(ep.id, anchorsForBlock(ep.spans, lookup));
+	for (const ep of episodesMeta) {
+		if (ep.spans == null) {
+			// no-block (verbatim shows): the chapters the episode actually CITED
+			// stand in for the block everywhere downstream — verse traps swap
+			// into other cited chapters, chapter traps swap among them, and
+			// evidence alternatives come from them. Derivation stays
+			// deterministic: cited chapters come from the artifact itself.
+			const a = artifacts.get(ep.id);
+			const cited = a
+				? [...new Set(a.mentions.filter((m) => m.kind === 'chapter').map((m) => m.target))].sort()
+				: [];
+			blockChaptersByEpisode.set(ep.id, cited);
+		} else {
+			blockChaptersByEpisode.set(ep.id, anchorsForBlock(ep.spans, lookup));
+		}
+	}
 	const allChapters = [...new Set([...blockChaptersByEpisode.values()].flat())];
 	const verseRows = await sql`SELECT id, chapter_id, text FROM lumen.verses WHERE chapter_id = ANY(${allChapters})`;
 	const verseText = new Map(verseRows.map((v) => [v.id, v.text]));
@@ -551,10 +569,17 @@ async function score(sql, round) {
 async function main() {
 	const round = Number(process.argv.find((a) => a.startsWith('--round='))?.slice(8) ?? 1);
 	const mode = process.argv.includes('--build') ? 'build' : process.argv.includes('--score') ? 'score' : null;
+	const show = process.argv.find((a) => a.startsWith('--show='))?.slice(7) ?? 'unshaken';
 	if (!mode) {
-		console.error('usage: extraction-eval.mjs --build|--score --round=N');
+		console.error('usage: extraction-eval.mjs --build|--score --round=N [--show=<id>]');
 		process.exit(1);
 	}
+	if (!/^[a-z0-9-]+$/.test(show)) {
+		console.error(`unsafe show id: ${show}`);
+		process.exit(1);
+	}
+	DIR = join(ROOT, 'data', 'podcasts', show);
+	EPISODES = JSON.parse(readFileSync(join(DIR, 'episodes.json'), 'utf8')).episodes.map((e) => e.id);
 	let sql;
 	try {
 		const url = readFileSync(join(ROOT, '.env'), 'utf8').match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
