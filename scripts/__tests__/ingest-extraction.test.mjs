@@ -526,7 +526,10 @@ test('PW-A2: extraction-sourced existing pair classifies INSERT, never UPDATE', 
 });
 
 test('PW-A2: classification fetch SQL exported + title-source-filtered', () => {
-	assert.match(EXISTING_EDGES_SQL, /source\s*=\s*'unshaken-youtube'/);
+	// second-show: the title source is the $3 parameter (`${collectionId}-youtube`),
+	// not a literal — the filter survives, its value follows the collection
+	assert.match(EXISTING_EDGES_SQL, /source\s*=\s*\$3/);
+	assert.doesNotMatch(EXISTING_EDGES_SQL, /'unshaken-youtube'/);
 	assert.doesNotMatch(EXISTING_EDGES_SQL, /metadata\s*->>/); // column, never jsonb path
 });
 

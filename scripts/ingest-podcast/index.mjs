@@ -27,6 +27,14 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
 import { UNSHAKEN } from './shows/unshaken.mjs';
+import { STICK_OF_JOSEPH } from './shows/stick-of-joseph.mjs';
+import {
+	collectionForEpisode,
+	episodeCollectionMap,
+	expectedEpisodeCount,
+	isExplicitShow,
+	titleParseMode,
+} from './show-shape.mjs';
 import { runExtractCode, runExtractMerge } from './extract.mjs';
 import {
 	EXISTING_EDGES_SQL,
@@ -44,7 +52,7 @@ import {
 	summarizeResults,
 } from './util.mjs';
 import { parseArgs, checkEpisodeArg } from './cli.mjs';
-import { filterEpisodes, isValidEpisodesArtifact, enrichEpisode } from './discover.mjs';
+import { filterEpisodes, isValidEpisodesArtifact, enrichEpisode, enrichExplicitEpisode } from './discover.mjs';
 import { bestAudioArgs, assertDownloadedId, isValidAudioArtifact } from './fetch.mjs';
 import { buildDeepgramRequest, validateUtterances, utterancesToRows } from './transcribe.mjs';
 import { parseTitle, anchorsForBlock } from './parse-title.mjs';
@@ -52,7 +60,7 @@ import { buildLoadPlan } from './load.mjs';
 
 const pExecFile = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const SHOWS = { unshaken: UNSHAKEN };
+const SHOWS = { unshaken: UNSHAKEN, 'stick-of-joseph': STICK_OF_JOSEPH };
 
 // B1/B9: runner-owned sink + timestamps on every event.
 let logSink = null;
@@ -101,19 +109,47 @@ async function discover(show, dir, { dryRun, refresh }) {
 		}
 		if (cached) log('discover_stale', { reason: 'artifact_invalid' });
 	}
-	const { stdout } = await pExecFile(
-		'yt-dlp',
-		['--flat-playlist', '--print', '%(id)s\t%(duration)s\t%(upload_date)s\t%(title)s',
-			'-I', `1:${show.discoverScanLimit}`, show.channelUrl],
-		{ env: childEnv(process.env), maxBuffer: 16 * 1024 * 1024 },
-	);
-	const raw = stdout.trim().split('\n').map((line) => {
-		const [id, duration, upload_date, ...title] = line.split('\t');
-		return { id, duration: Number(duration) || null, upload_date, title: title.join('\t') };
-	});
-	const episodes = filterEpisodes(raw, show).map(enrichEpisode);
-	if (episodes.length !== show.episodeCount) {
-		throw new Error(`discover found ${episodes.length}/${show.episodeCount} episodes in first ${show.discoverScanLimit} uploads`);
+	const PRINT_FMT = '%(id)s\t%(duration)s\t%(upload_date)s\t%(title)s';
+	let episodes;
+	if (isExplicitShow(show)) {
+		// Explicit mode (second-show): the config enumerates canonical IDs, so
+		// discovery is a per-id metadata LOOKUP, not a channel scan — which is
+		// also what sidesteps the channel's retitled ad-free duplicate uploads.
+		const byId = episodeCollectionMap(show);
+		const fetchMeta = [...byId.entries()].map(([videoId, collection]) => async () => {
+			const { stdout } = await pExecFile(
+				'yt-dlp',
+				['--skip-download', '--print', PRINT_FMT, `https://www.youtube.com/watch?v=${videoId}`],
+				{ env: childEnv(process.env), maxBuffer: 1024 * 1024 },
+			);
+			const [id, duration, upload_date, ...title] = stdout.trim().split('\n').at(-1).split('\t');
+			if (id !== videoId) throw new Error(`metadata id mismatch: asked ${videoId}, got ${id}`);
+			return enrichExplicitEpisode(
+				{ id, duration: Number(duration) || null, upload_date, title: title.join('\t') },
+				collection.id,
+			);
+		});
+		const results = await runPool(fetchMeta, 4);
+		const failed = results.filter((r) => !r.ok);
+		if (failed.length) {
+			throw new Error(`discover could not resolve ${failed.length} listed episode id(s): ${failed.map((r) => scrubSecrets(r.error.message)).join('; ').slice(0, 400)}`);
+		}
+		episodes = results.map((r) => r.value);
+	} else {
+		const { stdout } = await pExecFile(
+			'yt-dlp',
+			['--flat-playlist', '--print', PRINT_FMT,
+				'-I', `1:${show.discoverScanLimit}`, show.channelUrl],
+			{ env: childEnv(process.env), maxBuffer: 16 * 1024 * 1024 },
+		);
+		const raw = stdout.trim().split('\n').map((line) => {
+			const [id, duration, upload_date, ...title] = line.split('\t');
+			return { id, duration: Number(duration) || null, upload_date, title: title.join('\t') };
+		});
+		episodes = filterEpisodes(raw, show).map(enrichEpisode);
+	}
+	if (episodes.length !== expectedEpisodeCount(show)) {
+		throw new Error(`discover found ${episodes.length}/${expectedEpisodeCount(show)} episodes`);
 	}
 	if (dryRun) {
 		log('discover_dry_run', { would_write: artifact, episodes: episodes.length });
@@ -172,9 +208,17 @@ async function fetchEpisode(ep, dir, { dryRun }) {
 async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }, scrub) {
 	const artifact = transcriptPathFor(ep, dir);
 	const audioPath = audioPathFor(ep, dir);
+	// Params fingerprint (second-show): skip-if-valid previously ignored HOW
+	// the transcript was made, so flipping diarize on would silently reuse a
+	// non-diarized artifact. Old artifacts carry no __params — treated as
+	// diarize:false, which is exactly what they are.
+	const wantDiarize = Boolean(show.diarize);
 	if (existsSync(artifact)) {
 		try {
 			const cached = JSON.parse(readFileSync(artifact, 'utf8'));
+			if (Boolean(cached.__params?.diarize) !== wantDiarize) {
+				throw new Error(`params drift: artifact diarize=${Boolean(cached.__params?.diarize)}, show wants ${wantDiarize}`);
+			}
 			validateUtterances(cached, { durationS: ep.durationS, tailToleranceS: show.tailToleranceS });
 			log('transcribe_skip', { episode: ep.id, reason: 'valid_artifact' });
 			return cached;
@@ -182,7 +226,7 @@ async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }, sc
 			log('transcribe_stale', { episode: ep.id, reason: scrub(err.message) });
 		}
 	}
-	const req = buildDeepgramRequest({ apiKey, keyterms });
+	const req = buildDeepgramRequest({ apiKey, keyterms, diarize: wantDiarize });
 	const qs = new URLSearchParams();
 	for (const [k, v] of Object.entries(req.query)) {
 		if (Array.isArray(v)) v.forEach((item) => qs.append(k, item));
@@ -209,6 +253,8 @@ async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }, sc
 	}
 	const dg = await res.json();
 	validateUtterances(dg, { durationS: ep.durationS, tailToleranceS: show.tailToleranceS });
+	// additive fingerprint — consumers read dg.results and never see this
+	dg.__params = { diarize: wantDiarize, model: 'nova-3', keyterms: keyterms.length };
 	// B5: atomic — a concurrent reader/runner never sees a truncated artifact
 	writeArtifactAtomic(artifact, JSON.stringify(dg), { writeFileSync, renameSync });
 	const billed = dg?.metadata?.duration ?? null;
@@ -220,12 +266,16 @@ async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }, sc
 
 async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 	// B10: ONE parse at load time feeds anchors AND stored metadata/search —
-	// discover-time fields are never trusted here.
-	const parsed = parseTitle(ep.title);
-	const chapterIds = anchorsForBlock(parsed.spans, lookup);
+	// discover-time fields are never trusted here. Verbatim shows branch
+	// BEFORE parseTitle: their titles are not CFM grammar and parse to null,
+	// and null.spans was the second-show review's blocker #7.
+	const verbatim = titleParseMode(show) === 'verbatim';
+	const parsed = verbatim ? { subtitle: null, spans: null } : parseTitle(ep.title);
+	if (!verbatim && !parsed) throw new Error(`unparseable CFM title at load: ${JSON.stringify(ep.title)}`);
+	const chapterIds = parsed.spans ? anchorsForBlock(parsed.spans, lookup) : [];
 	const rows = utterancesToRows(dg, `${show.id}-${ep.id}`);
 	const plan = buildLoadPlan(
-		{ videoId: ep.id, title: ep.title, subtitle: parsed.subtitle, spans: parsed.spans, uploadDate: ep.uploadDate, durationS: ep.durationS },
+		{ videoId: ep.id, title: ep.title, subtitle: parsed.subtitle, spans: parsed.spans, uploadDate: ep.uploadDate, durationS: ep.durationS, collectionId: ep.collectionId },
 		rows, chapterIds, show,
 	);
 	if (dryRun) {
@@ -368,10 +418,13 @@ async function main() {
 						// PW-A6/F8/F27 via the harness-pinned pure gate
 						const gate = checkLoadGate({ verdict, episodeId, extraction });
 						if (!gate.ok) throw new Error(`${gate.reason} — episode not loadable`);
-						const existingEdges = await sql.unsafe(EXISTING_EDGES_SQL, [episodeId, show.id]);
+						// second-show review #8: the EPISODE's collection, never show.id —
+						// a five-collection show would otherwise misfile every edge
+						const cid = collectionForEpisode(show, ep).id;
+						const existingEdges = await sql.unsafe(EXISTING_EDGES_SQL, [episodeId, cid, `${cid}-youtube`]);
 						const plan = buildExtractionLoadPlan({
 							episodeId,
-							collectionId: show.id,
+							collectionId: cid,
 							edges: extraction.edges,
 							existingEdges,
 						});

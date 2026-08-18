@@ -315,7 +315,10 @@ test('H4/COR-1/PW-A1: edge delete is source-aware and STALE-ANCHOR-ONLY', () => 
     (s) => /DELETE FROM lumen\.edges/i.test(s.text) && /collection_id/i.test(s.text),
   );
   assert.ok(edgeDelete, 'DELETE FROM lumen.edges scoped by episode + collection required');
-  assert.match(edgeDelete.text, /source\s*=\s*'unshaken-youtube'/);
+  // second-show: the source travels as a parameter (the collection's own
+  // `-youtube` suffix), never as a literal
+  assert.match(edgeDelete.text, /source = \$3/);
+  assert.ok(edgeDelete.values.includes('unshaken-youtube'), 'unshaken renders the historical source value');
   assert.match(edgeDelete.text, /to_id\s*!=\s*ALL/);
   assert.ok(edgeDelete.values.some((v) => Array.isArray(v) && v.includes('2-kgs-14')));
 });
@@ -367,8 +370,10 @@ test('PW-A1: DISCUSSES upsert preserves existing mentions on conflict', () => {
   // []); pre-repair string-typed rows are object-guarded out of the merge.
   const plan = buildLoadPlan(episodeFixture, [], ['2-kgs-14'], UNSHAKEN);
   const edge = plan.statements.find((s) => /INSERT INTO lumen\.edges/i.test(s.text));
-  assert.match(edge.text, /ON CONFLICT \(from_id, to_id, rel_type\)/);
-  assert.match(edge.text, /WHERE collection_id = 'unshaken'/);
+  // second-show: arbitration moved to the general idx_edges_unique index —
+  // the conflict target names all four columns and the WHERE form is retired
+  assert.match(edge.text, /ON CONFLICT \(from_id, to_id, rel_type, collection_id\)/);
+  assert.doesNotMatch(edge.text, /ON CONFLICT [^\n]*WHERE/);
   assert.match(edge.text, /jsonb_typeof\(lumen\.edges\.metadata\) = 'object'/);
   assert.match(edge.text, /lumen\.edges\.metadata->'mentions'/);
   assert.doesNotMatch(edge.text, /DO NOTHING/);
@@ -511,4 +516,119 @@ test('H6/COR-1: partial unique index guards unshaken edges without touching phas
     ),
     'partial unique index scoped to the unshaken collection',
   );
+});
+
+// ── second-show support (docs/design/second-show.md) ────────────────────────
+
+const { STICK_OF_JOSEPH } = await import('../ingest-podcast/shows/stick-of-joseph.mjs');
+const {
+  collectionsOf, isExplicitShow, titleParseMode, episodeCollectionMap,
+  collectionForEpisode, expectedEpisodeCount,
+} = await import('../ingest-podcast/show-shape.mjs');
+const { enrichExplicitEpisode } = await import('../ingest-podcast/discover.mjs');
+const { buildExtractionLoadPlan } = await import('../ingest-podcast/load-extraction.mjs');
+
+test('shape: both config generations normalize — unshaken single, SoJ five', () => {
+  assert.equal(isExplicitShow(UNSHAKEN), false);
+  assert.equal(isExplicitShow(STICK_OF_JOSEPH), true);
+  assert.equal(collectionsOf(UNSHAKEN)[0].id, 'unshaken');
+  assert.equal(collectionsOf(STICK_OF_JOSEPH).length, 5);
+  // defaults fold into every collection
+  assert.ok(collectionsOf(STICK_OF_JOSEPH).every((c) => c.tier === 'app' && c.category === 'podcast'));
+  assert.equal(expectedEpisodeCount(STICK_OF_JOSEPH), 58);
+  assert.equal(titleParseMode(UNSHAKEN), 'cfm');
+  assert.equal(titleParseMode(STICK_OF_JOSEPH), 'verbatim');
+});
+
+test('shape: the episode collection map is exclusive — a double listing throws', () => {
+  const map = episodeCollectionMap(STICK_OF_JOSEPH);
+  assert.equal(map.size, 58, 'every episode exactly once');
+  assert.equal(map.get('dU81hfwml6Q').id, 'soj-andrea-woodmansee');
+  const doubled = {
+    collections: [
+      { id: 'a', name: 'A', episodes: ['x1'.padEnd(11, 'x')] },
+      { id: 'b', name: 'B', episodes: ['x1'.padEnd(11, 'x')] },
+    ],
+  };
+  assert.throws(() => episodeCollectionMap(doubled), /two collections/);
+});
+
+test('verbatim load: no chapter edges, no block label, tsvector survives nulls', () => {
+  const ep = enrichExplicitEpisode(
+    { id: 'K4aU8p1F9u8', duration: 4773, upload_date: '20260601', title: 'ALTARS in The LDS Temple' },
+    'soj-todd-mclauchlin',
+  );
+  assert.equal(ep.spans, null);
+  assert.equal(ep.subtitle, null);
+  const plan = buildLoadPlan(
+    { videoId: ep.id, title: ep.title, subtitle: ep.subtitle, spans: ep.spans,
+      uploadDate: ep.uploadDate, durationS: ep.durationS, collectionId: ep.collectionId },
+    [{ seq: 0, t_start_s: 0, t_end_s: 2, text: 'x', speaker: '0' }], [], STICK_OF_JOSEPH,
+  );
+  // no DISCUSSES edges for a block-less episode
+  assert.ok(!plan.statements.some((st) => /INSERT INTO lumen\.edges/.test(st.text)));
+  // every tsvector part is COALESCEd — a null subtitle must not null the vector
+  const entity = plan.statements.find((st) => /INSERT INTO lumen\.entities/.test(st.text));
+  const search = plan.statements.find((st) => /INSERT INTO lumen\.search_index/.test(st.text));
+  assert.match(entity.text, /COALESCE\(\$2, ''\)/);
+  assert.match(entity.text, /COALESCE\(\$3, ''\)/);
+  assert.equal((search.text.match(/COALESCE/g) ?? []).length, 3, 'title, subtitle AND block label');
+  // the episode files under ITS collection with the collection-derived source
+  assert.equal(entity.values[5], 'soj-todd-mclauchlin');
+  assert.equal(entity.values[4], 'soj-todd-mclauchlin-youtube');
+  assert.equal(plan.episodeId, 'stick-of-joseph-K4aU8p1F9u8', 'episode id keeps the SHOW prefix');
+});
+
+test('multi-collection: the collection row upserted is the EPISODE\'s, not the show\'s', () => {
+  const plan = buildLoadPlan(
+    { videoId: 'H-dSOTl41sA', title: 'The Documentary Hypothesis', subtitle: null, spans: null,
+      uploadDate: '20260501', durationS: 2816, collectionId: 'soj-stick-of-judah' },
+    [], [], STICK_OF_JOSEPH,
+  );
+  const coll = plan.statements.find((st) => /lumen\.collections/.test(st.text));
+  assert.equal(coll.values[0], 'soj-stick-of-judah');
+  assert.equal(coll.values[1], 'Stick of Judah Lectures');
+  assert.equal(coll.values[8], false, 'public seeded false — the kill switch stays closed');
+});
+
+test('shape: an unknown collectionId fails loudly, never misfiles', () => {
+  assert.throws(
+    () => collectionForEpisode(STICK_OF_JOSEPH, { videoId: 'x', collectionId: 'soj-nope' }),
+    /unknown collection/,
+  );
+});
+
+test('extraction plan: sources derive from the collection — unshaken renders the historical literals', () => {
+  const existing = [
+    { from_id: 'e', to_id: 'v1', rel_type: 'DISCUSSES', source: 'unshaken-youtube', metadata: {} },
+  ];
+  const plan = buildExtractionLoadPlan({
+    episodeId: 'unshaken-x', collectionId: 'unshaken',
+    edges: [
+      { toId: 'v1', relType: 'DISCUSSES', mentions: [{ t: 1, seq: 0 }] },
+      { toId: 'v2', relType: 'MENTIONS', mentions: [] },
+    ],
+    existingEdges: existing,
+  });
+  const update = plan.statements.find((st) => st.kind === 'update-title-edge');
+  const insert = plan.statements.find((st) => st.kind === 'insert-edge');
+  assert.equal(update.source, 'unshaken-youtube');
+  assert.equal(insert.source, 'unshaken-extraction');
+  assert.equal(plan.statements.find((st) => st.kind === 'delete-extraction-edges').sourceFilter, 'unshaken-extraction');
+});
+
+test('extraction plan: a SoJ collection classifies against ITS OWN title source', () => {
+  // review major #3: the classification filter was the dangerous literal —
+  // with it pinned to unshaken, every SoJ title edge became an INSERT and
+  // collided with the already-loaded row on idx_edges_unique
+  const existing = [
+    { from_id: 'e', to_id: 'v1', rel_type: 'DISCUSSES', source: 'soj-todd-mclauchlin-youtube', metadata: {} },
+  ];
+  const plan = buildExtractionLoadPlan({
+    episodeId: 'stick-of-joseph-x', collectionId: 'soj-todd-mclauchlin',
+    edges: [{ toId: 'v1', relType: 'DISCUSSES', mentions: [] }],
+    existingEdges: existing,
+  });
+  assert.equal(plan.summary.updates, 1, 'title edge recognized as its own');
+  assert.equal(plan.summary.inserts, 0);
 });

@@ -1,13 +1,28 @@
-// Stage 5 — load (unshaken-ingest A1). buildLoadPlan is PURE and
-// deterministic: it emits parameterized statement descriptors {text, values}
-// plus a summary; the runner executes them in ONE transaction per episode.
-// Untrusted text (titles, transcript) travels ONLY in values (H2).
-// Order contract (H4): every DELETE precedes the first INSERT; the explicit
-// edges delete exists because lumen.edges has no PK/cascade (COR-1).
+// Stage 5 — load (unshaken-ingest A1; second-show generalization 2026-08-18).
+// buildLoadPlan is PURE and deterministic: it emits parameterized statement
+// descriptors {text, values} plus a summary; the runner executes them in ONE
+// transaction per episode. Untrusted text (titles, transcript) travels ONLY
+// in values (H2). Order contract (H4): every DELETE precedes the first
+// INSERT; the explicit edges delete exists because lumen.edges has no
+// PK/cascade (COR-1).
+//
+// Second-show rules (docs/design/second-show.md):
+//  - the episode's COLLECTION (not the show) owns collection_id and the
+//    source strings: `${collectionId}-youtube` / `${collectionId}-extraction`.
+//    Unshaken's collection id equals its show id, so existing rows already
+//    match — zero data migration.
+//  - ON CONFLICT arbitrates on idx_edges_unique (from,to,rel,collection),
+//    the general index — the per-show partial is retired with this change.
+//  - verbatim-title episodes carry spans:null and subtitle:null — no chapter
+//    anchors, no block label, and every tsvector part is COALESCEd (a null
+//    part nulls the whole concatenation and the row becomes unsearchable).
+import { collectionForEpisode, assertSafeCollectionId } from './show-shape.mjs';
 
 /** B3: search block-label — whole-book spans render the BOOK NAME (never
- * "Joshua 1"); singles "Book N"; ranges "Book A-B". */
+ * "Joshua 1"); singles "Book N"; ranges "Book A-B". Null spans (verbatim
+ * shows) have no block and no label. */
 function blockLabel(spans) {
+	if (!spans) return null;
 	return spans
 		.map((s) => {
 			// open-end: whole book when starting at 1; "Book N+" keeps the start
@@ -21,11 +36,15 @@ function blockLabel(spans) {
 		.join(' · ');
 }
 
-/** episode: {videoId,title,subtitle,spans,uploadDate,durationS}
+/** episode: {videoId,title,subtitle,spans,uploadDate,durationS,collectionId?}
  *  transcriptRows: utterancesToRows output · chapterIds: anchorsForBlock
- *  show: shows/*.mjs config. */
+ *  show: shows/*.mjs config. The episode's collection derives from
+ *  episode.collectionId (explicit shows) or the show's single collection. */
 export function buildLoadPlan(episode, transcriptRows, chapterIds, show) {
 	const episodeId = `${show.id}-${episode.videoId}`;
+	const collection = collectionForEpisode(show, episode);
+	const cid = assertSafeCollectionId(collection.id);
+	const sourceYoutube = `${cid}-youtube`;
 	const statements = [];
 
 	// ── deletes first (idempotent re-run; entity delete cascades transcripts) ──
@@ -39,8 +58,8 @@ export function buildLoadPlan(episode, transcriptRows, chapterIds, show) {
 	statements.push({
 		text: `DELETE FROM lumen.edges
 WHERE from_id = $1 AND collection_id = $2
-  AND source = 'unshaken-youtube' AND to_id != ALL($3)`,
-		values: [episodeId, show.id, chapterIds],
+  AND source = $3 AND to_id != ALL($4)`,
+		values: [episodeId, cid, sourceYoutube, chapterIds],
 	});
 	statements.push({
 		text: "DELETE FROM lumen.search_index WHERE kind = 'episode' AND ref_id = $1",
@@ -57,23 +76,25 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.desc
   tier = EXCLUDED.tier, category = EXCLUDED.category, provenance = EXCLUDED.provenance,
   license = EXCLUDED.license, storage = EXCLUDED.storage`,
 		values: [
-			show.id,
-			show.collection.name,
-			show.collection.description,
-			show.collection.tier,
-			show.collection.category,
-			show.collection.provenance,
-			show.collection.license,
-			show.collection.storage,
+			cid,
+			collection.name,
+			collection.description,
+			collection.tier,
+			collection.category,
+			collection.provenance,
+			collection.license,
+			collection.storage,
 			false,
 		],
 	});
 
-	// ── episode entity (media descriptor per design doc) ──
+	// ── episode entity (media descriptor per design doc). COALESCE both
+	// weighted parts: a null subtitle otherwise nulls the ENTIRE vector and
+	// the episode vanishes from search. ──
 	statements.push({
 		text: `INSERT INTO lumen.entities (id, entity_type, name, description, metadata, source, collection_id, search_vector)
 VALUES ($1, 'content_item', $2, $3, $4::jsonb, $5, $6,
-  setweight(to_tsvector('english', $2), 'A') || setweight(to_tsvector('english', $3), 'B'))`,
+  setweight(to_tsvector('english', COALESCE($2, '')), 'A') || setweight(to_tsvector('english', COALESCE($3, '')), 'B'))`,
 		values: [
 			episodeId,
 			episode.title,
@@ -87,8 +108,8 @@ VALUES ($1, 'content_item', $2, $3, $4::jsonb, $5, $6,
 				upload_date: episode.uploadDate,
 				spans: episode.spans,
 			},
-			'unshaken-youtube',
-			show.id,
+			sourceYoutube,
+			cid,
 		],
 	});
 
@@ -111,7 +132,8 @@ VALUES ${tuples.join(', ')}`,
 		});
 	}
 
-	// ── DISCUSSES edges: one batched insert; mentions EMPTY until A2 ──
+	// ── DISCUSSES edges: one batched insert; mentions EMPTY until A2.
+	// Verbatim shows anchor no chapters, so this loop simply never runs. ──
 	for (let i = 0; i < chapterIds.length; i += CHUNK) {
 		const chunk = chapterIds.slice(i, i + CHUNK);
 		const values = [];
@@ -120,21 +142,23 @@ VALUES ${tuples.join(', ')}`,
 			values.push(
 				episodeId,
 				chapterId,
-				show.id,
+				cid,
 				{ source: 'title', confidence: 1, mentions: [] },
-				'unshaken-youtube',
+				sourceYoutube,
 			);
 			return `($${b + 1}, $${b + 2}, 'DISCUSSES', $${b + 3}, $${b + 4}::jsonb, $${b + 5})`;
 		});
-		// PW-A1: UPSERT-ONLY, arbitrated on the partial unique index. DO UPDATE
-		// preserves A2-written mentions (object-guarded: pre-repair string rows
-		// must not poison the merge) instead of resetting them to [] weekly.
-		if (!/^[a-z0-9-]+$/.test(show.id)) throw new Error(`unsafe show id: ${show.id}`);
+		// PW-A1: UPSERT-ONLY, arbitrated on idx_edges_unique (the four-column
+		// general index — second-show change; the unshaken partial is retired).
+		// DO UPDATE preserves A2-written mentions (object-guarded: pre-repair
+		// string rows must not poison the merge) instead of resetting them to
+		// [] weekly. cid is regex-guarded above, so the interpolation is safe —
+		// same posture the show.id interpolation always had.
 		statements.push({
 			text: `INSERT INTO lumen.edges (from_id, to_id, rel_type, collection_id, metadata, source)
 VALUES ${tuples.join(', ')}
-ON CONFLICT (from_id, to_id, rel_type) WHERE collection_id = '${show.id}'
-DO UPDATE SET source = 'unshaken-youtube', metadata = jsonb_build_object(
+ON CONFLICT (from_id, to_id, rel_type, collection_id)
+DO UPDATE SET source = '${sourceYoutube}', metadata = jsonb_build_object(
   'source', 'title', 'confidence', 1,
   'mentions', COALESCE(
     CASE WHEN jsonb_typeof(lumen.edges.metadata) = 'object'
@@ -144,17 +168,18 @@ DO UPDATE SET source = 'unshaken-youtube', metadata = jsonb_build_object(
 		});
 	}
 
-	// ── search projection: title(A) > subtitle(B) > block label(C) — H8 ──
+	// ── search projection: title(A) > subtitle(B) > block label(C) — H8.
+	// Every part COALESCEd: verbatim shows have null subtitle AND null block. ──
 	statements.push({
 		text: `INSERT INTO lumen.search_index (kind, ref_id, collection_id, title, tsv, payload)
 VALUES ('episode', $1, $2, $3,
-  setweight(to_tsvector('english', $3), 'A') ||
-  setweight(to_tsvector('english', $4), 'B') ||
-  setweight(to_tsvector('english', $5), 'C'),
+  setweight(to_tsvector('english', COALESCE($3, '')), 'A') ||
+  setweight(to_tsvector('english', COALESCE($4, '')), 'B') ||
+  setweight(to_tsvector('english', COALESCE($5, '')), 'C'),
   $6::jsonb)`,
 		values: [
 			episodeId,
-			show.id,
+			cid,
 			episode.title,
 			episode.subtitle,
 			blockLabel(episode.spans),

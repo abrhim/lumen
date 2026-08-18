@@ -5,10 +5,11 @@
 // PW-A2: exported + harness-pinned. Only title-sourced rows may classify as
 // UPDATE candidates — extraction-sourced pairs must always re-INSERT after
 // the scoped delete, or run 2 silently destroys run 1.
+// $3 = `${collectionId}-youtube` (second-show: sources follow the collection).
 export const EXISTING_EDGES_SQL = `
 SELECT from_id, to_id, rel_type, source, metadata
 FROM lumen.edges
-WHERE from_id = $1 AND collection_id = $2 AND source = 'unshaken-youtube'`;
+WHERE from_id = $1 AND collection_id = $2 AND source = $3`;
 
 /** R-runner-gates-2: the load gate as a PURE function so the harness can pin
  * it — the runner shell stays untested by design, the gate logic must not. */
@@ -32,6 +33,11 @@ export function checkLoadGate({ verdict, episodeId, extraction }) {
 /** Semantic statement plan for one episode. Executor renders SQL and runs
  * everything in ONE tx with SET LOCAL guards. */
 export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existingEdges = [] }) {
+	// sources follow the collection (docs/design/second-show.md). For Unshaken
+	// the collection id equals the show id, so these render the historical
+	// literals exactly.
+	const sourceYoutube = `${collectionId}-youtube`;
+	const sourceExtraction = `${collectionId}-extraction`;
 	for (const e of edges) {
 		if (e.__trap) {
 			throw new Error(
@@ -41,7 +47,7 @@ export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existi
 	}
 	const titlePairs = new Map();
 	for (const row of existingEdges) {
-		if (row.source !== 'unshaken-youtube') continue;
+		if (row.source !== sourceYoutube) continue;
 		titlePairs.set(`${row.to_id}|${row.rel_type}`, row);
 	}
 	const statements = [
@@ -50,7 +56,7 @@ export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existi
 			kind: 'delete-extraction-edges',
 			episodeId,
 			collectionId,
-			sourceFilter: 'unshaken-extraction',
+			sourceFilter: sourceExtraction,
 		},
 	];
 	const summary = { episode: episodeId, updates: 0, inserts: 0, mentionCount: 0 };
@@ -74,7 +80,7 @@ export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existi
 				collectionId,
 				toId: e.toId,
 				relType: e.relType,
-				source: 'unshaken-youtube',
+				source: sourceYoutube,
 				metadata: { source: 'title', confidence: 1, mentions },
 			});
 			summary.updates += 1;
@@ -86,7 +92,7 @@ export function buildExtractionLoadPlan({ episodeId, collectionId, edges, existi
 				collectionId,
 				toId: e.toId,
 				relType: e.relType,
-				source: 'unshaken-extraction',
+				source: sourceExtraction,
 				metadata: { source: 'extraction', confidence, mentions },
 			});
 			summary.inserts += 1;

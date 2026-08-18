@@ -5,7 +5,7 @@
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen';
 const KEYTERM_MAX = 100; // Q5/REL-6: hard client-side cap, measured at dry-run
 
-export function buildDeepgramRequest({ apiKey, keyterms = [], model = 'nova-3' }) {
+export function buildDeepgramRequest({ apiKey, keyterms = [], model = 'nova-3', diarize = false }) {
 	if (!apiKey) throw new Error('DEEPGRAM_API_KEY required');
 	return {
 		url: DEEPGRAM_URL,
@@ -19,6 +19,9 @@ export function buildDeepgramRequest({ apiKey, keyterms = [], model = 'nova-3' }
 			utterances: 'true',
 			smart_format: 'true',
 			punctuate: 'true',
+			// interview shows (SoJ) need speaker turns; utterancesToRows already
+			// carries u.speaker when present, so downstream is shape-stable
+			...(diarize ? { diarize: 'true' } : {}),
 			keyterm: keyterms.slice(0, KEYTERM_MAX),
 		},
 	};

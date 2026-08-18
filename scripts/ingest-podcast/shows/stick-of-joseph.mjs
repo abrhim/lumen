@@ -142,7 +142,11 @@ export const STICK_OF_JOSEPH = {
 	},
 	pools: { fetch: 2, transcribe: 3 },
 	keytermMax: 100,
-	tailToleranceS: 300,
+	// interview/live-stream titles are not CFM grammar — no scripture block
+	titleParse: 'verbatim',
+	// raw streams carry trailing dead air; 300 would fail exactly the padded
+	// episodes we flagged (validateUtterances THROWS on a coverage gap)
+	tailToleranceS: 900,
 	// interview show: 2-3 speakers standard, 4+ on launch panels
 	diarize: true,
 };

@@ -1,0 +1,11 @@
+-- Retire idx_edges_unshaken_unique (second-show, docs/design/second-show.md §1).
+--
+-- The podcast loader's ON CONFLICT moved to the four-column form arbitrated
+-- by idx_edges_unique, so the unshaken partial no longer serves any writer.
+-- Ships in the SAME change as that loader move: dropping it earlier breaks
+-- the weekly Unshaken re-run, dropping it later just carries a dead index.
+--
+-- idx_edges_phaseb_unique deliberately SURVIVES — backfill-phase-b.ts's
+-- startup gate requires it by name and its WHERE-form ON CONFLICT can only
+-- infer the partial index.
+DROP INDEX IF EXISTS lumen.idx_edges_unshaken_unique;
