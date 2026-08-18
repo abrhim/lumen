@@ -751,6 +751,10 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 								onAutoScroll={setAutoScroll}
 							/>
 						)}
+						{/* Verbatim-title shows (SoJ) anchor no chapters until their
+						    extraction runs — an empty labelled rail reads as broken */}
+						{chapters.length > 0 && (
+							<>
 						<h2 className="font-reading text-sm italic text-faint">Chapters</h2>
 						<ul className="mt-2 list-none border-l border-rule">
 							{chapters.map((c) => (
@@ -766,6 +770,8 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 								</li>
 							))}
 						</ul>
+							</>
+						)}
 					</div>
 				</nav>
 				<div>
@@ -781,15 +787,18 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 				</div>
 			</div>
 
-			{/* Mobile bottom bar: the rails, reachable from any scroll depth. */}
-			<nav
-				aria-label="Episode navigation"
-				className="fixed inset-x-0 bottom-0 z-40 flex items-baseline gap-6 border-t border-rule bg-paper/95 px-6 py-3 font-ui text-sm font-semibold text-primary backdrop-blur lg:hidden"
-			>
-				<button type="button" onClick={() => setSheet("chapters")} className="hover:underline">
-					Chapters
-				</button>
-			</nav>
+			{/* Mobile bottom bar: the rails, reachable from any scroll depth.
+			    Suppressed entirely when there are no chapters to open. */}
+			{chapters.length > 0 && (
+				<nav
+					aria-label="Episode navigation"
+					className="fixed inset-x-0 bottom-0 z-40 flex items-baseline gap-6 border-t border-rule bg-paper/95 px-6 py-3 font-ui text-sm font-semibold text-primary backdrop-blur lg:hidden"
+				>
+					<button type="button" onClick={() => setSheet("chapters")} className="hover:underline">
+						Chapters
+					</button>
+				</nav>
+			)}
 			{/* Sheets are MOUNT-GATED on isMobile (portals escape hidden wrappers). */}
 			{isMobile && sheet !== null && (
 				<Sheet open onOpenChange={(open) => !open && setSheet(null)}>
