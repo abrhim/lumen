@@ -178,8 +178,13 @@ const stat = (p) => {
 function audioPathFor(ep, dir) {
 	return join(dir, `${ep.id}.m4a`);
 }
-function transcriptPathFor(ep, dir) {
-	return join(dir, `${ep.id}.deepgram.json`);
+function transcriptPathFor(ep, dir, show) {
+	// per-show engine (second-show 2026-08-18): SoJ artifacts come from the
+	// Modal WhisperX batch via whisperx-convert.mjs; renaming Unshaken's
+	// .deepgram.json cache would force a full paid re-transcribe on the
+	// next weekly run, so the filename stays engine-specific instead
+	const ext = show?.transcriptEngine === 'whisperx' ? 'whisperx' : 'deepgram';
+	return join(dir, `${ep.id}.${ext}.json`);
 }
 
 async function fetchEpisode(ep, dir, { dryRun }) {
@@ -206,8 +211,25 @@ async function fetchEpisode(ep, dir, { dryRun }) {
 // ── stage: transcribe (one episode) ─────────────────────────────────────────
 
 async function transcribeEpisode(ep, dir, show, keyterms, apiKey, { dryRun }, scrub) {
-	const artifact = transcriptPathFor(ep, dir);
+	const artifact = transcriptPathFor(ep, dir, show);
 	const audioPath = audioPathFor(ep, dir);
+	// whisperx shows: the engine runs externally (Modal batch, then
+	// whisperx-convert.mjs). This stage only ADMITS the artifact — it must
+	// never fall through to a Deepgram request.
+	if (show.transcriptEngine === 'whisperx') {
+		if (!existsSync(artifact)) {
+			throw new Error(
+				`missing ${artifact} — run: modal run scripts/ingest-podcast/whisperx_modal.py --episodes ${ep.id}, then node scripts/ingest-podcast/whisperx-convert.mjs ${dir} ${ep.id} ${ep.durationS ?? ''}`,
+			);
+		}
+		const cached = JSON.parse(readFileSync(artifact, 'utf8'));
+		if (Boolean(cached.__params?.diarize) !== Boolean(show.diarize)) {
+			throw new Error(`params drift: artifact diarize=${Boolean(cached.__params?.diarize)}, show wants ${Boolean(show.diarize)}`);
+		}
+		validateUtterances(cached, { durationS: ep.durationS, tailToleranceS: show.tailToleranceS });
+		log('transcribe_skip', { episode: ep.id, reason: 'whisperx_artifact' });
+		return cached;
+	}
 	// Params fingerprint (second-show): skip-if-valid previously ignored HOW
 	// the transcript was made, so flipping diarize on would silently reuse a
 	// non-diarized artifact. Old artifacts carry no __params — treated as
@@ -299,7 +321,7 @@ async function loadEpisode(sql, ep, dg, show, lookup, { dryRun }) {
 
 // ── B7: stage prerequisites — scoped runs never cascade into paid stages ────
 
-function assertStagePrereqs(stage, episodes, dir) {
+function assertStagePrereqs(stage, episodes, dir, show) {
 	if (stage === 'transcribe') {
 		const missing = episodes.filter((ep) => !isValidAudioArtifact(audioPathFor(ep, dir), stat));
 		if (missing.length) {
@@ -307,13 +329,13 @@ function assertStagePrereqs(stage, episodes, dir) {
 		}
 	}
 	if (stage === 'load') {
-		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir)));
+		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir, show)));
 		if (missing.length) {
 			throw new Error(`--stage=load: ${missing.length} episode(s) missing transcripts (run --stage=transcribe first): ${missing.map((e) => e.id).join(', ')}`);
 		}
 	}
 	if (stage === 'extract-code' || stage === 'extract-merge') {
-		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir)));
+		const missing = episodes.filter((ep) => !existsSync(transcriptPathFor(ep, dir, show)));
 		if (missing.length) {
 			throw new Error(`--stage=${stage}: ${missing.length} episode(s) missing deepgram artifacts: ${missing.map((e) => e.id).join(', ')}`);
 		}
@@ -360,7 +382,7 @@ async function main() {
 		return;
 	}
 	const apiKey = envText.match(/^DEEPGRAM_API_KEY=(.+)$/m)?.[1]?.trim();
-	if (!apiKey) {
+	if (!apiKey && show.transcriptEngine !== 'whisperx') {
 		fatal(new Error('DEEPGRAM_API_KEY not found in root .env'), 'env');
 		return;
 	}
@@ -375,7 +397,7 @@ async function main() {
 			episodes = episodes.filter((e) => e.id === opts.episode);
 		}
 		if (opts.stage === 'discover') return finish(0);
-		assertStagePrereqs(opts.stage, episodes, dir);
+		assertStagePrereqs(opts.stage, episodes, dir, show);
 
 		const bookRows = await sql`SELECT id, name FROM lumen.books`;
 		const chapterRows = await sql`SELECT book_id, count(*)::int AS n FROM lumen.chapters GROUP BY book_id`;

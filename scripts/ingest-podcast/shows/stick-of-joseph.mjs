@@ -142,6 +142,12 @@ export const STICK_OF_JOSEPH = {
 		public: true, // Abram 2026-08-18: open to everyone from ingest
 	},
 	pools: { fetch: 2, transcribe: 3 },
+	// engine decision 2026-08-18 (docs/design/transcription-bake-off.md):
+	// WhisperX large-v3 via the Modal batch — Abram's adjudication went
+	// 14/14 against Deepgram and the third witness sided 2:1 the same way.
+	// extraKeyterms below still matter: they document the vocabulary and
+	// keep the Deepgram fallback honest if this flag ever flips back.
+	transcriptEngine: 'whisperx',
 	keytermMax: 100,
 	// names the generic model cannot guess. Spelling per Abram 2026-08-18:
 	// the host is McLaughlin (the channel's video titles misspell it

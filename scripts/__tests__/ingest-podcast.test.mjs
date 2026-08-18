@@ -635,3 +635,45 @@ test('extraction plan: a SoJ collection classifies against ITS OWN title source'
   assert.equal(plan.summary.updates, 1, 'title edge recognized as its own');
   assert.equal(plan.summary.inserts, 0);
 });
+
+// ── second-show: WhisperX engine (docs/design/transcription-bake-off.md) ────
+
+test('SoJ pins transcriptEngine whisperx — the adjudicated engine decision', () => {
+  assert.equal(STICK_OF_JOSEPH.transcriptEngine, 'whisperx');
+});
+
+test('convertWhisperx: artifact shape is loader-compatible', async () => {
+  const { convertWhisperx } = await import('../ingest-podcast/whisperx-convert.mjs');
+  const out = convertWhisperx({
+    segments: [
+      { start: 0.5, end: 4.2, text: ' Hello there. ', speaker: 'SPEAKER_00' },
+      { start: 4.2, end: 9.9, text: 'General Kenobi.', speaker: 'SPEAKER_01' },
+    ],
+  });
+  assert.deepEqual(out.results.utterances, [
+    { start: 0.5, end: 4.2, speaker: 0, transcript: 'Hello there.' },
+    { start: 4.2, end: 9.9, speaker: 1, transcript: 'General Kenobi.' },
+  ]);
+  // the transcribe stage admits it only if the fingerprint says diarized
+  assert.equal(out.__params.diarize, true);
+  assert.equal(out.__params.model, 'whisperx-large-v3');
+});
+
+test('convertWhisperx: clamps alignment jitter instead of failing the episode', async () => {
+  const { convertWhisperx } = await import('../ingest-podcast/whisperx-convert.mjs');
+  const { validateUtterances } = await import('../ingest-podcast/transcribe.mjs');
+  const out = convertWhisperx({
+    segments: [
+      { start: 10, end: 12, text: 'ok', speaker: 'SPEAKER_02' },
+      { start: 9.8, end: 9.7, text: 'reordered zero-length', speaker: null }, // jitter
+      { start: 13, end: 15, text: '   ', speaker: 'SPEAKER_00' }, // empty → dropped
+      { text: 'no timestamps at all' }, // carries previous end
+    ],
+  });
+  // validateUtterances is the load gate — the clamped output must pass it
+  validateUtterances(out, { durationS: null });
+  assert.equal(out.results.utterances.length, 3);
+  const jitter = out.results.utterances[1];
+  assert.ok(jitter.start >= 10 && jitter.end > jitter.start);
+  assert.equal(jitter.speaker, null);
+});
