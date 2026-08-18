@@ -152,6 +152,10 @@ export const STICK_OF_JOSEPH = {
 		'Woodmansee',
 		'Stick of Joseph',
 		'Stick of Judah',
+		// bake-off: nova-3 resolved the telestial/celestial minimal pair
+		// wrongly at 5 sites (WhisperX + argument context agree against it),
+		// inverting the speaker's meaning; the keyterm biases the pair apart
+		'telestial',
 	],
 	// interview/live-stream titles are not CFM grammar — no scripture block
 	titleParse: 'verbatim',
