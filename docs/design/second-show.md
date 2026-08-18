@@ -97,7 +97,16 @@ which will contain it).
 - **Batching**: the runner already accepts `--episode` — the fleet runs as
   scripted loops of per-episode invocations; no new pipeline support.
 
-## 3. Extraction no-block variant (rewritten — v1 was wrong twice)
+## 3. Extraction no-block variant — DEFERRED (Abram, 2026-08-18)
+
+"No need to do extraction for interviews." SoJ episodes ingest through
+transcribe+load only: transcripts, episode entities, search — no DISCUSSES/
+MENTIONS/TEACHES edges, no margin chips, no Heard-in appearances. The
+extraction stages simply never run for verbatim shows. Phase 5 (principle
+mining) inherits this dependency and waits with it. The design below is
+KEPT for when it is wanted:
+
+### (deferred design)
 
 What v1 claimed "runs unchanged" does not:
 
