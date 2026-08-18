@@ -30,10 +30,11 @@ export const STICK_OF_JOSEPH = {
 	collections: [
 		{
 			id: 'soj-todd-mclauchlin',
-			name: 'Todd McLauchlin',
-			// McLauchlin, NOT McLaughlin — every video title uses the former;
-			// a "McLaughlin" match finds zero episodes
-			description: 'Temple worship, priesthood, and the Lectures on Faith with Todd McLauchlin',
+			// the man spells it McLaughlin (Abram 2026-08-18, confirmed by ear
+			// against the audio); the CHANNEL titles all spell "McLauchlin",
+			// so title matching must keep using the channel's spelling
+			name: 'Todd McLaughlin',
+			description: 'Temple worship, priesthood, and the Lectures on Faith with Todd McLaughlin',
 			episodes: [
 				'63onrrP5Tz4', // The Power That Holds the Universe Together (1:01:52)
 				'K4aU8p1F9u8', // ALTARS in The LDS Temple (1:19:33)
@@ -142,12 +143,13 @@ export const STICK_OF_JOSEPH = {
 	},
 	pools: { fetch: 2, transcribe: 3 },
 	keytermMax: 100,
-	// names the generic model cannot guess — validation trio came back with
-	// "McLaughlin" (the common spelling; matches zero videos, breaks search
-	// recall on the host's name). Prioritized ahead of the DB-derived list.
+	// names the generic model cannot guess. Spelling per Abram 2026-08-18:
+	// the host is McLaughlin (the channel's video titles misspell it
+	// "McLauchlin" — do not copy the titles here). Prioritized ahead of
+	// the DB-derived list.
 	extraKeyterms: [
-		'Todd McLauchlin',
-		'McLauchlin',
+		'Todd McLaughlin',
+		'McLaughlin',
 		'Andrea Woodmansee',
 		'Woodmansee',
 		'Stick of Joseph',

@@ -63,12 +63,12 @@ test.describe("second show surfaces", () => {
 		// the door prints with a live count
 		await page.goto("/collections");
 		await page.waitForSelector("html[data-hydrated]");
-		await expect(page.locator("body")).toContainText("Todd McLauchlin");
+		await expect(page.locator("body")).toContainText("Todd McLaughlin");
 		await expect(page.locator("body")).toContainText("1 episodes"); // door count copy is per-door
 
 		// the landing: recency list, NO book-group headers, singular copy
 		await page.goto("/collections/soj-todd-mclauchlin");
-		await expect(page.getByRole("heading", { name: "Todd McLauchlin" })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Todd McLaughlin" })).toBeVisible();
 		await expect(page.locator("body")).not.toContainText("Other");
 		await expect(page.locator("body")).toContainText("1 episode");
 		await expect(page.locator("body")).toContainText("ALTARS in The LDS Temple");
@@ -76,6 +76,6 @@ test.describe("second show surfaces", () => {
 		// the episode page renders the transcript from ITS OWN collection
 		await page.goto(`/media/stick-of-joseph-${EPISODE}`);
 		await expect(page.locator("body")).toContainText("Todd joins us to talk about altars");
-		await expect(page.locator("body")).toContainText("Todd McLauchlin");
+		await expect(page.locator("body")).toContainText("Todd McLaughlin");
 	});
 });
