@@ -449,7 +449,12 @@ async function main() {
       JOIN lumen.edges ed ON ed.from_id = e.id OR ed.to_id = e.id
       WHERE e.entity_type IN ('person','place')
       GROUP BY e.name ORDER BY count(*) DESC LIMIT ${show.keytermMax}`;
-		const keyterms = keytermRows.map((r) => r.name);
+		// show-specific terms FIRST — they are exactly the names the generic
+		// model fumbles (validation trio: "McLauchlin" → "McLaughlin"); the
+		// slice keeps the request at keytermMax, trading the tail of the
+		// DB-derived list for them
+		const keyterms = [...(show.extraKeyterms ?? []), ...keytermRows.map((r) => r.name)]
+			.slice(0, show.keytermMax);
 		log('keyterms_ready', { count: keyterms.length });
 
 		const byDuration = [...episodes].sort((a, b) => (b.durationS ?? 0) - (a.durationS ?? 0));

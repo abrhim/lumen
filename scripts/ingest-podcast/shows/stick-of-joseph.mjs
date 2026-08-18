@@ -142,6 +142,17 @@ export const STICK_OF_JOSEPH = {
 	},
 	pools: { fetch: 2, transcribe: 3 },
 	keytermMax: 100,
+	// names the generic model cannot guess — validation trio came back with
+	// "McLaughlin" (the common spelling; matches zero videos, breaks search
+	// recall on the host's name). Prioritized ahead of the DB-derived list.
+	extraKeyterms: [
+		'Todd McLauchlin',
+		'McLauchlin',
+		'Andrea Woodmansee',
+		'Woodmansee',
+		'Stick of Joseph',
+		'Stick of Judah',
+	],
 	// interview/live-stream titles are not CFM grammar — no scripture block
 	titleParse: 'verbatim',
 	// raw streams carry trailing dead air; 300 would fail exactly the padded
