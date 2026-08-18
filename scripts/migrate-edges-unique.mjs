@@ -73,7 +73,9 @@ const checks = [
 	['idx_edges_unique exists and is VALID', `SELECT i.indisvalid AS ok FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid WHERE c.relname='idx_edges_unique' AND c.relnamespace='lumen'::regnamespace`, (r) => r[0]?.ok === true],
 	['it is UNIQUE on the four columns', `SELECT i.indisunique AS u, i.indnatts::int AS n FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid WHERE c.relname='idx_edges_unique' AND c.relnamespace='lumen'::regnamespace`, (r) => r[0]?.u === true && r[0]?.n === 4],
 	['idx_edges_phaseb_unique untouched (load-bearing)', `SELECT count(*)::int AS n FROM pg_indexes WHERE schemaname='lumen' AND indexname='idx_edges_phaseb_unique'`, (r) => r[0].n === 1],
-	['idx_edges_unshaken_unique still present (drops with the loader change)', `SELECT count(*)::int AS n FROM pg_indexes WHERE schemaname='lumen' AND indexname='idx_edges_unshaken_unique'`, (r) => r[0].n === 1],
+	// flipped 2026-08-18 with the second-show merge: the loader's ON CONFLICT
+	// is four-column now, so the unshaken partial must be GONE
+	['idx_edges_unshaken_unique retired (loader is four-column now)', `SELECT count(*)::int AS n FROM pg_indexes WHERE schemaname='lumen' AND indexname='idx_edges_unshaken_unique'`, (r) => r[0].n === 0],
 ];
 let bad = 0;
 for (const [name, q, ok] of checks) {
