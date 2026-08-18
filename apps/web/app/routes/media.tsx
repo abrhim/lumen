@@ -437,7 +437,12 @@ const ParaBlock = memo(
 				)}
 				<div className={`group relative mt-4 rounded px-2 py-1 ${active ? "bg-sel" : ""}`}>
 					{(p.refs.length > 0 || p.ents.length > 0) && (
-						<span className="float-right ml-4 mt-0.5 hidden text-right font-ui text-xs leading-5 sm:block">
+						/* the rail FLOATS beside the paragraph, top-aligned to it —
+						   never inside the text's box, so no line shortens around it
+						   (Abram). left-full escapes the prose column into the page's
+						   right whitespace; below ~1340px that whitespace is gone and
+						   the under-paragraph line takes over. */
+						<span className="absolute left-full top-1 ml-8 hidden w-[11rem] font-ui text-xs leading-5 min-[1340px]:block">
 							{p.refs.map((r) => (
 								<Link
 									key={`${r.ref}${r.t}`}
@@ -455,7 +460,7 @@ const ParaBlock = memo(
 									key={`${en.id}${en.t}`}
 									to={`/media/${episodeId}?lens=${encodeURIComponent(en.id)}`}
 									aria-label={`Show every passage about ${en.name}`}
-									className="block max-w-[10rem] truncate text-muted-foreground decoration-rule2 underline-offset-2 hover:text-ink hover:underline"
+									className="block w-full truncate text-muted-foreground decoration-rule2 underline-offset-2 hover:text-ink hover:underline"
 								>
 									<span
 										aria-hidden
@@ -510,7 +515,7 @@ const ParaBlock = memo(
 						))}
 					</span>
 					{(p.refs.length > 0 || p.ents.length > 0) && (
-						<span className="mt-1 block font-ui text-xs sm:hidden">
+						<span className="mt-1 block font-ui text-xs min-[1340px]:hidden">
 							<span className="text-faint">— </span>
 							{p.refs.map((r, i) => (
 								<span key={`${r.ref}${r.t}`}>
