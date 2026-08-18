@@ -7,9 +7,13 @@
 #   uv tool install modal
 #   modal setup                       # browser auth
 #   modal secret create huggingface HF_TOKEN=hf_...   # paste your token
-#   accept the gated pyannote terms with that HF account:
+#   accept the gated pyannote terms with that HF account — all THREE;
+#   whisperx 3.8 pulls community-1 assets even if you pin an older model:
+#     https://huggingface.co/pyannote/speaker-diarization-community-1
 #     https://huggingface.co/pyannote/speaker-diarization-3.1
 #     https://huggingface.co/pyannote/segmentation-3.0
+#   then gate-check before any GPU batch:
+#     modal run scripts/ingest-podcast/whisperx_modal.py::preflight
 #
 # Run (from repo root; audio must be fetched first via --stage=fetch):
 #   modal run scripts/ingest-podcast/whisperx_modal.py --episodes all
@@ -70,7 +74,12 @@ def transcribe(audio_bytes: bytes, vid: str) -> bytes:
 		from whisperx.diarize import DiarizationPipeline
 	except ImportError:  # layout moved across whisperx versions
 		DiarizationPipeline = whisperx.DiarizationPipeline
-	diarizer = DiarizationPipeline(use_auth_token=token, device=device)
+	# whisperx 3.8.x renamed the kwarg from use_auth_token to token. Its
+	# diarization is built on pyannote/speaker-diarization-community-1 and
+	# fetches that repo's assets (plda/xvec) EVEN when model_name pins 3.1 —
+	# proven at GPU prices 2026-08-18. The community-1 terms must be
+	# accepted on the HF account; run the preflight below before any batch.
+	diarizer = DiarizationPipeline(token=token, device=device)
 	diarize_segments = diarizer(audio)
 	result = whisperx.assign_word_speakers(diarize_segments, result)
 
@@ -78,6 +87,24 @@ def transcribe(audio_bytes: bytes, vid: str) -> bytes:
 	os.unlink(path)
 	# large episodes exceed Modal's plain-return comfort zone — compress
 	return zlib.compress(json.dumps({"vid": vid, "result": result}).encode())
+
+
+@app.function(image=image, timeout=600, secrets=[modal.Secret.from_name("huggingface")], volumes={"/cache": cache})
+def preflight() -> str:
+	"""CPU-only gate: construct the diarizer so every gated download runs.
+	Costs cents; run it before any GPU batch so a 403 can never again
+	surface AFTER minutes of paid transcription."""
+	import os
+
+	import whisperx
+
+	try:
+		from whisperx.diarize import DiarizationPipeline
+	except ImportError:
+		DiarizationPipeline = whisperx.DiarizationPipeline
+	DiarizationPipeline(token=os.environ["HF_TOKEN"], device="cpu")
+	cache.commit()
+	return "diarizer loads: all gated repos accessible"
 
 
 @app.local_entrypoint()
@@ -104,7 +131,8 @@ def main(episodes: str = "all"):
 		todo.append(vid)
 
 	print(f"transcribing {len(todo)} episode(s) on Modal")
-	inputs = [((DATA_DIR / f"{vid}.m4a").read_bytes(), vid) for vid in todo]
+	# generator: the fleet is 4.3GB of audio — never hold it all in memory
+	inputs = (((DATA_DIR / f"{vid}.m4a").read_bytes(), vid) for vid in todo)
 	done = 0
 	for blob in transcribe.starmap(inputs, order_outputs=False):
 		payload = json.loads(zlib.decompress(blob))

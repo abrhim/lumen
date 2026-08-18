@@ -376,7 +376,12 @@ async function main() {
 	const require = createRequire(import.meta.url);
 	const postgres = require('postgres');
 	const envText = readFileSync(join(ROOT, '.env'), 'utf8');
-	const dsn = envText.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
+	// INGEST_DATABASE_URL overrides the .env DSN so a load can be pointed at
+	// the LOCAL stack explicitly — the .env value is the production admin
+	// credential, and "which database am I about to write 58 episodes into"
+	// must never be implicit (second-show fleet, 2026-08-18)
+	const dsn = process.env.INGEST_DATABASE_URL?.trim()
+		|| envText.match(/^DATABASE_URL=(.+)$/m)?.[1]?.trim();
 	if (!dsn) {
 		fatal(new Error('DATABASE_URL not found in root .env'), 'env');
 		return;
