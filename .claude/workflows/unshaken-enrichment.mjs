@@ -1,9 +1,9 @@
 export const meta = {
 	name: 'unshaken-enrichment',
-	description: 'AI-enrichment judgment for unshaken episodes — alias-map, timeline-review, principles; subagents only, artifacts on disk',
-	whenToUse: 'After --stage=extract-code and before --stage=extract-merge; args: {episodes: ["<videoId>", ...]}',
+	description: 'AI-enrichment judgment for podcast episodes — alias-map, timeline-review, principles; subagents only, artifacts on disk',
+	whenToUse: 'After --stage=extract-code and before --stage=extract-merge; args: {episodes: ["<videoId>", ...], show?: "stick-of-joseph", noBlock?: true}. Name kept for continuity — it serves every show now; noBlock (verbatim shows) drops the timeline agent.',
 	phases: [
-		{ title: 'Enrich', detail: 'per episode: alias-map + timeline-review + 2 principle windows, in parallel' },
+		{ title: 'Enrich', detail: 'per episode: alias-map + timeline-review (block shows only) + 2 principle windows, in parallel' },
 	],
 }
 
@@ -13,8 +13,13 @@ export const meta = {
 // structured returns let the workflow validate shape early. Agents receive
 // brief + transcript paths ONLY — never plan/review docs (EV-A3 hygiene).
 
-const DIR = 'data/podcasts/unshaken'
 const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+const show = parsedArgs?.show ?? 'unshaken'
+if (!/^[a-z0-9-]+$/.test(show)) throw new Error(`unsafe show id: ${show}`)
+const DIR = `data/podcasts/${show}`
+// no-block (verbatim shows, spans:null): no chapter timeline exists, so no
+// timeline agent runs — the merge stage knows not to expect its artifact
+const noBlock = parsedArgs?.noBlock === true
 const episodes = parsedArgs?.episodes
 if (!Array.isArray(episodes) || episodes.length === 0) {
 	throw new Error('args.episodes required: ["<videoId>", ...]')
@@ -86,7 +91,7 @@ no plan docs, no review docs, no other artifacts):
 
 const aliasPrompt = (ep) => `${shared(ep, `${DIR}/${ep}.aliases.json`)}
 
-You are the ALIAS-MAP judge for this podcast episode. Deepgram's ASR spells
+You are the ALIAS-MAP judge for this podcast episode. The ASR spells
 biblical names phonetically ("Ahas" for Ahaz, "Jehoiachim" for Jehoiakim).
 The brief's aliasCandidates block gives you (a) unknownTokens — frequent
 capitalized tokens that matched nothing, with counts — and (b)
@@ -154,23 +159,28 @@ Write EXACTLY {"mentions": [...]} to ${DIR}/${ep}.principles.${w}.json using
 the Write tool, then return the same object as structured output.`
 
 phase('Enrich')
-log(`enriching ${episodes.length} episode(s) — 4 agents each`)
+log(`enriching ${episodes.length} episode(s) of ${show} — ${noBlock ? 3 : 4} agents each`)
 
 const results = await pipeline(
 	episodes,
 	(ep) =>
 		parallel([
 			() => agent(aliasPrompt(ep), { label: `alias:${ep}`, phase: 'Enrich', schema: ALIAS_SCHEMA, effort: 'medium' }),
-			() => agent(timelinePrompt(ep), { label: `timeline:${ep}`, phase: 'Enrich', schema: TIMELINE_SCHEMA, effort: 'high' }),
+			...(noBlock ? [] : [() => agent(timelinePrompt(ep), { label: `timeline:${ep}`, phase: 'Enrich', schema: TIMELINE_SCHEMA, effort: 'high' })]),
 			() => agent(principlesPrompt(ep, 0), { label: `principles0:${ep}`, phase: 'Enrich', schema: PRINCIPLES_SCHEMA, effort: 'medium' }),
 			() => agent(principlesPrompt(ep, 1), { label: `principles1:${ep}`, phase: 'Enrich', schema: PRINCIPLES_SCHEMA, effort: 'medium' }),
-		]).then(([aliases, timeline, p0, p1]) => ({
-			episode: ep,
-			aliases: aliases?.aliases?.length ?? null,
-			timelineSegments: timeline?.timeline?.length ?? null,
-			principles: (p0?.mentions?.length ?? 0) + (p1?.mentions?.length ?? 0),
-			agentFailures: [aliases, timeline, p0, p1].filter((x) => x === null).length,
-		})),
+		]).then((outs) => {
+			const [aliases, ...rest] = outs
+			const timeline = noBlock ? undefined : rest[0]
+			const [p0, p1] = noBlock ? rest : rest.slice(1)
+			return {
+				episode: ep,
+				aliases: aliases?.aliases?.length ?? null,
+				timelineSegments: noBlock ? null : timeline?.timeline?.length ?? null,
+				principles: (p0?.mentions?.length ?? 0) + (p1?.mentions?.length ?? 0),
+				agentFailures: outs.filter((x) => x === null).length,
+			}
+		}),
 )
 
 const flat = results.filter(Boolean)

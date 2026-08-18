@@ -159,7 +159,7 @@ export function detectChapterTransitions(
 /** Explicit "verse" refs only: digits, number-words, ranges ("to"/"through"),
  * elided pairs ("twenty one and two" = 21–22), relative markers ("next
  * verse"). Bare numerals fail CLOSED — the coverage census surfaces them. */
-export function parseSpokenVerseRefs(text) {
+export function parseSpokenVerseRefs(text, { withPos = false } = {}) {
 	const t = String(text);
 	const spans = [];
 	const collect = (re, handler) => {
@@ -204,9 +204,39 @@ export function parseSpokenVerseRefs(text) {
 	for (const s of spans) {
 		if (s.start <= cursor) continue;
 		cursor = s.end - 1;
-		out.push(...s.out);
+		// pos is opt-in: the no-block variant needs governing-citation order,
+		// while the block-mode contract (pinned deepEqual shapes) stays exact
+		out.push(...(withPos ? s.out.map((o) => ({ ...o, pos: s.start, posEnd: s.end })) : s.out));
 	}
 	return out.filter((r) => r.relative !== undefined || Number.isInteger(r.verse));
+}
+
+/** Book-qualified citations ("Second Kings 21", "Alma chapter thirty two",
+ * "D&C section 76") → {bookId, chapterNum, position}. The no-block variant's
+ * governing context — deliberately the SAME citation shape
+ * detectForeignWindows requires to open a window, so a citation and a
+ * window can never disagree about what counts as one. Longest alias wins
+ * at a shared position ("first kings" over "kings"); overlaps drop. */
+export function parseBookCitations(text, bookAliases) {
+	const t = String(text);
+	const hits = [];
+	for (const [alias, bookId] of Object.entries(bookAliases ?? {})) {
+		const re = new RegExp(`\\b${esc(alias)}\\s+(?:chapter\\s+|section\\s+)?${NUM}\\b`, 'gi');
+		for (const m of t.matchAll(re)) {
+			const n = spokenNumberToInt(m[1]);
+			if (!Number.isInteger(n) || n < 1) continue;
+			hits.push({ bookId, chapterNum: n, position: m.index, length: m[0].length });
+		}
+	}
+	hits.sort((a, b) => a.position - b.position || b.length - a.length);
+	const out = [];
+	let cursor = -1;
+	for (const h of hits) {
+		if (h.position <= cursor) continue;
+		cursor = h.position + h.length - 1;
+		out.push({ bookId: h.bookId, chapterNum: h.chapterNum, position: h.position });
+	}
+	return out;
 }
 
 /** Cross-book tangent windows (panel F3; "section" unit for D&C). Close:
@@ -347,9 +377,12 @@ export function validateAliasTable(table, { censusTokens, poolIds }) {
 
 // ── validation ──────────────────────────────────────────────────────────────
 
-/** Fail-closed spine resolution — never fabricate, never widen. */
-export function resolveVerseRef(ref, { episodeChapters, verseExists }) {
-	if (!episodeChapters.includes(ref.chapter_ctx)) {
+/** Fail-closed spine resolution — never fabricate, never widen. In no-block
+ * mode (verbatim shows, spans:null) there is no episode block to scope to:
+ * chapter_ctx comes from an explicit same-utterance citation and the
+ * full-canon verseExists set is the only guard. */
+export function resolveVerseRef(ref, { episodeChapters, verseExists, noBlock = false }) {
+	if (!noBlock && !episodeChapters.includes(ref.chapter_ctx)) {
 		return { id: null, reason: `chapter ${ref.chapter_ctx} outside episode block` };
 	}
 	if (!Number.isInteger(ref.verse_num) || ref.verse_num < 1) {

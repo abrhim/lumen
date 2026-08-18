@@ -12,6 +12,7 @@ import {
 	chapterAt,
 	detectChapterTransitions,
 	parseSpokenVerseRefs,
+	parseBookCitations,
 	detectForeignWindows,
 	aliasMatchCandidates,
 	validateAliasTable,
@@ -38,9 +39,11 @@ const RANGE_CAP = 40; // "verses 1 through 999" is a parse artifact, not a ref
 
 const ORDINALS = { 1: 'First', 2: 'Second', 3: 'Third' };
 
-export function pathsFor(ep, dir) {
+export function pathsFor(ep, dir, engine = 'deepgram') {
 	return {
-		deepgram: join(dir, `${ep.id}.deepgram.json`),
+		// key keeps its historical name; whisperx shows point it at their own
+		// artifact (second-show: transcriptPathFor is engine-aware the same way)
+		deepgram: join(dir, `${ep.id}.${engine}.json`),
 		transcriptTxt: join(dir, `${ep.id}.transcript.txt`),
 		extractionCode: join(dir, `${ep.id}.extraction-code.json`),
 		judgmentBrief: join(dir, `${ep.id}.judgment-brief.json`),
@@ -61,6 +64,9 @@ export function deriveBookMaps(bookRows, episodeChapters) {
 			out.push(`${ORDINALS[m[1]]} ${m[2]}`); // "Second Kings"
 			out.push(`${m[1]}${['st', 'nd', 'rd'][m[1] - 1]} ${m[2]}`); // "2nd Kings" (ASR)
 		}
+		// spoken register the full name never matches (SoJ trio probe): ASR
+		// writes the abbreviation for this one book — "D&C 76", "D&C 121"
+		if (name === 'Doctrine and Covenants') out.push('D&C');
 		return out;
 	};
 	const bookAliases = {};
@@ -92,6 +98,61 @@ export async function fetchCandidatePool(sql, episodeChapters) {
 	return pool;
 }
 
+/** No-block pool (second-show §3): leg B = entities on verse edges of books
+ * actually CITED in the transcript (same shape as the block pool); leg A =
+ * global top-N person/place/event/symbol by edge degree, stable tiebreak
+ * (count DESC, id) so extract-code and extract-merge derive the identical
+ * pool. Principles come ONLY from leg B — a global principle pool balloons
+ * the judgment brief. Leg-B rows carry bookLinked for downstream filters. */
+export async function fetchGlobalCandidatePool(sql, { utterances, bookAliasMap, topN = 150 }) {
+	const bookIds = new Set();
+	for (const u of utterances) {
+		for (const c of parseBookCitations(u.text, bookAliasMap)) bookIds.add(c.bookId);
+	}
+	const patterns = [...bookIds].sort().map((b) => `${b}-%`);
+	let legB = [];
+	if (patterns.length) {
+		legB = await sql`
+			WITH touching AS (
+				SELECT CASE WHEN ed.to_id LIKE ANY(${patterns}) THEN ed.from_id ELSE ed.to_id END AS other_id
+				FROM lumen.edges ed
+				WHERE ed.to_id LIKE ANY(${patterns}) OR ed.from_id LIKE ANY(${patterns})
+			)
+			SELECT DISTINCT ent.id, ent.name, ent.entity_type
+			FROM touching t JOIN lumen.entities ent ON ent.id = t.other_id
+			WHERE ent.entity_type IN ('person','place','event','principle','symbol')`;
+	}
+	const legA = await sql`
+		SELECT e.id, e.name, e.entity_type
+		FROM lumen.entities e JOIN lumen.edges ed ON ed.from_id = e.id OR ed.to_id = e.id
+		WHERE e.entity_type IN ('person','place','event','symbol')
+		GROUP BY e.id, e.name, e.entity_type
+		ORDER BY count(*) DESC, e.id LIMIT ${topN}`;
+	const pool = { person: [], place: [], event: [], principle: [], symbol: [] };
+	const seen = new Set();
+	for (const r of legB) {
+		if (seen.has(r.id)) continue;
+		seen.add(r.id);
+		pool[r.entity_type].push({ id: r.id, name: r.name, bookLinked: true });
+	}
+	for (const r of legA) {
+		if (seen.has(r.id)) continue;
+		seen.add(r.id);
+		pool[r.entity_type].push({ id: r.id, name: r.name, bookLinked: false });
+	}
+	return pool;
+}
+
+/** Sorted id list across all kinds — the pool determinism guard. Both
+ * extract stages derive the pool independently; the hash catches drift. */
+export function poolHash(pool) {
+	return contentHash(
+		['person', 'place', 'event', 'principle', 'symbol']
+			.flatMap((k) => pool[k].map((e) => e.id))
+			.sort(),
+	);
+}
+
 function inForeignWindow(t, windows) {
 	return windows.some((w) => t >= w.tStart && t <= w.tEnd);
 }
@@ -117,14 +178,21 @@ export function runDeterministicExtraction(utterances, ctx) {
 		timelineOverride = null,
 	} = ctx;
 
+	// No-block mode (verbatim shows, spans:null — second-show §3): there is
+	// no chapter timeline and no foreign/in-block distinction; the citation
+	// parser below is the only anchor source.
+	const noBlock = ctx.noBlock === true;
 	// R-extract-lib-1: windows FIRST — bare "chapter N" inside an open
 	// tangent window must not become a block segment.
-	const foreignWindows = detectForeignWindows(utterances, {
-		foreignBooks,
-		inBlockBooks: bookAliases,
-	});
-	const timeline =
-		timelineOverride ??
+	const foreignWindows = noBlock
+		? []
+		: detectForeignWindows(utterances, {
+			foreignBooks,
+			inBlockBooks: bookAliases,
+		});
+	const timeline = noBlock
+		? []
+		: timelineOverride ??
 		detectChapterTransitions(utterances, {
 			episodeChapters,
 			bookAliases,
@@ -159,11 +227,107 @@ export function runDeterministicExtraction(utterances, ctx) {
 		});
 	}
 
+	if (noBlock) {
+		// Same-utterance governing context, fail-closed (design decision
+		// recorded in docs/features/soj-extraction/implementation-map.md §6.4):
+		// a bare "verse N" resolves only against a citation in the SAME
+		// utterance — nearest preceding, or the post-cited "verse N of Book C"
+		// form. Cross-utterance carry is deliberately NOT done in v1.
+		counts.noContextDropped = 0;
+		for (const u of utterances) {
+			const citations = parseBookCitations(u.text, foreignBooks);
+			// every existing cited chapter is itself a DISCUSSES anchor —
+			// chapter existence probed via its verse 1 (every chapter has one)
+			for (const c of citations) {
+				const chapterId = `${c.bookId}-${c.chapterNum}`;
+				if (!verseExists(`${chapterId}-1`)) {
+					counts.resolutionFailures[chapterId] = (counts.resolutionFailures[chapterId] ?? 0) + 1;
+					continue;
+				}
+				mentions.push({
+					kind: 'chapter',
+					target: chapterId,
+					seq: u.seq,
+					t: u.t_start_s,
+					confidence: CONFIDENCE.chapter,
+					quote: quoteFrom(u),
+				});
+			}
+			const refs = parseSpokenVerseRefs(u.text, { withPos: true });
+			if (!refs.length) continue;
+			let lastV = null;
+			let lastVChapter = null;
+			for (const ref of refs) {
+				let governing = null;
+				for (const c of citations) {
+					if (c.position < (ref.pos ?? 0)) governing = c; // sorted by position
+				}
+				if (!governing) {
+					// "verse three of Second Kings 21" — citation follows, joined
+					// by "of"; the slice test keeps this fail-closed
+					const after = citations.find(
+						(c) => c.position > (ref.posEnd ?? 0) &&
+							/^\s*of\s*$/i.test(u.text.slice(ref.posEnd ?? 0, c.position)),
+					);
+					if (after) governing = after;
+				}
+				if (!governing) {
+					counts.noContextDropped += 1;
+					continue;
+				}
+				const chapterId = `${governing.bookId}-${governing.chapterNum}`;
+				if (chapterId !== lastVChapter) {
+					lastV = null;
+					lastVChapter = chapterId;
+				}
+				let nums = [];
+				let conf = CONFIDENCE.verseExplicit;
+				if (ref.relative !== undefined) {
+					if (lastV === null) {
+						counts.relativeUnresolved += 1;
+						continue;
+					}
+					nums = [lastV + ref.relative];
+					conf = CONFIDENCE.verseRelative;
+				} else if (ref.verseEnd !== undefined) {
+					if (ref.verseEnd - ref.verse > RANGE_CAP) {
+						drops.push({ seq: u.seq, reason: `range too wide: ${ref.verse}-${ref.verseEnd}` });
+						continue;
+					}
+					for (let v = ref.verse; v <= ref.verseEnd; v += 1) nums.push(v);
+					conf = CONFIDENCE.verseRange;
+				} else {
+					nums = [ref.verse];
+				}
+				for (const verse_num of nums) {
+					const r = resolveVerseRef(
+						{ chapter_ctx: chapterId, verse_num },
+						{ episodeChapters, verseExists, noBlock: true },
+					);
+					if (r.id === null) {
+						drops.push({ seq: u.seq, reason: r.reason });
+						counts.resolutionFailures[chapterId] = (counts.resolutionFailures[chapterId] ?? 0) + 1;
+						continue;
+					}
+					mentions.push({
+						kind: 'verse',
+						target: r.id,
+						seq: u.seq,
+						t: u.t_start_s,
+						confidence: conf,
+						quote: quoteFrom(u),
+					});
+					lastV = verse_num;
+				}
+			}
+		}
+	}
+
 	const firstSegT = timeline.length ? Math.min(...timeline.map((s) => s.t_start_s)) : Infinity;
 	let lastVerse = null;
 	let lastVerseChapter = null;
 
-	for (const u of utterances) {
+	for (const u of noBlock ? [] : utterances) {
 		const refs = parseSpokenVerseRefs(u.text);
 		if (!refs.length) continue;
 		if (inForeignWindow(u.t_start_s, foreignWindows)) {
@@ -188,7 +352,11 @@ export function runDeterministicExtraction(utterances, ctx) {
 			continue;
 		}
 		const governing = chapterAt(timeline, u.t_start_s);
-		if (!governing) continue;
+		if (!governing) {
+			// previously an UNCOUNTED silent drop — free observability
+			counts.noGoverningDropped = (counts.noGoverningDropped ?? 0) + refs.length;
+			continue;
+		}
 		if (governing !== lastVerseChapter) {
 			lastVerse = null;
 			lastVerseChapter = governing;
@@ -264,13 +432,38 @@ export function runDeterministicExtraction(utterances, ctx) {
 			nameClaims.set(shorter, [...(nameClaims.get(shorter) ?? []), '__contained__']);
 		}
 	}
-	const ambiguousNames = new Set([...nameClaims.entries()].filter(([, ids]) => ids.length > 1).map(([k]) => k));
+	// no-block disambiguation (map risk 2): the global pool multiplies
+	// duplicate names (nephi-1/nephi-2) and fail-closed exclusion would eat
+	// the corpus's biggest names. Cited books carry the same context the
+	// chapter block used to — when EXACTLY ONE claimant is book-linked, it
+	// owns the name; contained-name markers still force exclusion.
+	const bookLinkedById = new Map(
+		['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => [e.id, e.bookLinked === true])),
+	);
+	const nameOwner = new Map();
+	const ambiguousNames = new Set();
+	for (const [k, ids] of nameClaims.entries()) {
+		if (ids.length <= 1) continue;
+		if (noBlock && !ids.includes('__contained__')) {
+			const linked = ids.filter((id) => bookLinkedById.get(id));
+			if (linked.length === 1) {
+				nameOwner.set(k, linked[0]);
+				continue;
+			}
+		}
+		ambiguousNames.add(k);
+	}
 	counts.ambiguousNamesExcluded = [...ambiguousNames];
 	const commonWordName = (name) => name.split(/\s+/).every((w) => lowerTokens.has(w.toLowerCase()));
 	const baseTable = [
 		...['person', 'place', 'event'].flatMap((kind) =>
 			pool[kind]
-				.filter((e) => !ambiguousNames.has(e.name.toLowerCase()) && !commonWordName(e.name))
+				.filter((e) => {
+					const k = e.name.toLowerCase();
+					if (ambiguousNames.has(k) || commonWordName(e.name)) return false;
+					const owner = nameOwner.get(k);
+					return owner === undefined || owner === e.id;
+				})
 				.map((e) => ({ id: e.id, names: [e.name], kind, base: true })),
 		),
 		...aliasTable.map((row) => ({ ...row, base: false })),
@@ -333,7 +526,7 @@ export function buildCoverageBlock(utterances, result, ctx) {
 	const matchedIds = new Set(result.mentions.map((m) => m.target));
 	const zeroHitPoolNames = ['person', 'place', 'event']
 		.flatMap((k) => pool[k])
-		.filter((e) => !matchedIds.has(e.id))
+		.filter((e) => !matchedIds.has(e.id) && (ctx.noBlock !== true || e.bookLinked === true))
 		.map((e) => ({ id: e.id, name: e.name }));
 	// unknown capitalized tokens (alias candidates for the census). A word
 	// that ALSO appears lowercase is running prose (That/Well/They), not a
@@ -389,7 +582,7 @@ export function isValidCodeArtifact(path, epId) {
 }
 
 export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
-	const paths = pathsFor(ep, dir);
+	const paths = pathsFor(ep, dir, opts.transcriptEngine === 'whisperx' ? 'whisperx' : 'deepgram');
 	const episodeId = `${opts.showId}-${ep.id}`;
 	// F25: validity spans ALL three outputs (a crash between writes must not
 	// wedge resume) and the cached fingerprint must match the CURRENT
@@ -416,11 +609,20 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 	}
 	const dg = JSON.parse(readFileSync(paths.deepgram, 'utf8'));
 	const utterances = utterancesToRows(dg, episodeId);
-	const episodeChapters = anchorsForBlock(ep.spans, lookup);
+	// no-block (verbatim shows): spans is null and anchorsForBlock would
+	// throw — there is no episode block at all
+	const noBlock = ep.spans == null;
+	const episodeChapters = noBlock ? [] : anchorsForBlock(ep.spans, lookup);
+	// with an empty block, deriveBookMaps puts EVERY book (ordinal + ASR
+	// aliases included) into foreignBooks — the citation lexicon
 	const { bookAliases, foreignBooks } = deriveBookMaps(opts.bookRows, episodeChapters);
-	const pool = await fetchCandidatePool(sql, episodeChapters);
+	const pool = noBlock
+		? await fetchGlobalCandidatePool(sql, { utterances, bookAliasMap: foreignBooks })
+		: await fetchCandidatePool(sql, episodeChapters);
 	const verseSet = new Set(
-		(await sql`SELECT id FROM lumen.verses WHERE chapter_id = ANY(${episodeChapters})`).map((r) => r.id),
+		noBlock
+			? (await sql`SELECT id FROM lumen.verses`).map((r) => r.id)
+			: (await sql`SELECT id FROM lumen.verses WHERE chapter_id = ANY(${episodeChapters})`).map((r) => r.id),
 	);
 	const ctx = {
 		episodeId,
@@ -428,6 +630,7 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 		bookAliases,
 		foreignBooks,
 		pool,
+		noBlock,
 		verseExists: (id) => verseSet.has(id),
 	};
 	const result = runDeterministicExtraction(utterances, ctx);
@@ -435,6 +638,8 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 	const fingerprint = {
 		utteranceCount: utterances.length,
 		durationS: Number(dg?.metadata?.duration ?? 0),
+		// determinism guard: merge re-derives the pool; drift must be loud
+		poolHash: poolHash(pool),
 	};
 
 	// rendered transcript for judgment/eval agents (deepgram.json is 10MB;
@@ -460,10 +665,17 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 		JSON.stringify({
 			episodeId,
 			title: ep.title,
-			blockChapters: episodeChapters,
+			// no-block briefs OMIT block/timeline sections (not sent empty —
+			// second-show §3) and carry the drop counts that replace them
+			...(noBlock
+				? {
+					noBlock: true,
+					noContextDropped: result.counts.noContextDropped ?? 0,
+					citedChapters: [...new Set(result.mentions.filter((m) => m.kind === 'chapter').map((m) => m.target))],
+				}
+				: { blockChapters: episodeChapters, timeline: result.timeline }),
 			fingerprint,
 			transcriptPath: paths.transcriptTxt,
-			timeline: result.timeline,
 			coverage,
 			principlePool: pool.principle,
 			aliasCandidates: {
@@ -488,7 +700,7 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 	return codeArtifact;
 }
 
-function readJudgment(paths, log, epId, episodeChapters) {
+function readJudgment(paths, log, epId, episodeChapters, { noBlock = false } = {}) {
 	const out = { aliases: [], timeline: null, principles: [], missing: [] };
 	if (existsSync(paths.aliases)) {
 		try {
@@ -498,7 +710,11 @@ function readJudgment(paths, log, epId, episodeChapters) {
 			out.missing.push('aliases(unparseable)');
 		}
 	} else out.missing.push('aliases');
-	if (existsSync(paths.timelineReview)) {
+	// no-block episodes launch no timeline agent — the artifact's absence
+	// must not block judgmentComplete (the load gate depends on it)
+	if (noBlock) {
+		// nothing: out.timeline stays null, nothing joins missing
+	} else if (existsSync(paths.timelineReview)) {
 		try {
 			const tr = JSON.parse(readFileSync(paths.timelineReview, 'utf8'));
 			// F3: agent timelines are UNTRUSTED — out-of-block chapters would
@@ -545,7 +761,7 @@ function readJudgment(paths, log, epId, episodeChapters) {
 }
 
 export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
-	const paths = pathsFor(ep, dir);
+	const paths = pathsFor(ep, dir, opts.transcriptEngine === 'whisperx' ? 'whisperx' : 'deepgram');
 	const episodeId = `${opts.showId}-${ep.id}`;
 	if (!isValidCodeArtifact(paths.extractionCode, episodeId)) {
 		throw new Error(`${ep.id}: extraction-code artifact missing/invalid — run --stage=extract-code first`);
@@ -560,20 +776,33 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 			`${ep.id}: transcript fingerprint mismatch (${utterances.length} vs ${codeArtifact.fingerprint.utteranceCount}) — re-run extract-code`,
 		);
 	}
-	const episodeChapters = anchorsForBlock(ep.spans, lookup);
+	const noBlock = ep.spans == null;
+	const episodeChapters = noBlock ? [] : anchorsForBlock(ep.spans, lookup);
 	const { bookAliases, foreignBooks } = deriveBookMaps(opts.bookRows, episodeChapters);
-	const pool = await fetchCandidatePool(sql, episodeChapters);
+	const pool = noBlock
+		? await fetchGlobalCandidatePool(sql, { utterances, bookAliasMap: foreignBooks })
+		: await fetchCandidatePool(sql, episodeChapters);
+	// pool determinism guard (map §6.1): both stages derive independently
+	if (codeArtifact.fingerprint.poolHash && codeArtifact.fingerprint.poolHash !== poolHash(pool)) {
+		throw new Error(`${ep.id}: candidate pool drifted since extract-code — re-run extract-code`);
+	}
 	const verseSet = new Set(
-		(await sql`SELECT id FROM lumen.verses WHERE chapter_id = ANY(${episodeChapters})`).map((r) => r.id),
+		noBlock
+			? (await sql`SELECT id FROM lumen.verses`).map((r) => r.id)
+			: (await sql`SELECT id FROM lumen.verses WHERE chapter_id = ANY(${episodeChapters})`).map((r) => r.id),
 	);
 
-	const judgment = readJudgment(paths, log, ep.id, episodeChapters);
+	const judgment = readJudgment(paths, log, ep.id, episodeChapters, { noBlock });
 
 	// EV-A10: agent alias tables are validated deterministically — census
 	// membership, pool membership, collisions routed (dropped in v1 + logged)
 	const censusTokens = new Set();
 	for (const u of utterances) for (const m of u.text.matchAll(/\b([A-Za-z][a-z]{1,})\b/g)) censusTokens.add(m[1].toLowerCase());
-	const poolIds = new Set(['person', 'place', 'event'].flatMap((k) => pool[k].map((e) => e.id)));
+	const poolIds = new Set(
+		['person', 'place', 'event'].flatMap((k) =>
+			pool[k].filter((e) => !noBlock || e.bookLinked === true).map((e) => e.id),
+		),
+	);
 	const aliasCheck = validateAliasTable(judgment.aliases, { censusTokens, poolIds });
 	// F14 + R-extract-merge-2: cross-SET collisions — an agent alias equal
 	// to OR CONTAINED IN another entity's base name double-matches (the
@@ -600,8 +829,9 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 		bookAliases,
 		foreignBooks,
 		pool,
+		noBlock,
 		aliasTable: usableAliases,
-		timelineOverride: judgment.timeline,
+		timelineOverride: noBlock ? null : judgment.timeline,
 		verseExists: (id) => verseSet.has(id),
 	};
 	const result = runDeterministicExtraction(utterances, ctx);

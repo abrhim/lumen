@@ -854,3 +854,109 @@ test('H9: prompts and schema never embed key material', () => {
 	assert.ok(!/sk-ant/.test(p));
 	assert.ok(!/sk-ant/.test(JSON.stringify(buildExtractionSchema())));
 });
+
+// ── no-block variant (second-show §3; docs/features/soj-extraction) ─────────
+
+test('parseBookCitations: spoken forms, longest alias wins, overlaps drop', async () => {
+	const { parseBookCitations } = await import('../ingest-podcast/extract-lib.mjs');
+	const aliases = { 'Second Kings': '2-kings', Kings: 'kings-wrong', Alma: 'alma', 'D&C': 'dc' };
+	assert.deepEqual(
+		parseBookCitations('turn to Second Kings 21 with me', aliases),
+		[{ bookId: '2-kings', chapterNum: 21, position: 8 }],
+	);
+	assert.deepEqual(
+		parseBookCitations('Alma chapter thirty two teaches', aliases),
+		[{ bookId: 'alma', chapterNum: 32, position: 0 }],
+	);
+	assert.equal(parseBookCitations('no citations here', aliases).length, 0);
+	// bare name-drop is NOT a citation
+	assert.equal(parseBookCitations('Alma was a prophet', aliases).length, 0);
+});
+
+test('no-block: same-utterance citation governs; bare refs without one drop counted', async () => {
+	const { runDeterministicExtraction } = await import('../ingest-podcast/extract.mjs');
+	const utterances = [
+		{ seq: 0, t_start_s: 0, text: 'Alma 32 says in verse twenty one that faith grows' },
+		{ seq: 1, t_start_s: 10, text: 'and verse five is my favorite' }, // no citation → drop
+	];
+	const verseIds = new Set(['alma-32-1', 'alma-32-21']);
+	const out = runDeterministicExtraction(utterances, {
+		episodeId: 'x',
+		episodeChapters: [],
+		bookAliases: {},
+		foreignBooks: { Alma: 'alma' },
+		pool: { person: [], place: [], event: [], principle: [], symbol: [] },
+		noBlock: true,
+		verseExists: (id) => verseIds.has(id),
+	});
+	const verses = out.mentions.filter((m) => m.kind === 'verse');
+	assert.deepEqual(verses.map((m) => m.target), ['alma-32-21']);
+	assert.equal(out.counts.noContextDropped, 1);
+	// the citation itself anchors the chapter
+	assert.deepEqual(out.mentions.filter((m) => m.kind === 'chapter').map((m) => m.target), ['alma-32']);
+	assert.equal(out.timeline.length, 0);
+});
+
+test('no-block: post-cited "verse N of Book C" form resolves', async () => {
+	const { runDeterministicExtraction } = await import('../ingest-podcast/extract.mjs');
+	const utterances = [
+		{ seq: 0, t_start_s: 0, text: 'think of verse three of Second Kings 21 here' },
+	];
+	const verseIds = new Set(['2-kings-21-1', '2-kings-21-3']);
+	const out = runDeterministicExtraction(utterances, {
+		episodeId: 'x',
+		episodeChapters: [],
+		bookAliases: {},
+		foreignBooks: { 'Second Kings': '2-kings' },
+		pool: { person: [], place: [], event: [], principle: [], symbol: [] },
+		noBlock: true,
+		verseExists: (id) => verseIds.has(id),
+	});
+	assert.deepEqual(
+		out.mentions.filter((m) => m.kind === 'verse').map((m) => m.target),
+		['2-kings-21-3'],
+	);
+});
+
+test('no-block: nonexistent cited chapter fails closed into resolutionFailures', async () => {
+	const { runDeterministicExtraction } = await import('../ingest-podcast/extract.mjs');
+	const utterances = [{ seq: 0, t_start_s: 0, text: 'as Alma 99 verse two says' }];
+	const out = runDeterministicExtraction(utterances, {
+		episodeId: 'x',
+		episodeChapters: [],
+		bookAliases: {},
+		foreignBooks: { Alma: 'alma' },
+		pool: { person: [], place: [], event: [], principle: [], symbol: [] },
+		noBlock: true,
+		verseExists: () => false,
+	});
+	assert.equal(out.mentions.length, 0);
+	assert.ok(out.counts.resolutionFailures['alma-99'] >= 1);
+});
+
+test('resolveVerseRef: noBlock bypasses the episode-block gate, keeps canon gate', async () => {
+	const { resolveVerseRef } = await import('../ingest-podcast/extract-lib.mjs');
+	const ok = resolveVerseRef(
+		{ chapter_ctx: 'alma-32', verse_num: 21 },
+		{ episodeChapters: [], verseExists: (id) => id === 'alma-32-21', noBlock: true },
+	);
+	assert.equal(ok.id, 'alma-32-21');
+	const bad = resolveVerseRef(
+		{ chapter_ctx: 'alma-32', verse_num: 99 },
+		{ episodeChapters: [], verseExists: (id) => id === 'alma-32-21', noBlock: true },
+	);
+	assert.equal(bad.id, null);
+	// block mode unchanged: empty block still refuses
+	const blocked = resolveVerseRef(
+		{ chapter_ctx: 'alma-32', verse_num: 21 },
+		{ episodeChapters: [], verseExists: () => true },
+	);
+	assert.equal(blocked.id, null);
+});
+
+test('poolHash: stable across insertion order', async () => {
+	const { poolHash } = await import('../ingest-podcast/extract.mjs');
+	const a = { person: [{ id: 'p1' }, { id: 'p2' }], place: [{ id: 'l1' }], event: [], principle: [], symbol: [] };
+	const b = { person: [{ id: 'p2' }, { id: 'p1' }], place: [{ id: 'l1' }], event: [], principle: [], symbol: [] };
+	assert.equal(poolHash(a), poolHash(b));
+});
