@@ -332,7 +332,7 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 					<ul className="mt-3 list-none">
 						{hostedEpisodes.map((ep) => (
 							<li key={ep.id}>
-								<RefRow to={`/media/${ep.id}`} ariaLabel={`Open ${ep.name}`}>
+								<RefRow to={`/collections/${ep.collectionId}/serial/${ep.id}`} ariaLabel={`Open ${ep.name}`}>
 									<span className="min-w-0 flex-initial truncate font-reading text-[15px] text-ink">
 										{ep.name}
 									</span>

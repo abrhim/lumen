@@ -7,6 +7,8 @@ export default [
 	route("scripture/:book/:chapter/art", "routes/scripture.art.tsx"),
 	route("word/:no", "routes/word.tsx"),
 	route("media/:id", "routes/media.tsx"),
+	// canonical episode home (media/:id 301s here; serial = episodic content)
+	route("collections/:cid/serial/:id", "routes/serial.tsx"),
 	route("strongs", "routes/strongs.tsx"),
 	route("art", "routes/art.tsx"),
 	route("collections", "routes/collections.index.tsx"),

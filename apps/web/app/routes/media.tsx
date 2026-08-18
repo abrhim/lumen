@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, data, isRouteErrorResponse, useSearchParams } from "react-router";
+import { Link, data, isRouteErrorResponse, redirect, useSearchParams } from "react-router";
 import { sql } from "drizzle-orm";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
@@ -81,6 +81,15 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		throw data(null, { status: 404, headers });
 	}
 	const collectionId = String(episode.collection_id);
+
+	// Collection-scoped home (Abram 2026-08-18): episodes live at
+	// /collections/:cid/serial/:id; the old /media/:id and any wrong-cid
+	// path 301 to canonical with the query string intact, so every
+	// existing link keeps working.
+	const canonicalPath = `/collections/${collectionId}/serial/${id}`;
+	if ((params as { cid?: string }).cid !== collectionId) {
+		throw redirect(canonicalPath + url.search, 301);
+	}
 
 	// second-show: sources follow the collection — the episode's own
 	// collection_id, already in hand, templates every source filter

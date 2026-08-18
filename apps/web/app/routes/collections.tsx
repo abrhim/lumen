@@ -131,7 +131,7 @@ export default function CollectionLanding({ loaderData }: Route.ComponentProps) 
 						{g.episodes.map((e) => (
 							<li key={e.id}>
 								<Link
-									to={`/media/${e.id}`}
+									to={`/collections/${collection.id}/serial/${e.id}`}
 									className="group -mx-3 flex items-center gap-4 rounded-lg border border-transparent p-3 transition-colors duration-150 hover:border-rule2 hover:bg-sel"
 								>
 									<span className="flex h-9 w-9 flex-none items-center justify-center rounded-full border border-rule2 text-faint transition-colors group-hover:border-primary group-hover:text-primary">
