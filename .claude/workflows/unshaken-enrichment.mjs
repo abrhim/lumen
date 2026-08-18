@@ -20,6 +20,10 @@ const DIR = `data/podcasts/${show}`
 // no-block (verbatim shows, spans:null): no chapter timeline exists, so no
 // timeline agent runs — the merge stage knows not to expect its artifact
 const noBlock = parsedArgs?.noBlock === true
+// judge model override (Abram 2026-08-18: fleet remainder on Opus — quota).
+// Finished episodes cost little either way: every agent's RESUME CHECK
+// returns the existing artifact without re-judging.
+const judgeModel = parsedArgs?.model
 const episodes = parsedArgs?.episodes
 if (!Array.isArray(episodes) || episodes.length === 0) {
 	throw new Error('args.episodes required: ["<videoId>", ...]')
@@ -165,10 +169,10 @@ const results = await pipeline(
 	episodes,
 	(ep) =>
 		parallel([
-			() => agent(aliasPrompt(ep), { label: `alias:${ep}`, phase: 'Enrich', schema: ALIAS_SCHEMA, effort: 'medium' }),
-			...(noBlock ? [] : [() => agent(timelinePrompt(ep), { label: `timeline:${ep}`, phase: 'Enrich', schema: TIMELINE_SCHEMA, effort: 'high' })]),
-			() => agent(principlesPrompt(ep, 0), { label: `principles0:${ep}`, phase: 'Enrich', schema: PRINCIPLES_SCHEMA, effort: 'medium' }),
-			() => agent(principlesPrompt(ep, 1), { label: `principles1:${ep}`, phase: 'Enrich', schema: PRINCIPLES_SCHEMA, effort: 'medium' }),
+			() => agent(aliasPrompt(ep), { label: `alias:${ep}`, phase: 'Enrich', schema: ALIAS_SCHEMA, effort: 'medium', ...(judgeModel ? { model: judgeModel } : {}) }),
+			...(noBlock ? [] : [() => agent(timelinePrompt(ep), { label: `timeline:${ep}`, phase: 'Enrich', schema: TIMELINE_SCHEMA, effort: 'high', ...(judgeModel ? { model: judgeModel } : {}) })]),
+			() => agent(principlesPrompt(ep, 0), { label: `principles0:${ep}`, phase: 'Enrich', schema: PRINCIPLES_SCHEMA, effort: 'medium', ...(judgeModel ? { model: judgeModel } : {}) }),
+			() => agent(principlesPrompt(ep, 1), { label: `principles1:${ep}`, phase: 'Enrich', schema: PRINCIPLES_SCHEMA, effort: 'medium', ...(judgeModel ? { model: judgeModel } : {}) }),
 		]).then((outs) => {
 			const [aliases, ...rest] = outs
 			const timeline = noBlock ? undefined : rest[0]
