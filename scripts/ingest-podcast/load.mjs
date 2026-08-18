@@ -84,7 +84,10 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.desc
 			collection.provenance,
 			collection.license,
 			collection.storage,
-			false,
+			// seed value is the show's call (Abram 2026-08-18: SoJ launches
+			// public); ON CONFLICT still never touches it, so a manual flip in
+			// EITHER direction survives every re-run — B2 intact
+			collection.public ?? false,
 		],
 	});
 

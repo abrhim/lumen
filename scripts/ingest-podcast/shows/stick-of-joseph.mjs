@@ -138,7 +138,7 @@ export const STICK_OF_JOSEPH = {
 		provenance: 'youtube',
 		license: 'embedded playback; transcript indexed for navigation',
 		storage: 'link',
-		public: false, // private until the pitch — the kill switch stays closed
+		public: true, // Abram 2026-08-18: open to everyone from ingest
 	},
 	pools: { fetch: 2, transcribe: 3 },
 	keytermMax: 100,

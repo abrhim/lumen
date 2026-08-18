@@ -588,7 +588,10 @@ test('multi-collection: the collection row upserted is the EPISODE\'s, not the s
   const coll = plan.statements.find((st) => /lumen\.collections/.test(st.text));
   assert.equal(coll.values[0], 'soj-stick-of-judah');
   assert.equal(coll.values[1], 'Stick of Judah Lectures');
-  assert.equal(coll.values[8], false, 'public seeded false — the kill switch stays closed');
+  // Abram 2026-08-18: SoJ launches public. The seed follows the config;
+  // B2 survives because ON CONFLICT still never touches public.
+  assert.equal(coll.values[8], true, 'public seeded from the show config');
+  assert.ok(!/DO UPDATE[^;]*public/i.test(coll.text), 're-run must never touch public');
 });
 
 test('shape: an unknown collectionId fails loudly, never misfiles', () => {
