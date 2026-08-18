@@ -55,32 +55,41 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	for (const b of books as any[]) bookOrder.set(String(b.name), num(b.sort_order));
 
 	// Group by the FIRST span's book; order groups canonically, episodes by
-	// starting chapter within the group.
+	// starting chapter within the group. Verbatim-title shows (second-show
+	// fix 7) carry spans:null — their organizing principle is RECENCY: one
+	// unlabelled group, newest upload first, no book headers to be empty.
 	const rows = (episodes as any[]).map((e) => {
 		const meta = jb(e.metadata);
-		const spans = (meta?.spans ?? []) as Span[];
+		const spans = (meta?.spans ?? null) as Span[] | null;
 		return {
 			id: String(e.id),
 			title: String(e.name),
 			durationS: num(meta?.media?.duration_s) || 0,
 			spans,
-			spansLabel: spansLabel(spans),
-			book: spans[0]?.book ?? "Other",
-			startChapter: num(spans[0]?.start) || 0,
+			spansLabel: spans ? spansLabel(spans) : "",
+			book: spans?.[0]?.book ?? "Other",
+			startChapter: num(spans?.[0]?.start) || 0,
+			uploadDate: String(meta?.upload_date ?? ""),
 		};
 	});
-	const groupMap = new Map<string, typeof rows>();
-	for (const r of rows) {
-		const list = groupMap.get(r.book) ?? [];
-		list.push(r);
-		groupMap.set(r.book, list);
+	const spanless = rows.length > 0 && rows.every((r) => !r.spans || r.spans.length === 0);
+	let groups: Array<{ book: string; episodes: typeof rows }>;
+	if (spanless) {
+		groups = [{ book: "", episodes: [...rows].sort((a, b) => b.uploadDate.localeCompare(a.uploadDate)) }];
+	} else {
+		const groupMap = new Map<string, typeof rows>();
+		for (const r of rows) {
+			const list = groupMap.get(r.book) ?? [];
+			list.push(r);
+			groupMap.set(r.book, list);
+		}
+		groups = [...groupMap.entries()]
+			.sort(([a], [b]) => (bookOrder.get(a) ?? 999) - (bookOrder.get(b) ?? 999))
+			.map(([book, list]) => ({
+				book,
+				episodes: list.sort((a, b) => a.startChapter - b.startChapter),
+			}));
 	}
-	const groups = [...groupMap.entries()]
-		.sort(([a], [b]) => (bookOrder.get(a) ?? 999) - (bookOrder.get(b) ?? 999))
-		.map(([book, list]) => ({
-			book,
-			episodes: list.sort((a, b) => a.startChapter - b.startChapter),
-		}));
 
 	return data(
 		{
@@ -111,13 +120,13 @@ export default function CollectionLanding({ loaderData }: Route.ComponentProps) 
 				<h1 className="mt-3 font-display text-3xl font-medium tracking-tight">{collection.name}</h1>
 				<p className="mt-1 font-ui text-sm text-faint">
 					{collection.description && `${collection.description} · `}
-					{total} episodes
+					{total} {total === 1 ? "episode" : "episodes"}
 				</p>
 			</header>
 
 			{groups.map((g) => (
-				<section key={g.book} aria-label={g.book} className="mt-8">
-					<h2 className="font-reading text-sm text-muted-foreground">{g.book}</h2>
+				<section key={g.book || "all"} aria-label={g.book || collection.name} className="mt-8">
+					{g.book && <h2 className="font-reading text-sm text-muted-foreground">{g.book}</h2>}
 					<ul className="mt-2 list-none space-y-1">
 						{g.episodes.map((e) => (
 							<li key={e.id}>

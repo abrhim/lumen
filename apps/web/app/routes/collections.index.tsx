@@ -3,14 +3,16 @@ import { sql } from "drizzle-orm";
 import { getSessionUser } from "~/lib/auth.server";
 import { PageFrame, PageHeader } from "~/components/PageFrame";
 import { canViewCollection, getCollectionAccess } from "~/lib/collection-access.server";
+import { displayFamily } from "~/lib/collection-display";
 import type { Route } from "./+types/collections.index";
 
 /**
- * Collections — CURATED (Abram, 2026-07-31): exactly three doors surface
- * right now — Strong's, Art, and Unshaken. The generic all-collections
- * listing is deliberately gone; new collections earn their line here by
- * ruling, not by existing. Counts are live; a non-viewable Unshaken
- * simply doesn't print (fail-closed, absence).
+ * Collections — CURATED (Abram, 2026-07-31; second-show 2026-08-18):
+ * Strong's and Art are bespoke doors. Media collections print one door per
+ * VIEWABLE registered collection (the collection-display registry is the
+ * fail-closed gate — unregistered collections render nowhere). Counts are
+ * live; a private collection simply doesn't print for the public, and the
+ * admin preview sees it through canViewCollection.
  */
 
 interface Door {
@@ -24,20 +26,28 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 	const db = context.db;
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	headers.set("Cache-Control", "private, no-store");
-	const [strongs, art, unshaken, episodes, access] = await Promise.all([
+	const [strongs, art, mediaCollections, access] = await Promise.all([
 		db.execute(sql`SELECT count(*)::int AS n FROM lumen.strongs_lexicon`) as unknown as Promise<
 			Array<{ n: number }>
 		>,
 		db.execute(
 			sql`SELECT count(*)::int AS n FROM lumen.entities WHERE entity_type = 'artwork'`,
 		) as unknown as Promise<Array<{ n: number }>>,
+		// second-show fix 6: every ingested MEDIA collection with its episode
+		// count in one query, visibility applied below (admin preview included).
+		// Strong's and Art stay bespoke — they are not media collections and do
+		// not render from lumen.collections.
 		db.execute(
-			sql`SELECT id, name, description FROM lumen.collections WHERE id = 'unshaken'`,
-		) as unknown as Promise<Array<{ id: string; name: string; description: string | null }>>,
-		db.execute(
-			sql`SELECT count(*)::int AS n FROM lumen.entities
-			    WHERE entity_type = 'content_item' AND collection_id = 'unshaken'`,
-		) as unknown as Promise<Array<{ n: number }>>,
+			sql`SELECT c.id, c.name, c.description, count(e.id)::int AS episodes
+			    FROM lumen.collections c
+			    LEFT JOIN lumen.entities e
+			      ON e.collection_id = c.id AND e.entity_type = 'content_item'
+			    WHERE c.category = 'podcast'
+			    GROUP BY c.id, c.name, c.description
+			    ORDER BY c.name`,
+		) as unknown as Promise<
+			Array<{ id: string; name: string; description: string | null; episodes: number }>
+		>,
 		getCollectionAccess(db, user?.id ?? null),
 	]);
 
@@ -55,13 +65,17 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			count: `${(art[0]?.n ?? 0).toLocaleString("en-GB")} works`,
 		},
 	];
-	const u = unshaken[0];
-	if (u && canViewCollection(access, u.id)) {
+	for (const c of mediaCollections) {
+		// the display registry stays the fail-closed gate: an unregistered
+		// collection is queryable but rendered nowhere
+		if (displayFamily(c.id) !== "episodes") continue;
+		if (!canViewCollection(access, c.id)) continue;
+		if (c.episodes === 0) continue;
 		doors.push({
-			to: `/collections/${u.id}`,
-			name: u.name,
-			detail: u.description ?? "Verse-by-verse podcast episodes.",
-			count: `${(episodes[0]?.n ?? 0).toLocaleString("en-GB")} episodes`,
+			to: `/collections/${c.id}`,
+			name: c.name,
+			detail: c.description ?? "Podcast episodes.",
+			count: `${c.episodes.toLocaleString("en-GB")} episodes`,
 		});
 	}
 	return data({ doors }, { headers });

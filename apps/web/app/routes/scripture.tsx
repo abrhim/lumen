@@ -207,6 +207,8 @@ async function loadCrossRefs(
 interface MediaMoment {
 	episodeId: string;
 	episodeName: string;
+	/** the byline names the collection that said it — never a hard-coded show */
+	collectionName: string;
 	t: number;
 }
 interface MediaRefsPanel {
@@ -227,16 +229,25 @@ async function loadMediaRefs(
 	const verseId = buildVerseId(bookId, chapter, verse);
 	const startedAt = Date.now();
 	try {
+		// Second-show: any PUBLIC media collection's extraction feeds this panel
+		// (source follows the collection: `${collection_id}-extraction`). The
+		// visibility filter lives IN the SQL because publicCollections resolves
+		// in the same parallel window — it does not exist yet when this runs.
+		// Dev keeps the everything-visible override the old gate had.
+		const devAll = import.meta.env.DEV;
 		const rows = (await db.execute(sql`
-			SELECT g.from_id AS episode_id, ep.name, g.metadata
+			SELECT g.from_id AS episode_id, ep.name, g.metadata, c.name AS collection_name
 			FROM lumen.edges g
 			JOIN lumen.entities ep ON ep.id = g.from_id
+			JOIN lumen.collections c ON c.id = g.collection_id
 			WHERE g.to_id = ${verseId}
 				AND g.rel_type = 'DISCUSSES'
-				AND g.source = 'unshaken-extraction'`)) as {
+				AND g.source = g.collection_id || '-extraction'
+				AND (c.public OR ${devAll})`)) as {
 			episode_id: string;
 			name: string;
 			metadata: unknown;
+			collection_name: string;
 		}[];
 		const moments: MediaMoment[] = [];
 		for (const r of rows) {
@@ -249,6 +260,7 @@ async function loadMediaRefs(
 				moments.push({
 					episodeId: String(r.episode_id),
 					episodeName: String(r.name),
+					collectionName: String(r.collection_name),
 					t: Number(m.t),
 				});
 			}
@@ -292,8 +304,9 @@ async function loadVerseSignals(
 					AND rel_type IN ('MENTIONS','TEACHES')
 				GROUP BY 2, 3
 			UNION ALL
-			SELECT 'media', to_id, rel_type FROM lumen.edges
-				WHERE to_id IN ${ids} AND source = 'unshaken-extraction'
+			SELECT 'media', g.to_id, g.rel_type FROM lumen.edges g
+				JOIN lumen.collections c ON c.id = g.collection_id AND c.public
+				WHERE g.to_id IN ${ids} AND g.source = g.collection_id || '-extraction'
 				GROUP BY 2, 3
 			UNION ALL
 			SELECT 'xref', from_id, 'CROSS_REF' FROM lumen.edges
@@ -700,15 +713,11 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const connections = selectedVerse !== null ? pendingConnections : null;
 	const crossRefs = selectedVerse !== null ? crossRefsRaw : null;
 	const wordTags = selectedVerse !== null ? wordTagsRaw : null;
-	// Media surfaces are fail-closed on collection visibility: hidden until the
-	// deliberate public flip (or local dev). The reader stays session-free on
-	// its hot path, so no admin-preview here — preview lives on /media and
-	// /collections, which do check the entitlement.
-	const showUnshaken = import.meta.env.DEV || (publicCollections ?? []).includes("unshaken");
-	const mediaRefs = selectedVerse !== null && showUnshaken ? mediaRefsRaw : null;
-	if (!showUnshaken && verseSignals) {
-		for (const s of Object.values(verseSignals)) delete s.media;
-	}
+	// Media surfaces stay fail-closed on collection visibility, but the filter
+	// lives IN each media query now (collections.public join) — per collection,
+	// not keyed to Unshaken (second-show fixes 2+5). The old app-side gate and
+	// its verseSignals delete loop are gone with it.
+	const mediaRefs = selectedVerse !== null ? mediaRefsRaw : null;
 	const selectedWord = selectedVerse !== null ? parseWordParam(url.search) : null;
 
 	// Streamed like connections; uses only Neo4j + KV, safe after the handler returns.
@@ -2183,7 +2192,7 @@ function PanelBody({
 											{m.episodeName.replace(/^Come Follow Me - /, "")}
 										</span>
 										<span className="block truncate font-ui text-[11px] text-muted-foreground">
-											Unshaken · discusses this verse
+											{m.collectionName} · discusses this verse
 										</span>
 									</span>
 									<span className="shrink-0 font-ui text-[10.5px] tabular-nums text-muted-foreground">

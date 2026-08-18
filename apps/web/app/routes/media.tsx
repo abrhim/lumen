@@ -82,6 +82,10 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	}
 	const collectionId = String(episode.collection_id);
 
+	// second-show: sources follow the collection — the episode's own
+	// collection_id, already in hand, templates every source filter
+	const srcYoutube = `${collectionId}-youtube`;
+	const srcExtraction = `${collectionId}-extraction`;
 	const [[collection], transcript, anchors, discusses, entityEdges] = await Promise.all([
 		db.execute(sql`SELECT name FROM lumen.collections WHERE id = ${collectionId}`),
 		db.execute(sql`SELECT seq, t_start_s, t_end_s, text FROM lumen.transcripts
@@ -90,14 +94,14 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			FROM lumen.edges g
 			JOIN lumen.chapters c ON c.id = g.to_id
 			JOIN lumen.books b ON b.id = c.book_id
-			WHERE g.from_id = ${id} AND g.source = 'unshaken-youtube'`),
+			WHERE g.from_id = ${id} AND g.source = ${srcYoutube}`),
 		db.execute(sql`SELECT g.to_id, v.reference, g.metadata
 			FROM lumen.edges g JOIN lumen.verses v ON v.id = g.to_id
-			WHERE g.from_id = ${id} AND g.source = 'unshaken-extraction'
+			WHERE g.from_id = ${id} AND g.source = ${srcExtraction}
 			AND g.rel_type = 'DISCUSSES'`),
 		db.execute(sql`SELECT g.to_id, g.rel_type, en.name, en.entity_type, g.metadata
 			FROM lumen.edges g JOIN lumen.entities en ON en.id = g.to_id
-			WHERE g.from_id = ${id} AND g.source = 'unshaken-extraction'
+			WHERE g.from_id = ${id} AND g.source = ${srcExtraction}
 			AND g.rel_type IN ('MENTIONS','TEACHES')`),
 	]);
 

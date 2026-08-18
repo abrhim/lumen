@@ -12,6 +12,13 @@ export type DisplayFamily = "episodes" | "gallery";
 const REGISTRY: Record<string, DisplayFamily> = {
 	unshaken: "episodes",
 	art: "gallery",
+	// The Stick of Joseph (docs/design/stick-of-joseph.md) — five curated
+	// collections, one show
+	"soj-todd-mclauchlin": "episodes",
+	"soj-andrea-woodmansee": "episodes",
+	"soj-mike-dave-books": "episodes",
+	"soj-stick-of-judah": "episodes",
+	"soj-live-events": "episodes",
 };
 
 export function displayFamily(collectionId: string): DisplayFamily | null {

@@ -99,10 +99,15 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 				ON e2.id = CASE WHEN g.from_id = ${id} THEN g.to_id ELSE g.from_id END
 			WHERE (g.from_id = ${id} OR g.to_id = ${id}) AND g.source = 'anthropic-batch'
 			ORDER BY g.rel_type, e2.name`),
-		// Collection material (unshaken): episode + timestamped mentions.
-		db.execute(sql`SELECT g.from_id AS episode_id, g.rel_type, g.metadata, ep.name AS episode_name
-			FROM lumen.edges g JOIN lumen.entities ep ON ep.id = g.from_id
-			WHERE g.to_id = ${id} AND g.source = 'unshaken-extraction'`),
+		// Collection material: episode + timestamped mentions from EVERY media
+		// collection's extraction (second-show: sources follow the collection —
+		// `${collection_id}-extraction`; other suffixes never match this LIKE).
+		db.execute(sql`SELECT g.from_id AS episode_id, g.rel_type, g.metadata,
+				g.collection_id, ep.name AS episode_name, c.name AS collection_name
+			FROM lumen.edges g
+			JOIN lumen.entities ep ON ep.id = g.from_id
+			JOIN lumen.collections c ON c.id = g.collection_id
+			WHERE g.to_id = ${id} AND g.source = g.collection_id || '-extraction'`),
 		getCollectionAccess(db, user?.id ?? null),
 	]);
 	if (!entity) throw data(null, { status: 404, headers });
@@ -143,23 +148,31 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		groups.set(label, list);
 	}
 
-	// Collection quotes: gated by collection visibility; sample up to 6
-	// mentions evenly, quote a small transcript window around each.
-	const showUnshaken = canViewCollection(access, "unshaken");
-	const allMentions: { episodeId: string; episodeName: string; t: number; seq: number }[] = [];
+	// Collection quotes: gated PER COLLECTION (second-show — the old gate keyed
+	// everything on Unshaken's visibility); sample up to 6 mentions evenly,
+	// quote a small transcript window around each.
+	const allMentions: {
+		episodeId: string;
+		episodeName: string;
+		collectionId: string;
+		collectionName: string;
+		t: number;
+		seq: number;
+	}[] = [];
 	let mentionTotal = 0;
-	if (showUnshaken) {
-		for (const ce of collectionEdges as any[]) {
-			const mentions = jb(ce.metadata).mentions as { t: number; seq: number }[];
-			mentionTotal += mentions.length;
-			for (const m of mentions)
-				allMentions.push({
-					episodeId: String(ce.episode_id),
-					episodeName: String(ce.episode_name),
-					t: num(m.t),
-					seq: num(m.seq),
-				});
-		}
+	for (const ce of collectionEdges as any[]) {
+		if (!canViewCollection(access, String(ce.collection_id))) continue;
+		const mentions = jb(ce.metadata).mentions as { t: number; seq: number }[];
+		mentionTotal += mentions.length;
+		for (const m of mentions)
+			allMentions.push({
+				episodeId: String(ce.episode_id),
+				episodeName: String(ce.episode_name),
+				collectionId: String(ce.collection_id),
+				collectionName: String(ce.collection_name),
+				t: num(m.t),
+				seq: num(m.seq),
+			});
 	}
 	allMentions.sort((a, b) => a.t - b.t);
 	const step = Math.max(1, Math.floor(allMentions.length / 6));
@@ -175,10 +188,22 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			return { ...m, text: text.length > 220 ? `${text.slice(0, 217)}…` : text };
 		}),
 	);
-	// The lens entry targets the episode with the most of this node's mentions.
-	const byEpisode = new Map<string, number>();
-	for (const m of allMentions) byEpisode.set(m.episodeId, (byEpisode.get(m.episodeId) ?? 0) + 1);
-	const lensEpisode = [...byEpisode.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+	// The lens entry targets the episode with the most of this node's mentions,
+	// per collection; quotes group per collection so each carries its own name.
+	const byCollection = new Map<string, { name: string; total: number; byEpisode: Map<string, number> }>();
+	for (const m of allMentions) {
+		const g = byCollection.get(m.collectionId) ?? { name: m.collectionName, total: 0, byEpisode: new Map() };
+		g.total += 1;
+		g.byEpisode.set(m.episodeId, (g.byEpisode.get(m.episodeId) ?? 0) + 1);
+		byCollection.set(m.collectionId, g);
+	}
+	const collectionGroups = [...byCollection.entries()].map(([cid, g]) => ({
+		id: cid,
+		name: g.name,
+		total: g.total,
+		quotes: quotes.filter((q) => q.collectionId === cid),
+		lensEpisode: [...g.byEpisode.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+	})).sort((a, b) => b.total - a.total);
 
 	// Opt-in graph view (?graph=1&depth=N): the node page hosts the local graph.
 	let graph: { degraded: boolean; neighborhood?: unknown; entityId: string; depth: 1 | 2 | 3 } | null =
@@ -205,7 +230,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			scripture,
 			verseRefCount,
 			groups: [...groups.entries()].map(([label, items]) => ({ label, items })),
-			unshaken: { total: mentionTotal, quotes, lensEpisode },
+			collections: collectionGroups,
+			mentionTotal,
 			graph,
 		},
 		{ headers },
@@ -227,7 +253,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function NodeDetail({ loaderData }: Route.ComponentProps) {
-	const { entity, scripture, verseRefCount, groups, unshaken, graph } = loaderData;
+	const { entity, scripture, verseRefCount, groups, collections, graph } = loaderData;
 	const navigate = useNavigate();
 	const location = useLocation();
 	const graphInvoker = useRef<HTMLElement | null>(null);
@@ -300,13 +326,14 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 				</section>
 			)}
 
-			{unshaken.total > 0 && (
-				<section className="mt-10">
+			{collections.map((col) => (
+				col.total > 0 && (
+				<section key={col.id} className="mt-10">
 					<h2 className="font-reading text-sm text-muted-foreground">
-						In Unshaken <span className="not-italic">· {unshaken.total} passages</span>
+						In {col.name} <span className="not-italic">· {col.total} passages</span>
 					</h2>
 					<div className="mt-3 space-y-3">
-						{unshaken.quotes.map((q) => (
+						{col.quotes.map((q) => (
 							<RefRow
 								key={`${q.episodeId}-${q.seq}`}
 								to={`/media/${q.episodeId}?t=${Math.floor(q.t)}`}
@@ -324,10 +351,10 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 							</RefRow>
 						))}
 					</div>
-					{unshaken.lensEpisode && (
+					{col.lensEpisode && (
 						<p className="mt-4 font-ui text-sm">
 							<Link
-								to={`/media/${unshaken.lensEpisode}?lens=${encodeURIComponent(entity.id)}`}
+								to={`/media/${col.lensEpisode}?lens=${encodeURIComponent(entity.id)}`}
 								className="font-semibold text-primary hover:underline"
 							>
 								Read the episode through {entity.name} →
@@ -335,7 +362,8 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 						</p>
 					)}
 				</section>
-			)}
+				)
+			))}
 
 			{groups.length > 0 && (
 				<section className="mt-10">
