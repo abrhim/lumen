@@ -1,0 +1,23 @@
+-- General uniqueness for lumen.edges: (from_id, to_id, rel_type, collection_id).
+--
+-- Why: the podcast loader's upsert arbitrates ON CONFLICT, which needs an
+-- arbitrating unique index. Until now only two partial indexes existed
+-- (WHERE collection_id='unshaken' / ='phase-b'), so any NEW collection's
+-- load transaction errors outright — the second-show blocker
+-- (docs/design/second-show.md §1).
+--
+-- Plain CREATE, deliberately NOT CONCURRENTLY: the Supabase CLI applies
+-- migration files inside a transaction, where CONCURRENTLY is illegal —
+-- it would break `pnpm db:reset` and with it the whole verify gate. Local
+-- data is small; an in-transaction build is fine. Production got the same
+-- index via scripts/migrate-edges-unique.mjs, which DOES use CONCURRENTLY
+-- as a standalone statement.
+--
+-- The two partial indexes stay for now. idx_edges_phaseb_unique is
+-- load-bearing: backfill-phase-b.ts's startup gate requires it by name and
+-- its WHERE-form ON CONFLICT can only infer the partial index.
+-- idx_edges_unshaken_unique drops later, in the same change that moves the
+-- podcast loader to the four-column conflict target — dropping it before
+-- that breaks the current Unshaken weekly re-run.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+	ON lumen.edges (from_id, to_id, rel_type, collection_id);
