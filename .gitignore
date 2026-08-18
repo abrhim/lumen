@@ -32,3 +32,4 @@ supabase/.branches/
 
 # project memory copied into agent worktrees at setup — never committed
 .agent-memory/
+__pycache__/

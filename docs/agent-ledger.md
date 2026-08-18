@@ -59,3 +59,35 @@ it will look healthy until the next new episode 403s; and any environment
 without `~/.local/bin` early in PATH (cron, a fresh shell profile) silently
 falls back to the stale brew binary. Check `yt-dlp --version` before
 blaming the pipeline.
+
+## 2026-08-18 — Fleet day: the engine switched under adjudication
+
+Deepgram's bake-off "win" did not survive contact with a human ear.
+Abram judged the first 14 disagreement sites 14/14 for WhisperX, and
+YouTube-as-third-witness agreed 2:1 across the hour. Vocabulary counts
+tie; conversational content does not. If you are choosing an engine,
+adjudicate real disagreements — do not trust term-count parity.
+
+Traps hit on the way to a green fleet:
+
+- **whisperx 3.8 fetches pyannote/speaker-diarization-community-1
+  assets even when you pin model_name to 3.1.** Three gated HF repos
+  need accepted terms, not two. The Modal preflight function exists so
+  a 403 costs cents on CPU, never GPU-minutes after transcription.
+- **A brand-new Modal workspace got disabled mid-run** (verification
+  tripwire after several GPU batches). Dashboard verification fixed it;
+  one episode survived because outputs stream back per-episode.
+- **The channel misspells its own host.** All nine video titles say
+  "McLauchlin"; the man is McLaughlin (Abram). Channel metadata is not
+  ground truth for names — and a keyterm will happily bias the engine
+  to a WRONG spelling with total authority.
+- **The e2e fixture teardown deleted the whole soj-todd-mclauchlin
+  collection row.** Harmless when only the fixture existed; after the
+  real load it wiped live local data on every run. Fixture teardowns
+  must delete exactly what the fixture created.
+- **transcriptPathFor is engine-aware per show** (.whisperx.json vs
+  .deepgram.json). Do NOT unify the filenames: renaming Unshaken's
+  cache forces a full paid re-transcribe on the next weekly run.
+- Background-shell habits that keep biting: a `| grep | tail` pipe
+  swallows the real exit code (a "green" gate run had 1 failed test)
+  and buffers interim output; redirect to a log file and echo `$?`.
