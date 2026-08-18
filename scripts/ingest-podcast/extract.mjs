@@ -480,6 +480,36 @@ export function runDeterministicExtraction(utterances, ctx) {
 			`(?:\\b(?:first|second|third|1st|2nd|3rd)\\s+${name}\\b|\\b${name}\\s+(?:chapter|section)\\b|\\b${name}\\s+\\d|\\b(?:law|book|books)\\s+of\\s+${name}\\b)`,
 			'i',
 		);
+	// Round-1 no-block guards (eval 2026-08-18: entity stratum 0.667, every
+	// error mechanical — interview register the chapter-scoped show never
+	// faced; same playbook as Unshaken's round-1 fix):
+	// (5) surname-follows — "Abraham Lincoln", "Jonah R. Barnes", "David
+	//     Koresh", "Mormon Stories": the canon name is half of a LONGER
+	//     modern name/title; a following capitalized token that is not part
+	//     of the matched entity name means it is not the canon figure.
+	const surnameFollows = (name, text) =>
+		new RegExp(`\\b${name}\\s+(?:[A-Z]\\.\\s+)?[A-Z][a-z]+`).test(text);
+	// (6) fixed-phrase blocklist — titles and set phrases that CONTAIN pool
+	//     names but never refer to the pool entity.
+	const FIXED_PHRASES = [
+		/\bsermon\s+on\s+the\s+mount\b/i,
+		/\bking\s+james\b/i,
+		/\b(?:children|house|tribes|god)\s+of\s+israel\b/i,
+		/\bmormon\s+(?:stories|literature|culture|history|studies)\b/i,
+	];
+	// (7) preposition-before-book — "in Ether", "from Mormon": a pool name
+	//     that is ALSO a book name, used as a citation container.
+	const bookNames = new Set(
+		[...Object.keys(bookAliases), ...Object.keys(foreignBooks)].map((a) => a.toLowerCase()),
+	);
+	const prepositionBook = (name, text) =>
+		bookNames.has(name.toLowerCase()) &&
+		new RegExp(`\\b(?:in|from)\\s+${name}\\b`, 'i').test(text);
+	// (8) short names match CASE-EXACT — "AI" must not hit Ai the city.
+	const shortNameCaseMismatch = (name, text) =>
+		name.length <= 2 && !new RegExp(`\\b${name}\\b`).test(text);
+	// (9) self-correction — "not Lamoni," retracts the mention.
+	const selfCorrected = (name, text) => new RegExp(`\\bnot\\s+${name}\\b`, 'i').test(text);
 	for (const u of utterances) {
 		for (const hit of aliasMatchCandidates(u.text, baseTable)) {
 			const kind = kindById.get(hit.id);
@@ -487,6 +517,17 @@ export function runDeterministicExtraction(utterances, ctx) {
 			const matchedName = hit.names.find((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(u.text)) ?? hit.names[0];
 			if (citationRe(matchedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(u.text)) {
 				counts.citationSuppressed = (counts.citationSuppressed ?? 0) + 1;
+				continue;
+			}
+			const nameEsc = matchedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+			if (
+				surnameFollows(nameEsc, u.text) ||
+				FIXED_PHRASES.some((re) => re.test(u.text)) ||
+				prepositionBook(matchedName, u.text) ||
+				shortNameCaseMismatch(matchedName, u.text) ||
+				selfCorrected(nameEsc, u.text)
+			) {
+				counts.registerSuppressed = (counts.registerSuppressed ?? 0) + 1;
 				continue;
 			}
 			mentions.push({

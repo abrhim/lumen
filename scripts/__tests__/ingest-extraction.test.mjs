@@ -960,3 +960,31 @@ test('poolHash: stable across insertion order', async () => {
 	const b = { person: [{ id: 'p2' }, { id: 'p1' }], place: [{ id: 'l1' }], event: [], principle: [], symbol: [] };
 	assert.equal(poolHash(a), poolHash(b));
 });
+
+test('register guards: modern-world collisions suppress, canon mentions survive', async () => {
+	const { runDeterministicExtraction } = await import('../ingest-podcast/extract.mjs');
+	const pool = {
+		person: [
+			{ id: 'abraham-1', name: 'Abraham', bookLinked: true },
+			{ id: 'lamoni-1', name: 'Lamoni', bookLinked: true },
+			{ id: 'mormon-1', name: 'Mormon', bookLinked: true },
+		],
+		place: [{ id: 'place-ai-1', name: 'Ai', bookLinked: true }],
+		event: [], principle: [], symbol: [],
+	};
+	const utterances = [
+		{ seq: 0, t_start_s: 0, text: 'Abraham Lincoln does the same thing.' }, // surname → drop
+		{ seq: 1, t_start_s: 5, text: 'And Abraham built an altar there.' }, // canon → keep
+		{ seq: 2, t_start_s: 10, text: 'People tell me I use way too much AI.' }, // case → drop
+		{ seq: 3, t_start_s: 15, text: 'when Lamoni reports, not Lamoni, Limhi' }, // self-correction → drop
+		{ seq: 4, t_start_s: 20, text: 'They have the whole discourse in Mormon somewhere' }, // preposition-book → drop
+	];
+	const out = runDeterministicExtraction(utterances, {
+		episodeId: 'x', episodeChapters: [], bookAliases: {},
+		foreignBooks: { Mormon: 'morm' }, pool, noBlock: true,
+		verseExists: () => false,
+	});
+	const hits = out.mentions.filter((m) => ['person', 'place'].includes(m.kind));
+	assert.deepEqual(hits.map((m) => `${m.target}@${m.seq}`), ['abraham-1@1']);
+	assert.ok(out.counts.registerSuppressed >= 4);
+});
