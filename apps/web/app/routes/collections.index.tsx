@@ -75,7 +75,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			to: `/collections/${c.id}`,
 			name: c.name,
 			detail: c.description ?? "Podcast episodes.",
-			count: `${c.episodes.toLocaleString("en-GB")} episodes`,
+			count: `${c.episodes.toLocaleString("en-GB")} ${c.episodes === 1 ? "episode" : "episodes"}`,
 		});
 	}
 	return data({ doors }, { headers });

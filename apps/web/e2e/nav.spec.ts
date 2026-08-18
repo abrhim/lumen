@@ -35,16 +35,19 @@ test("the reader reaches Notes in one click", async ({ page }) => {
 	await expect(page).toHaveURL("/notes");
 });
 
-test("Collections carries exactly three doors; the podcast door lands", async ({ page }) => {
+test("Collections carries the bespoke doors plus one per episode collection; the podcast door lands", async ({ page }) => {
 	await page.goto("/");
 	await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Collections" }).click();
 	await expect(page).toHaveURL("/collections");
-	// the curated set (Abram, 2026-07-31): Strong's, Art, Unshaken — no more
+	// Strong's and Art are bespoke; episode doors are DYNAMIC since the
+	// second show (2026-08-18) — the exactly-three pin died with the fleet.
+	// Door count = 2 bespoke + however many episode collections have rows,
+	// so assert the floor and the fixed members, not a frozen total.
 	await expect(page.getByRole("link", { name: /Strong/ })).toBeVisible();
 	await expect(page.getByRole("link", { name: /^Art/ })).toBeVisible();
 	const unshaken = page.getByRole("link", { name: /Unshaken/i }).first();
 	await expect(unshaken).toBeVisible();
-	expect(await page.locator("main ul > li").count()).toBe(3);
+	expect(await page.locator("main ul > li").count()).toBeGreaterThanOrEqual(3);
 	await unshaken.click();
 	await expect(page).toHaveURL(/\/collections\/.+/);
 });
