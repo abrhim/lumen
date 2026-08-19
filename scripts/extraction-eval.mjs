@@ -27,7 +27,7 @@ let EPISODES = [];
 const STRATA = {
 	verseChapter: { kinds: ['verse', 'chapter'], gate: 0.9, nFloor: 30, sampleN: 60 },
 	entity: { kinds: ['person', 'place', 'event'], gate: 0.85, nFloor: 30, sampleN: 60 },
-	principle: { kinds: ['principle'], gate: 0.8, nFloor: 25, sampleN: 60 },
+	principle: { kinds: ['principle'], gate: 0.8, nFloor: 25, sampleN: 90 },
 };
 const GOLD_COUNT = 4;
 

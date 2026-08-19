@@ -919,7 +919,7 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 			confidence: m.confidence,
 			quote: m.quote,
 		};
-		const v = validateMention(mention, { poolIds: principleIds });
+		const v = validateMention(mention, { poolIds: principleIds, floor: 0.7 });
 		if (!v.ok) {
 			principleDrops.push({ seq: m.seq, reason: v.reason });
 			continue;

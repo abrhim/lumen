@@ -394,8 +394,10 @@ export function resolveVerseRef(ref, { episodeChapters, verseExists, noBlock = f
 }
 
 /** Closed vocab + confidence bounds IN CODE (json-schema can't express
- * numeric ranges) + the 0.5 write floor. */
-export function validateMention(m, { poolIds }) {
+ * numeric ranges) + the write floor (default 0.5; principles pass 0.7 —
+ * round-3 eval: 10 of 12 wrong principle quotes sat at ≤0.65 while the
+ * correct median was 0.7; the thin topic-word tail lives below the line). */
+export function validateMention(m, { poolIds, floor = 0.5 }) {
 	if (!poolIds.has(m.target)) {
 		return { ok: false, reason: `target ${m.target} not in pool` };
 	}
@@ -403,7 +405,7 @@ export function validateMention(m, { poolIds }) {
 	if (typeof c !== 'number' || !Number.isFinite(c) || c < 0 || c > 1) {
 		return { ok: false, reason: `confidence outside [0,1]: ${c}` };
 	}
-	if (c < 0.5) return { ok: false, reason: `below write floor 0.5: ${c}` };
+	if (c < floor) return { ok: false, reason: `below write floor ${floor}: ${c}` };
 	return { ok: true };
 }
 
