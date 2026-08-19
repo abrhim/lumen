@@ -361,90 +361,6 @@ function RailVideo({
 	);
 }
 
-/** Mobile: the player (Abram 2026-08-19: "render the play episode
- * button like it does in mobile for desktop"). A sticky top strip: collapsed
- * it is one quiet line (audio keeps playing — the iframe is only CSS-hidden);
- * expanded it is the full-width player. The desktop rail accordion it
- * replaces put an empty aspect-video rectangle in the rail and took the
- * column the paragraph annotations now use. Exactly one player iframe exists
- * app-wide, which is now true by construction rather than by two mutually
- * exclusive branches. */
-function MobileVideoBar({
-	videoId,
-	mountT,
-	posT,
-	iframeRef,
-	onPlay,
-	autoScroll,
-	onAutoScroll,
-}: {
-	videoId: string;
-	mountT: number | null;
-	posT: number | null;
-	iframeRef: React.RefObject<HTMLIFrameElement | null>;
-	onPlay: () => void;
-	autoScroll: boolean;
-	onAutoScroll: (v: boolean) => void;
-}) {
-	const [open, setOpen] = useState(true);
-	return (
-		<div className="sticky top-0 z-40 -mx-6 border-b border-rule bg-paper/95 px-6 py-2 backdrop-blur">
-			{mountT === null ? (
-				<button
-					type="button"
-					onClick={onPlay}
-					className="font-ui text-sm font-semibold text-primary hover:underline"
-				>
-					▶ Play episode
-				</button>
-			) : (
-				<>
-					<div className="flex items-baseline justify-between gap-3">
-						<button
-							type="button"
-							onClick={() => setOpen(!open)}
-							aria-expanded={open}
-							className="font-reading text-sm italic text-faint hover:text-ink"
-						>
-							Video <span className="font-ui text-xs not-italic">{open ? "▾" : "▸"}</span>
-							{!open && (
-								<span className="ml-2 font-ui text-xs not-italic tabular-nums">
-									playing · {posT !== null ? fmt(posT) : "…"}
-								</span>
-							)}
-						</button>
-						<label className="flex cursor-pointer items-center gap-1.5 font-ui text-xs text-faint">
-							<input
-								type="checkbox"
-								checked={autoScroll}
-								onChange={(e) => onAutoScroll(e.target.checked)}
-								className="accent-primary"
-							/>
-							Follow along
-						</label>
-					</div>
-					<div className={open ? "mt-2 pb-1" : "h-0 overflow-hidden"}>
-						<iframe
-							ref={iframeRef}
-							className="aspect-video w-full rounded-lg border border-rule2"
-							src={`https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&start=${Math.max(0, Math.floor(mountT) - 2)}&autoplay=1`}
-							title="Episode video"
-							allow="autoplay; encrypted-media; picture-in-picture"
-							allowFullScreen
-							onLoad={() =>
-								iframeRef.current?.contentWindow?.postMessage(msg({ event: "listening" }), "*")
-							}
-						/>
-					</div>
-				</>
-			)}
-		</div>
-	);
-}
-
-
-
-
 interface ParaBlockProps {
 	p: Para;
 	/** chip links resolve against the canonical path; captureEpisodeId is empty signed out */
@@ -514,17 +430,17 @@ const ParaBlock = memo(
 									aria-label={`Open details for ${en.name}`}
 									className="block w-full truncate text-muted-foreground decoration-rule2 underline-offset-2 hover:text-ink hover:underline"
 								>
-									{en.name}
-									{/* the dot trails the label (Abram 2026-08-19): in a
-									    right-aligned margin the labels' ragged edge is on
-									    the LEFT, so a leading dot would zigzag — trailing,
-									    the dots line up against the text column */}
+									{/* the dot sits on the edge nearest the transcript
+									    (Abram 2026-08-19). The margin moved to the right, so
+									    that edge is the chip's left one — the dots line up
+									    in a column against the text they annotate. */}
 									<span
 										aria-hidden
-										className={`ml-1.5 inline-block size-[5px] rounded-full align-middle ${
+										className={`mr-1.5 inline-block size-[5px] rounded-full align-middle ${
 											en.kind === "teaches" ? "bg-dot-teaches" : "bg-dot-mentions"
 										}`}
 									/>
+									{en.name}
 								</Link>
 							))}
 						</span>
@@ -591,13 +507,13 @@ const ParaBlock = memo(
 										preventScrollReset
 										className="text-muted-foreground decoration-rule2 underline-offset-2 hover:underline"
 									>
-										{en.name}
 										<span
 											aria-hidden
-											className={`ml-1 inline-block size-[5px] rounded-full align-middle ${
+											className={`mr-1 inline-block size-[5px] rounded-full align-middle ${
 												en.kind === "teaches" ? "bg-dot-teaches" : "bg-dot-mentions"
 											}`}
 										/>
+										{en.name}
 									</Link>
 									{i < p.ents.length - 1 ? ", " : ""}
 								</span>
@@ -890,28 +806,21 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 			>
 			<div className="lg:col-span-2 lg:col-start-1 lg:row-start-1">
 			{header}
-			{isMobile && hasVideo && (
-				<MobileVideoBar
-					videoId={videoId}
-					mountT={mountT}
-					posT={posT}
-					iframeRef={iframeRef}
-					onPlay={() => {
-						setMountT(0);
-						setPosT(0);
-					}}
-					autoScroll={autoScroll}
-					onAutoScroll={setAutoScroll}
-				/>
-			)}
 			</div>
 				{/* The rail: player on top, the open entity's detail beneath it,
 				    chapters last. Sticky as one unit so the transcript scrolls
 				    (and auto-scrolls) past a panel that stays where the reader
 				    left it. */}
-				<div className="mt-8 hidden lg:col-start-1 lg:row-start-2 lg:block">
-					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-						{!isMobile && hasVideo && (
+				{/* NOT hidden on mobile: below lg the grid collapses and this
+				    stacks above the transcript, which is where the sticky mobile
+				    bar used to live. That bar is gone, and with it the bug it
+				    caused — swapping player components at a breakpoint unmounted
+				    the iframe, whose src carries autoplay=1, so every resize
+				    across 768px restarted the episode (Abram 2026-08-19). One
+				    player, mounted once, positioned by CSS. */}
+				<div className="mt-8 lg:col-start-1 lg:row-start-2">
+					<div className="lg:sticky lg:top-8 lg:-mx-3 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto lg:px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+						{hasVideo && (
 							<RailVideo
 								videoId={videoId}
 								mountT={mountT}
@@ -928,7 +837,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						{entityDetail && railMode === "side" && (
 							<section
 								aria-label={`About ${entityDetail.name}`}
-								className="mb-6 rounded-xl border border-rule bg-panel px-5 pb-[18px] pt-[20px]"
+								className="mb-6 hidden rounded-xl border border-rule bg-panel px-5 pb-[18px] pt-[20px] lg:block"
 							>
 								<EntityRail
 									detail={entityDetail}
@@ -939,7 +848,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 								/>
 							</section>
 						)}
-						<nav aria-label="Chapters">
+						<nav aria-label="Chapters" className="hidden lg:block">
 						{/* Verbatim-title shows (SoJ) anchor no chapters until their
 						    extraction runs — an empty labelled rail reads as broken */}
 						{chapters.length > 0 && (
