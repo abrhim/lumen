@@ -91,3 +91,39 @@ Traps hit on the way to a green fleet:
 - Background-shell habits that keep biting: a `| grep | tail` pipe
   swallows the real exit code (a "green" gate run had 1 failed test)
   and buffers interim output; redirect to a log file and echo `$?`.
+
+## 2026-08-19 — Extraction on interview register: six eval rounds
+
+The no-block extraction variant (verbatim shows, spans:null) shipped for
+Stick of Joseph. Verse/chapter and principle strata pass their gates;
+the entity stratum does not, and the reason is structural rather than
+fixable by another guard.
+
+- **Interview register has a ~0.80 ceiling on pure name matching.**
+  Unshaken clears 0.85 because its chapter block disambiguates —
+  "Samuel" inside a 1 Samuel episode is the prophet. Without a block,
+  "Abraham Lincoln", "Jackson Paul" (the hosts' surname), "Quick Media",
+  "Mormon Stories", "in Timothy", "the modern State of Israel", and
+  "Father Gabriel the guest priest" are all live collisions. Twelve
+  deterministic guards took entity precision 0.667 → ~0.80 and then
+  stopped paying. What is left is a long tail, not a class.
+- **The load gate is per-stratum now** (`checkLoadGate` returns
+  `allowedRelTypes`). DISCUSSES + TEACHES load; MENTIONS is held on
+  disk. The bars did not move — the gate stopped being all-or-nothing.
+- **Confidence carried the principle signal.** Round-3 misses clustered
+  at ≤0.65 while correct ones sat at 0.7 median, so a 0.7 write floor
+  (`validateMention({floor})`) pruned the topic-word tail: 1,394 → 837
+  TEACHES edges, and the stratum went 0.83 → 0.97.
+- **Never re-run all eval shards to fix one.** A flaky evaluator
+  rewrites a previously COMPLETE verdict file one item short; across
+  rounds 1-5 every full pass fixed one shard and broke another. The
+  workflow now takes `shardList`. A verdict that stays short twice is
+  not flake — check the journal, the item's first-run verdict is
+  recoverable from it.
+- **The local stack's seed carries ~162 verses, not the canon.**
+  Extraction resolves against `lumen.verses`, so a local run silently
+  drops nearly every reference. Extraction reads must point at prod
+  (`INGEST_DATABASE_URL` overrides the .env DSN in the other direction
+  for loads).
+- ASR writes "D&C", never "Doctrine and Covenants" — the alias list is
+  the only reason those chapters anchor at all.
