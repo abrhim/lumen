@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, data, isRouteErrorResponse, redirect, useSearchParams } from "react-router";
+import { Link, data, isRouteErrorResponse, redirect, useNavigate, useSearchParams } from "react-router";
 import { sql } from "drizzle-orm";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
@@ -14,8 +14,9 @@ import type { Route } from "./+types/media";
  * paragraphs, every word a seek target, the playhead underlined live via the
  * YouTube iframe API. Video docks in the rail (desktop) / a sticky top strip
  * (mobile); chapters + references are rails on desktop, bottom sheets on
- * mobile. ?t=<s> is an entry link; ?lens=<entity> filters to that node's
- * passages. Gated: collection must be public, or the viewer holds
+ * mobile. ?t=<s> is an entry link; ?entity=<id> opens the margin chip's
+ * detail rail (the old ?lens transcript filter is removed — Abram
+ * 2026-08-19). Gated: collection must be public, or the viewer holds
  * admin.collections (preview path), or local dev. */
 
 const num = (x: unknown) => Number(x);
@@ -67,7 +68,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	const id = params.id ?? "";
 	const db = context.db;
 	const url = new URL(request.url);
-	const lensId = url.searchParams.get("lens");
+	const entityParam = url.searchParams.get("entity");
 
 	const { user, headers } = await getSessionUser(request, context.cloudflare.env);
 	const [[episode], access] = await Promise.all([
@@ -108,7 +109,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			FROM lumen.edges g JOIN lumen.verses v ON v.id = g.to_id
 			WHERE g.from_id = ${id} AND g.source = ${srcExtraction}
 			AND g.rel_type = 'DISCUSSES'`),
-		db.execute(sql`SELECT g.to_id, g.rel_type, en.name, en.entity_type, g.metadata
+		db.execute(sql`SELECT g.to_id, g.rel_type, en.name, en.entity_type, en.description, g.metadata
 			FROM lumen.edges g JOIN lumen.entities en ON en.id = g.to_id
 			WHERE g.from_id = ${id} AND g.source = ${srcExtraction}
 			AND g.rel_type IN ('MENTIONS','TEACHES')`),
@@ -203,9 +204,16 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 	// one chip per entity per paragraph, at its first moment there. The
 	// aggregate people/principles index is gone on purpose (Abram): the margin
 	// IS the index now, placed where the words are said.
-	const lensMoments: Moment[] = [];
-	let lensName: string | null = null;
-	let lensType = "person";
+	// ?entity= opens the detail rail (Abram 2026-08-19: chips open a detail
+	// panel like the reader's verse rail; the old ?lens transcript filter is
+	// REMOVED — it may return later in some form).
+	let entityDetail: {
+		id: string;
+		name: string;
+		type: string;
+		description: string | null;
+		occurrences: { t: number; seq: number }[];
+	} | null = null;
 	for (const e of entityEdges as any[]) {
 		const mentions = jb(e.metadata).mentions as Moment[];
 		const kind = e.rel_type === "TEACHES" ? ("teaches" as const) : ("mentions" as const);
@@ -216,20 +224,27 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			seen.add(pi);
 			paras[pi].ents.push({ id: String(e.to_id), name: String(e.name), kind, t: num(m.t) });
 		}
-		if (lensId === e.to_id) {
-			lensName = e.name;
-			lensType = e.rel_type === "TEACHES" ? "principle" : String(e.entity_type);
-			lensMoments.push(...mentions);
+		if (entityParam === e.to_id) {
+			entityDetail = {
+				id: String(e.to_id),
+				name: String(e.name),
+				type: e.rel_type === "TEACHES" ? "principle" : String(e.entity_type),
+				description: e.description ? String(e.description) : null,
+				occurrences: [...mentions].sort((a, b) => num(a.t) - num(b.t)).map((m) => ({ t: num(m.t), seq: num(m.seq) })),
+			};
 		}
 	}
 	for (const p of paras) p.ents.sort((a, b) => a.t - b.t);
 
-	// Lens: which paragraphs survive the filter.
-	let lens: { id: string; name: string; type: string; count: number; paraIdx: number[] } | null =
-		null;
-	if (lensId && lensName) {
-		const idx = [...new Set(lensMoments.map((m) => paraOf(num(m.seq))))].sort((a, b) => a - b);
-		lens = { id: lensId, name: lensName, type: lensType, count: lensMoments.length, paraIdx: idx };
+	// the same entity elsewhere in THIS collection — the rail's second act
+	let entityElsewhere: { id: string; name: string }[] = [];
+	if (entityDetail) {
+		const rows = await db.execute(sql`SELECT DISTINCT ep.id, ep.name
+			FROM lumen.edges g JOIN lumen.entities ep ON ep.id = g.from_id
+			WHERE g.to_id = ${entityDetail.id} AND g.collection_id = ${collectionId}
+			AND g.source = ${srcExtraction} AND g.from_id != ${id}
+			AND ep.entity_type = 'content_item' LIMIT 6`);
+		entityElsewhere = (rows as any[]).map((r) => ({ id: String(r.id), name: String(r.name) }));
 	}
 
 	return data(
@@ -244,7 +259,8 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 			durationS,
 			paras,
 			chapters: chapters.map(({ label, t }) => ({ label, t })),
-			lens,
+			entityDetail,
+			entityElsewhere,
 		},
 		{ headers },
 	);
@@ -414,14 +430,14 @@ function MobileVideoBar({
 
 interface ParaBlockProps {
 	p: Para;
-	/** lens links need the episode; captureEpisodeId is empty signed out */
+	/** chip links resolve against the canonical path; captureEpisodeId is empty signed out */
 	episodeId: string;
 	active: boolean;
 	/** playhead seconds; only meaningful when active (−1 otherwise, kept stable
 	 * so the memo comparator lets inactive paragraphs skip re-render) */
 	posT: number;
 	showGap: boolean;
-	lensed: boolean;
+
 	onSeek: (t: number) => void;
 	/** personal-notes: transcript capture door — `episode@t_start_s` anchors
 	 * (A8: durable across re-windowing; never a seq). Empty string = signed
@@ -430,13 +446,13 @@ interface ParaBlockProps {
 }
 
 const ParaBlock = memo(
-	function ParaBlock({ p, episodeId, active, posT, showGap, lensed, onSeek, captureEpisodeId }: ParaBlockProps) {
+	function ParaBlock({ p, episodeId, active, posT, showGap, onSeek, captureEpisodeId }: ParaBlockProps) {
 		// The fragment the playhead is inside — last one started at-or-before posT.
 		const uIdx = active ? p.frags.reduce((acc, f, i) => (f.t <= posT ? i : acc), -1) : -1;
 		return (
 			<div id={`para-${p.seq}`}>
 				{showGap && <p className="py-3 text-center font-ui text-sm text-faint">· · ·</p>}
-				{p.chapter && !lensed && (
+				{p.chapter && (
 					<h3 className="mt-10 flex items-baseline gap-3 border-b border-rule pb-2 font-display text-xl font-medium tracking-tight">
 						{p.chapter.label}
 						<button
@@ -467,12 +483,13 @@ const ParaBlock = memo(
 							))}
 							{/* the margin speaks the reader's dot language: blue = a
 							    principle TAUGHT here, green = a person/place mentioned.
-							    Each chip lenses the episode to its passages. */}
+							    Each chip opens the entity's detail rail. */}
 							{p.ents.map((en) => (
 								<Link
 									key={`${en.id}${en.t}`}
-									to={`/media/${episodeId}?lens=${encodeURIComponent(en.id)}`}
-									aria-label={`Show every passage about ${en.name}`}
+									to={`?entity=${encodeURIComponent(en.id)}`}
+									preventScrollReset
+									aria-label={`Open details for ${en.name}`}
 									className="block w-full truncate text-muted-foreground decoration-rule2 underline-offset-2 hover:text-ink hover:underline"
 								>
 									<span
@@ -544,7 +561,8 @@ const ParaBlock = memo(
 							{p.ents.map((en, i) => (
 								<span key={`${en.id}${en.t}`}>
 									<Link
-										to={`/media/${episodeId}?lens=${encodeURIComponent(en.id)}`}
+										to={`?entity=${encodeURIComponent(en.id)}`}
+										preventScrollReset
 										className="text-muted-foreground decoration-rule2 underline-offset-2 hover:underline"
 									>
 										<span
@@ -568,7 +586,6 @@ const ParaBlock = memo(
 		prev.p === next.p &&
 		prev.episodeId === next.episodeId &&
 		prev.showGap === next.showGap &&
-		prev.lensed === next.lensed &&
 		prev.onSeek === next.onSeek &&
 		prev.captureEpisodeId === next.captureEpisodeId &&
 		prev.active === next.active &&
@@ -581,7 +598,6 @@ function Transcript({
 	activeIdx,
 	posT,
 	onSeek,
-	lensSet,
 	captureEpisodeId,
 }: {
 	paras: Para[];
@@ -589,15 +605,13 @@ function Transcript({
 	activeIdx: number;
 	posT: number;
 	onSeek: (t: number) => void;
-	lensSet: Set<number> | null;
 	captureEpisodeId: string;
 }) {
 	let prevShown = -1;
 	return (
 		<div className="max-w-prose">
 			{paras.map((p, i) => {
-				if (lensSet && !lensSet.has(i)) return null;
-				const showGap = lensSet !== null && prevShown >= 0 && i - prevShown > 1;
+				const showGap = false;
 				prevShown = i;
 				const active = i === activeIdx;
 				return (
@@ -608,12 +622,102 @@ function Transcript({
 						active={active}
 						posT={active ? posT : -1}
 						showGap={showGap}
-						lensed={lensSet !== null}
 						onSeek={onSeek}
 						captureEpisodeId={captureEpisodeId}
 					/>
 				);
 			})}
+		</div>
+	);
+}
+
+const RAIL_TYPE_LABELS: Record<string, string> = {
+	principle: "Principle",
+	person: "Person",
+	place: "Place",
+	event: "Event",
+	symbol: "Symbol",
+};
+
+/** The margin chip's detail panel — the episode-page sibling of the
+ * reader's verse rail: identity, then this episode's moments as quiet
+ * ruled timestamp rows, then the entity elsewhere in the collection. */
+function EntityRail({
+	detail,
+	elsewhere,
+	collectionId,
+	collectionName,
+	onSeek,
+}: {
+	detail: { id: string; name: string; type: string; description: string | null; occurrences: { t: number; seq: number }[] };
+	elsewhere: { id: string; name: string }[];
+	collectionId: string;
+	collectionName: string;
+	onSeek: (t: number) => void;
+}) {
+	return (
+		<div>
+			<div className="flex items-baseline justify-between gap-3">
+				<p className="font-ui text-[13px] font-normal text-muted-foreground">
+					{RAIL_TYPE_LABELS[detail.type] ?? detail.type}
+				</p>
+				<Link
+					to={{ search: "" }}
+					preventScrollReset
+					aria-label="Close details"
+					className="font-ui text-xs text-muted-foreground hover:text-ink"
+				>
+					Close
+				</Link>
+			</div>
+			<h2 className="mt-1 font-reading text-xl font-semibold text-ink">{detail.name}</h2>
+			{detail.description && (
+				<p className="mt-2 font-reading text-sm leading-relaxed text-ink">{detail.description}</p>
+			)}
+			<Link
+				to={nodePath(detail.type, detail.id)}
+				className="mt-2 block font-ui text-sm font-semibold text-primary hover:underline"
+			>
+				About {detail.name} →
+			</Link>
+			<h3 className="mt-5 font-ui text-[13px] font-normal text-muted-foreground">
+				In this episode · {detail.occurrences.length}
+			</h3>
+			<ul className="mt-1 list-none">
+				{detail.occurrences.map((o) => (
+					<li key={o.seq} className="border-t border-rule first:border-t-0">
+						<button
+							type="button"
+							onClick={() => onSeek(o.t)}
+							aria-label={`Play from ${fmt(o.t)}`}
+							className="group flex w-full items-baseline justify-between gap-3 py-2 text-left"
+						>
+							<span className="font-reading text-[14px] text-ink decoration-rule2 underline-offset-4 group-hover:underline">
+								▸ {fmt(o.t)}
+							</span>
+						</button>
+					</li>
+				))}
+			</ul>
+			{elsewhere.length > 0 && (
+				<>
+					<h3 className="mt-5 font-ui text-[13px] font-normal text-muted-foreground">
+						Also in {collectionName}
+					</h3>
+					<ul className="mt-1 list-none">
+						{elsewhere.map((e) => (
+							<li key={e.id} className="border-t border-rule first:border-t-0">
+								<Link
+									to={`/collections/${collectionId}/serial/${e.id}?entity=${encodeURIComponent(detail.id)}`}
+									className="block truncate py-2 font-reading text-[14px] text-ink decoration-rule2 underline-offset-4 hover:underline"
+								>
+									{e.name}
+								</Link>
+							</li>
+						))}
+					</ul>
+				</>
+			)}
 		</div>
 	);
 }
@@ -628,7 +732,8 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 		durationS,
 		paras,
 		chapters,
-		lens,
+		entityDetail,
+		entityElsewhere,
 		canCapture,
 	} = loaderData;
 	const [searchParams] = useSearchParams();
@@ -642,6 +747,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	const [autoScroll, setAutoScroll] = useState(true);
 	const iframeRef = useRef<HTMLIFrameElement | null>(null);
 	const isMobile = useIsMobile();
+	const navigate = useNavigate();
 	const [sheet, setSheet] = useState<null | "chapters">(null);
 
 	useEffect(() => {
@@ -686,8 +792,6 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 			?.scrollIntoView({ behavior: "smooth", block: "center" });
 	}, [autoScroll, activeIdx, posT !== null, paras]);
 
-	const lensSet = lens ? new Set(lens.paraIdx) : null;
-	const lensHref = (id: string) => `/media/${episodeId}?lens=${encodeURIComponent(id)}`;
 	const hasVideo = videoId !== null;
 
 	const header = (
@@ -723,26 +827,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 					onAutoScroll={setAutoScroll}
 				/>
 			)}
-			{lens && (
-				<div className="z-30 -mx-6 mt-6 border-b border-rule bg-paper/95 px-6 py-2.5 backdrop-blur lg:sticky lg:top-0">
-					<p className="font-ui text-sm text-ink">
-						Showing {lens.count === 1 ? "the passage" : `${lens.count} passages`} about{" "}
-						<span className="font-semibold">{lens.name}</span>
-						<span className="text-faint"> · </span>
-						<Link
-							to={nodePath(lens.type, lens.id)}
-							className="font-semibold text-primary hover:underline"
-						>
-							About {lens.name} →
-						</Link>
-						<span className="text-faint"> · </span>
-						<Link to={`/media/${episodeId}`} className="font-semibold text-primary hover:underline">
-							Show full episode
-						</Link>
-					</p>
-				</div>
-			)}
-			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
+			<div className={`mt-8 gap-12 lg:grid ${entityDetail ? "lg:grid-cols-[16rem_minmax(0,1fr)_17rem]" : "lg:grid-cols-[16rem_minmax(0,1fr)]"}`}>
 				<nav aria-label="Chapters" className="hidden lg:block">
 					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
 					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -790,11 +875,39 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						activeIdx={activeIdx}
 						posT={followT ?? -1}
 						onSeek={seek}
-						lensSet={lensSet}
 						captureEpisodeId={canCapture ? episodeId : ""}
 					/>
 				</div>
+				{entityDetail && !isMobile && (
+					<aside aria-label={`About ${entityDetail.name}`} className="hidden lg:block">
+						<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+							<EntityRail
+								detail={entityDetail}
+								elsewhere={entityElsewhere}
+								collectionId={collectionId}
+								collectionName={collectionName}
+								onSeek={seek}
+							/>
+						</div>
+					</aside>
+				)}
 			</div>
+			{entityDetail && isMobile && (
+				<Sheet open onOpenChange={(open) => { if (!open) navigate({ search: "" }, { preventScrollReset: true }); }}>
+					<SheetContent side="bottom" className="max-h-[75vh] overflow-y-auto px-6 pb-8">
+						<SheetHeader>
+							<SheetTitle className="sr-only">About {entityDetail.name}</SheetTitle>
+						</SheetHeader>
+						<EntityRail
+							detail={entityDetail}
+							elsewhere={entityElsewhere}
+							collectionId={collectionId}
+							collectionName={collectionName}
+							onSeek={seek}
+						/>
+					</SheetContent>
+				</Sheet>
+			)}
 
 			{/* Mobile bottom bar: the rails, reachable from any scroll depth.
 			    Suppressed entirely when there are no chapters to open. */}
