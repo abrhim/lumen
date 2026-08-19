@@ -517,8 +517,10 @@ export function runDeterministicExtraction(utterances, ctx) {
 	// exempt honorifics canon uses AND capitalized discourse-starters —
 	// spoken transcripts begin sentences with these constantly ("And
 	// Abraham built an altar")
+	// 'Queen' left OUT deliberately (round 5: 'Queen Elizabeth' II slipped
+	// the exemption; Queen Esther costs recall, which is not gated)
 	const PRECEDING_EXEMPT = new Set([
-		'King', 'Queen', 'Prophet',
+		'King', 'Prophet',
 		'And', 'But', 'So', 'The', 'Then', 'When', 'Now', 'For', 'Behold',
 		'Because', 'If', 'As', 'Or', 'Like', 'Well', 'Yeah', 'That', 'This',
 		'With', 'From', 'In', 'On', 'At', 'To', 'By', 'Of', 'Where', 'While',
