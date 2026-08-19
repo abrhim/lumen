@@ -18,6 +18,9 @@ const SECTIONS = [
 	{ to: "/", label: "Scripture", match: /^\/($|scripture|word)/ },
 	{ to: "/notes", label: "Notes", match: /^\/notes/ },
 	{ to: "/collections", label: "Collections", match: /^\/(collections|media|strongs|art)/ },
+	// The index and every typed node page under it — a principle page reached
+	// from a transcript should still light the section it belongs to.
+	{ to: "/principles", label: "Principles", match: /^\/(principles|people|places|events|symbols|eras|node)/ },
 	{ to: "/about", label: "About", match: /^\/about/ },
 	{ to: "/roadmap", label: "Roadmap", match: /^\/roadmap/ },
 ] as const;

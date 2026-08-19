@@ -13,6 +13,9 @@ export default [
 	route("art", "routes/art.tsx"),
 	route("collections", "routes/collections.index.tsx"),
 	route("collections/:id", "routes/collections.tsx"),
+	// Index over the typed node pages below; must sit above the `:type/:id`
+	// catch-all, which would otherwise never see a bare `/principles`.
+	route("principles", "routes/principles.index.tsx"),
 	route("notes", "routes/notes.tsx"),
 	// `/notes/new` is the create surface — the :id loader special-cases it (CF-29)
 	route("notes/:id", "routes/notes.$id.tsx"),
