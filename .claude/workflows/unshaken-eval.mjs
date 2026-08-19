@@ -52,14 +52,21 @@ When done: Write your verdicts JSON to ${packet(i).replace('.json', '.verdict.js
 using the Write tool, and return the same JSON as your structured output.`
 
 phase('Evaluate')
-log(`evaluating round ${round}: ${shards} shards`)
+// shardList (optional) re-runs ONLY the named shards — rerunning all of
+// them lets a flaky evaluator REWRITE a previously complete verdict file
+// one item short (observed round-1: each full pass fixed one shard and
+// broke another). Targeted re-runs converge; full passes may not.
+const indices = Array.isArray(parsedArgs?.shardList)
+	? parsedArgs.shardList
+	: Array.from({ length: shards }, (_, i) => i)
+log(`evaluating round ${round}: shards [${indices.join(',')}]`)
 
 const results = await pipeline(
-	Array.from({ length: shards }, (_, i) => i),
+	indices,
 	(i) => agent(evaluatorPrompt(i), { label: `eval:shard-${i}`, phase: 'Evaluate', schema: VERDICT_SCHEMA, effort: 'high' }),
 )
 
 const done = results.filter(Boolean)
 const counts = done.map((r) => r.verdicts.length)
 log(`verdicts in: ${done.length}/${shards} shards, ${counts.reduce((a, b) => a + b, 0)} items`)
-return { shardsCompleted: done.length, shardsTotal: shards, itemCounts: counts }
+return { shardsCompleted: done.length, shardsTotal: indices.length, itemCounts: counts }
