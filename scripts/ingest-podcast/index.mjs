@@ -415,7 +415,7 @@ async function main() {
 		// workflows BETWEEN these stages, coupled through artifacts. ──
 		if (['extract-code', 'extract-merge', 'load-extraction'].includes(opts.stage)) {
 			const bookRows = await sql`SELECT id, name FROM lumen.books`;
-			const stageOpts = { ...opts, showId: show.id, bookRows, transcriptEngine: show.transcriptEngine };
+			const stageOpts = { ...opts, showId: show.id, bookRows, transcriptEngine: show.transcriptEngine, modernNames: show.modernNames };
 			const rollup = { ok: [], failed: [] };
 			let verdict = null;
 			if (opts.stage === 'load-extraction') {

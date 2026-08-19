@@ -165,6 +165,11 @@ export const STICK_OF_JOSEPH = {
 		// inverting the speaker's meaning; the keyterm biases the pair apart
 		'telestial',
 	],
+	// recurring modern people on this show whose BARE first names collide
+	// with canon entities (round-4 eval: 'Jonah looked at these numbers' hit
+	// Jonah the prophet three times). Suppression costs recall on the real
+	// prophet, which is ungated; precision is gated.
+	modernNames: ['Jonah', 'Hayden', 'Jackson', 'Jeff', 'Ella'],
 	// interview/live-stream titles are not CFM grammar — no scripture block
 	titleParse: 'verbatim',
 	// raw streams carry trailing dead air; 300 would fail exactly the padded

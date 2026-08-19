@@ -26,7 +26,7 @@ let EPISODES = [];
 // ≥ gate−0.08 AND n ≥ floor. Trap floor: ≥2 missed traps of a stratum VOIDS it.
 const STRATA = {
 	verseChapter: { kinds: ['verse', 'chapter'], gate: 0.9, nFloor: 30, sampleN: 60 },
-	entity: { kinds: ['person', 'place', 'event'], gate: 0.85, nFloor: 30, sampleN: 60 },
+	entity: { kinds: ['person', 'place', 'event'], gate: 0.85, nFloor: 30, sampleN: 90 },
 	principle: { kinds: ['principle'], gate: 0.8, nFloor: 25, sampleN: 90 },
 };
 const GOLD_COUNT = 4;
@@ -294,7 +294,13 @@ async function buildContext(sql, artifacts) {
 	}
 	const targetIds = [...new Set([...artifacts.values()].flatMap((a) => a.mentions.map((m) => m.target)))];
 	const entityRows = await sql`SELECT id, name, description, entity_type FROM lumen.entities WHERE id = ANY(${targetIds})`;
-	const entityInfo = new Map(entityRows.map((e) => [e.id, e]));
+	// a null description leaves the evaluator unable to confirm an otherwise
+	// correct mention (round-4: two Ark of the Covenant items) — synthesize
+	// the minimal identity line so the mention itself can be judged
+	const entityInfo = new Map(entityRows.map((e) => [e.id, {
+		...e,
+		description: e.description ?? `The canonical ${e.entity_type} entity named ${e.name}.`,
+	}]));
 	const rosterByEpisode = new Map();
 	for (const [vid, a] of artifacts.entries()) {
 		rosterByEpisode.set(

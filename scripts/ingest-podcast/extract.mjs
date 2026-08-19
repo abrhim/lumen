@@ -527,6 +527,19 @@ export function runDeterministicExtraction(utterances, ctx) {
 		const m = new RegExp(`([A-Z][a-z]+)\\s+${name}\\b`).exec(text);
 		return m !== null && !PRECEDING_EXEMPT.has(m[1]);
 	};
+	// (11) show-declared modern names — recurring hosts/guests whose bare
+	//      first names collide with canon figures (config modernNames).
+	const modernNames = new Set((ctx.modernNames ?? []).map((n) => n.toLowerCase()));
+	// (12) book-stem preposition — "in Timothy", "in Kings": numbered books
+	//      cited by bare stem. Stems derive from the alias maps' names with
+	//      leading ordinals stripped.
+	const bookStems = new Set(
+		[...Object.keys(bookAliases), ...Object.keys(foreignBooks)]
+			.map((a) => a.replace(/^(?:[1-3]|1st|2nd|3rd|First|Second|Third)\s+/i, '').toLowerCase()),
+	);
+	const prepositionBookStem = (name, text) =>
+		bookStems.has(name.toLowerCase()) &&
+		new RegExp(`\\b(?:in|from)\\s+${name}\\b`, 'i').test(text);
 	for (const u of utterances) {
 		for (const hit of aliasMatchCandidates(u.text, baseTable)) {
 			const kind = kindById.get(hit.id);
@@ -538,6 +551,8 @@ export function runDeterministicExtraction(utterances, ctx) {
 			}
 			const nameEsc = matchedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 			if (
+				modernNames.has(matchedName.toLowerCase()) ||
+				prepositionBookStem(matchedName, u.text) ||
 				precedingCapital(nameEsc, u.text) ||
 				surnameFollows(nameEsc, u.text) ||
 				FIXED_PHRASES.some((re) => re.test(u.text)) ||
@@ -690,6 +705,7 @@ export async function runExtractCode(sql, ep, dir, lookup, opts, log) {
 		foreignBooks,
 		pool,
 		noBlock,
+		modernNames: opts.show?.modernNames ?? opts.modernNames,
 		verseExists: (id) => verseSet.has(id),
 	};
 	const result = runDeterministicExtraction(utterances, ctx);
@@ -889,6 +905,7 @@ export async function runExtractMerge(sql, ep, dir, lookup, opts, log) {
 		foreignBooks,
 		pool,
 		noBlock,
+		modernNames: opts.show?.modernNames ?? opts.modernNames,
 		aliasTable: usableAliases,
 		timelineOverride: noBlock ? null : judgment.timeline,
 		verseExists: (id) => verseSet.has(id),
