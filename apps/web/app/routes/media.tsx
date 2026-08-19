@@ -749,6 +749,16 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	const isMobile = useIsMobile();
 	const navigate = useNavigate();
 	const [sheet, setSheet] = useState<null | "chapters">(null);
+	// null until mounted (portals must not SSR); then side-rail when the
+	// right margin can actually hold 17rem, else the bottom sheet
+	const [railMode, setRailMode] = useState<null | "side" | "sheet">(null);
+	useEffect(() => {
+		const mq = window.matchMedia("(min-width: 1400px)");
+		const apply = () => setRailMode(mq.matches ? "side" : "sheet");
+		apply();
+		mq.addEventListener("change", apply);
+		return () => mq.removeEventListener("change", apply);
+	}, []);
 
 	useEffect(() => {
 		const onMessage = (ev: MessageEvent) => {
@@ -827,7 +837,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 					onAutoScroll={setAutoScroll}
 				/>
 			)}
-			<div className={`mt-8 gap-12 lg:grid ${entityDetail ? "lg:grid-cols-[16rem_minmax(0,1fr)_17rem]" : "lg:grid-cols-[16rem_minmax(0,1fr)]"}`}>
+			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
 				<nav aria-label="Chapters" className="hidden lg:block">
 					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
 					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -878,21 +888,26 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						captureEpisodeId={canCapture ? episodeId : ""}
 					/>
 				</div>
-				{entityDetail && !isMobile && (
-					<aside aria-label={`About ${entityDetail.name}`} className="hidden lg:block">
-						<div className="sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-							<EntityRail
-								detail={entityDetail}
-								elsewhere={entityElsewhere}
-								collectionId={collectionId}
-								collectionName={collectionName}
-								onSeek={seek}
-							/>
-						</div>
-					</aside>
-				)}
 			</div>
-			{entityDetail && isMobile && (
+			{/* The rail FLOATS in the viewport's right margin (Abram 2026-08-19:
+			    it must never change the transcript body's width). Where the
+			    margin can't hold it, the bottom sheet takes over — same rule
+			    the margin chips already live by. */}
+			{entityDetail && railMode === "side" && (
+				<aside
+					aria-label={`About ${entityDetail.name}`}
+					className="fixed right-4 top-24 z-30 w-[17rem] max-h-[calc(100vh-8rem)] overflow-y-auto border-l border-rule bg-paper pl-5 pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+				>
+					<EntityRail
+						detail={entityDetail}
+						elsewhere={entityElsewhere}
+						collectionId={collectionId}
+						collectionName={collectionName}
+						onSeek={seek}
+					/>
+				</aside>
+			)}
+			{entityDetail && railMode === "sheet" && (
 				<Sheet open onOpenChange={(open) => { if (!open) navigate({ search: "" }, { preventScrollReset: true }); }}>
 					<SheetContent side="bottom" className="max-h-[75vh] overflow-y-auto px-6 pb-8">
 						<SheetHeader>
