@@ -1,4 +1,4 @@
-import { Suspense, lazy, useRef } from "react";
+import { Suspense, lazy, useRef, useState } from "react";
 import {
 	Link,
 	data,
@@ -35,6 +35,10 @@ const TYPE_SLUGS: Record<string, string> = {
 	era: "eras",
 };
 const KNOWN_SLUGS = new Set([...Object.values(TYPE_SLUGS), "node"]);
+
+/** Chapter rows shown before "In scripture" collapses. Deep entities carry
+ * dozens of chapters, and the sections below this one have to stay reachable. */
+const SCRIPTURE_HEAD = 8;
 export const nodePath = (type: string, id: string) =>
 	`/${TYPE_SLUGS[type] ?? "node"}/${encodeURIComponent(id)}`;
 
@@ -280,6 +284,12 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const graphInvoker = useRef<HTMLElement | null>(null);
+	// A well-attested entity carries a hundred verses across dozens of chapters,
+	// which buries every section under it. Collapse to a readable head and let
+	// the reader ask for the rest.
+	const [allScripture, setAllScripture] = useState(false);
+	const shownScripture = allScripture ? scripture : scripture.slice(0, SCRIPTURE_HEAD);
+	const restCount = scripture.length - shownScripture.length;
 
 	return (
 		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 py-12">
@@ -300,11 +310,21 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 						View graph →
 					</Link>
 				</div>
-				{entity.description && (
-					<p className="mt-4 max-w-prose font-reading text-lg leading-relaxed text-ink">
-						{entity.description}
-					</p>
-				)}
+				{/* Principle summaries run to several paragraphs now that they are
+				    written rather than generated one-liners; a blank line in the
+				    column is a paragraph break, not whitespace to collapse. */}
+				{entity.description
+					?.split(/\n{2,}/)
+					.map((p) => p.trim())
+					.filter(Boolean)
+					.map((p, i) => (
+						<p
+							key={p.slice(0, 32)}
+							className={`max-w-prose font-reading text-lg leading-relaxed text-ink ${i === 0 ? "mt-4" : "mt-3"}`}
+						>
+							{p}
+						</p>
+					))}
 			</header>
 
 			{graph && (
@@ -349,10 +369,14 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 			{scripture.length > 0 && (
 				<section className="mt-10">
 					<h2 className="font-reading text-sm text-muted-foreground">
-						In scripture <span className="not-italic">· {verseRefCount} verses</span>
+						In scripture{" "}
+						<span className="not-italic">
+							· {verseRefCount} {verseRefCount === 1 ? "verse" : "verses"} in {scripture.length}{" "}
+							{scripture.length === 1 ? "chapter" : "chapters"}
+						</span>
 					</h2>
-					<ul className="mt-3 list-none">
-						{scripture.map((c) => (
+					<ul id="node-scripture" className="mt-3 list-none">
+						{shownScripture.map((c) => (
 							<li key={c.label}>
 								<RefRow
 									to={`/scripture/${c.bookId}/${c.chapter}?verse=${c.verses[0]}`}
@@ -368,6 +392,17 @@ export default function NodeDetail({ loaderData }: Route.ComponentProps) {
 							</li>
 						))}
 					</ul>
+					{(restCount > 0 || allScripture) && (
+						<button
+							type="button"
+							onClick={() => setAllScripture((v) => !v)}
+							aria-expanded={allScripture}
+							aria-controls="node-scripture"
+							className="mt-2 font-ui text-sm font-semibold text-faint transition-colors duration-150 hover:text-primary focus-visible:underline focus-visible:decoration-2 focus-visible:underline-offset-4 focus-visible:outline-none"
+						>
+							{allScripture ? "Show fewer" : `Show ${restCount} more`}
+						</button>
+					)}
 				</section>
 			)}
 

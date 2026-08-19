@@ -615,9 +615,21 @@ function EntityRail({
 			<p className="mt-0.5 font-ui text-[11px] text-muted-foreground">
 				{RAIL_TYPE_LABELS[detail.type] ?? detail.type}
 			</p>
-			{detail.description && (
-				<p className="mt-3 font-reading text-[14.5px] leading-[1.5] text-ink">{detail.description}</p>
-			)}
+			{/* Written principle summaries carry paragraph breaks; the rail is
+			    narrow, so collapsing them makes a wall of text (node.tsx does the
+			    same split). */}
+			{detail.description
+				?.split(/\n{2,}/)
+				.map((p) => p.trim())
+				.filter(Boolean)
+				.map((p, i) => (
+					<p
+						key={p.slice(0, 32)}
+						className={`font-reading text-[14.5px] leading-[1.5] text-ink ${i === 0 ? "mt-3" : "mt-2"}`}
+					>
+						{p}
+					</p>
+				))}
 			<Link
 				to={nodePath(detail.type, detail.id)}
 				className="mt-2 inline-block font-ui text-[13px] font-semibold text-primary hover:underline"
