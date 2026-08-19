@@ -285,7 +285,83 @@ export function meta({ data: d }: Route.MetaArgs) {
 
 const msg = (payload: object) => JSON.stringify({ id: "lumen-media", channel: "widget", ...payload });
 
-/** The player, on every viewport (Abram 2026-08-19: "render the play episode
+/** Desktop: the player sits at the top of the left rail (Abram 2026-08-19),
+ * above the detail pane. The affordance before it mounts is the same quiet
+ * play LINE mobile uses — not the empty aspect-video rectangle the old
+ * accordion drew, which dominated the rail before anyone pressed it. Once
+ * mounted the iframe is only ever CSS-hidden, so collapsing keeps audio
+ * playing and the playhead sync alive. */
+function RailVideo({
+	videoId,
+	mountT,
+	posT,
+	iframeRef,
+	onPlay,
+	autoScroll,
+	onAutoScroll,
+}: {
+	videoId: string;
+	mountT: number | null;
+	posT: number | null;
+	iframeRef: React.RefObject<HTMLIFrameElement | null>;
+	onPlay: () => void;
+	autoScroll: boolean;
+	onAutoScroll: (v: boolean) => void;
+}) {
+	const [open, setOpen] = useState(true);
+	if (mountT === null) {
+		return (
+			<div className="mb-6">
+				<button
+					type="button"
+					onClick={onPlay}
+					className="font-ui text-sm font-semibold text-primary hover:underline"
+				>
+					▶ Play episode
+				</button>
+			</div>
+		);
+	}
+	return (
+		<section className="mb-6">
+			<button
+				type="button"
+				onClick={() => setOpen(!open)}
+				aria-expanded={open}
+				className="flex w-full items-baseline justify-between font-ui text-xs text-muted-foreground hover:text-ink"
+			>
+				<span>{open ? "Video" : `playing · ${posT !== null ? fmt(posT) : "…"}`}</span>
+				<span aria-hidden className="font-ui text-xs">
+					{open ? "▾" : "▸"}
+				</span>
+			</button>
+			<div className={open ? "mt-2" : "h-0 overflow-hidden"}>
+				<iframe
+					ref={iframeRef}
+					className="aspect-video w-full rounded-lg border border-rule2"
+					src={`https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&start=${Math.max(0, Math.floor(mountT) - 2)}&autoplay=1`}
+					title="Episode video"
+					allow="autoplay; encrypted-media; picture-in-picture"
+					allowFullScreen
+					onLoad={() =>
+						iframeRef.current?.contentWindow?.postMessage(msg({ event: "listening" }), "*")
+					}
+				/>
+				<label className="mt-2 flex cursor-pointer items-center gap-2 font-ui text-xs text-faint hover:text-ink">
+					<input
+						type="checkbox"
+						checked={autoScroll}
+						onChange={(e) => onAutoScroll(e.target.checked)}
+						className="accent-primary"
+					/>
+					Follow along (auto-scroll)
+				</label>
+			</div>
+		</section>
+	);
+}
+
+/** Mobile: the player (Abram 2026-08-19: "render the play episode
  * button like it does in mobile for desktop"). A sticky top strip: collapsed
  * it is one quiet line (audio keeps playing — the iframe is only CSS-hidden);
  * expanded it is the full-width player. The desktop rail accordion it
@@ -411,11 +487,13 @@ const ParaBlock = memo(
 						   never inside the text's box, so no line shortens around it
 						   (Abram). It sits on the LEFT (Abram 2026-08-19) so the
 						   right margin belongs wholly to the detail pane and the two
-						   never compete for the same whitespace; right-full escapes
-						   the prose column, and below ~1340px the under-paragraph
-						   line takes over as before. Right-ALIGNED so the labels
-						   hang against the text they annotate. */
-						<span className="absolute right-full top-1 mr-8 hidden w-[11rem] text-right font-ui text-xs leading-5 min-[1340px]:block">
+						   never compete for the same whitespace. The pane now lives
+						   in the LEFT rail (Abram 2026-08-19), so the annotations
+						   take the right: left-full escapes the prose column into
+						   the page's right whitespace, and below ~1340px that
+						   whitespace is gone and the under-paragraph line takes
+						   over. */
+						<span className="absolute left-full top-1 ml-8 hidden w-[11rem] font-ui text-xs leading-5 min-[1340px]:block">
 							{p.refs.map((r) => (
 								<Link
 									key={`${r.ref}${r.t}`}
@@ -711,7 +789,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	// right margin can actually hold 17rem, else the bottom sheet
 	const [railMode, setRailMode] = useState<null | "side" | "sheet">(null);
 	useEffect(() => {
-		const mq = window.matchMedia("(min-width: 1536px)");
+		const mq = window.matchMedia("(min-width: 1280px)");
 		const apply = () => setRailMode(mq.matches ? "side" : "sheet");
 		apply();
 		mq.addEventListener("change", apply);
@@ -797,14 +875,22 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 					// an arbitrary `min-[1340px]:` put them in different emitted
 					// groups and `lg:` won at every width, so the wide layouts
 					// silently never applied.
-					entityDetail
-						? "lg:grid-cols-[14rem_34rem] xl:grid-cols-[21rem_34rem] 2xl:grid-cols-[21rem_34rem_380px]"
-						: "lg:grid-cols-[14rem_34rem] xl:grid-cols-[21rem_34rem]"
+					// Two columns, always: the rail (player, then detail pane, then
+					// chapters) and the transcript. The paragraph annotations live
+					// in the page's RIGHT whitespace, outside the grid entirely
+					// (Abram 2026-08-19) — so the pane can never push them and the
+					// transcript keeps auto-scrolling under a rail that stays put.
+					//
+					// The rail's width does NOT depend on whether the pane is open:
+					// a column that grew on open would slide the transcript
+					// sideways mid-read. It is sized for the pane and simply has
+					// room to spare without it.
+					"lg:grid-cols-[16rem_34rem] xl:grid-cols-[24rem_34rem]"
 				}`}
 			>
 			<div className="lg:col-span-2 lg:col-start-1 lg:row-start-1">
 			{header}
-			{hasVideo && (
+			{isMobile && hasVideo && (
 				<MobileVideoBar
 					videoId={videoId}
 					mountT={mountT}
@@ -819,15 +905,41 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 				/>
 			)}
 			</div>
-				{/* Column one is wider than its content on purpose: the player and
-				    chapters occupy its left 14rem, and the paragraph annotations
-				    (absolutely positioned off each paragraph) hang in the rest —
-				    the margin the reading text is annotated in. Below 1340px the
-				    column narrows to just the rail and the annotations fall back
-				    to their under-paragraph line. */}
-				<nav aria-label="Chapters" className="mt-8 hidden lg:col-start-1 lg:row-start-2 lg:block lg:w-32">
-					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
+				{/* The rail: player on top, the open entity's detail beneath it,
+				    chapters last. Sticky as one unit so the transcript scrolls
+				    (and auto-scrolls) past a panel that stays where the reader
+				    left it. */}
+				<div className="mt-8 hidden lg:col-start-1 lg:row-start-2 lg:block">
 					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+						{!isMobile && hasVideo && (
+							<RailVideo
+								videoId={videoId}
+								mountT={mountT}
+								posT={posT}
+								iframeRef={iframeRef}
+								onPlay={() => {
+									setMountT(0);
+									setPosT(0);
+								}}
+								autoScroll={autoScroll}
+								onAutoScroll={setAutoScroll}
+							/>
+						)}
+						{entityDetail && railMode === "side" && (
+							<section
+								aria-label={`About ${entityDetail.name}`}
+								className="mb-6 rounded-xl border border-rule bg-panel px-5 pb-[18px] pt-[20px]"
+							>
+								<EntityRail
+									detail={entityDetail}
+									elsewhere={entityElsewhere}
+									collectionId={collectionId}
+									collectionName={collectionName}
+									onSeek={seek}
+								/>
+							</section>
+						)}
+						<nav aria-label="Chapters">
 						{/* Verbatim-title shows (SoJ) anchor no chapters until their
 						    extraction runs — an empty labelled rail reads as broken */}
 						{chapters.length > 0 && (
@@ -849,8 +961,9 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						</ul>
 							</>
 						)}
+						</nav>
 					</div>
-				</nav>
+				</div>
 				<div className="mt-8 lg:col-start-2 lg:row-start-2">
 					<Transcript
 						paras={paras}
@@ -861,22 +974,6 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						captureEpisodeId={canCapture ? episodeId : ""}
 					/>
 				</div>
-				{entityDetail && railMode === "side" && (
-					<div className="hidden 2xl:col-start-3 2xl:row-start-1 2xl:row-span-2 2xl:block">
-						<section
-							aria-label={`About ${entityDetail.name}`}
-							className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[22px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
-						>
-							<EntityRail
-								detail={entityDetail}
-								elsewhere={entityElsewhere}
-								collectionId={collectionId}
-								collectionName={collectionName}
-								onSeek={seek}
-							/>
-						</section>
-					</div>
-				)}
 			</div>
 			{entityDetail && railMode === "sheet" && (
 				<Sheet open onOpenChange={(open) => { if (!open) navigate({ search: "" }, { preventScrollReset: true }); }}>
