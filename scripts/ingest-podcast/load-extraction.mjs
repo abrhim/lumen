@@ -11,11 +11,33 @@ SELECT from_id, to_id, rel_type, source, metadata
 FROM lumen.edges
 WHERE from_id = $1 AND collection_id = $2 AND source = $3`;
 
+/** Stratum → rel_type map for per-stratum admission (2026-08-18, Abram):
+ * a multi-stratum corpus loads what PASSED and holds what did not — the
+ * bars never move, the gate just stops being all-or-nothing. */
+export const STRATUM_REL_TYPES = {
+	verseChapter: ['DISCUSSES'],
+	principle: ['TEACHES'],
+	entity: ['MENTIONS'],
+};
+
 /** R-runner-gates-2: the load gate as a PURE function so the harness can pin
- * it — the runner shell stays untested by design, the gate logic must not. */
+ * it — the runner shell stays untested by design, the gate logic must not.
+ * Returns allowedRelTypes: null = everything (full pass); a list = only
+ * those rel types load (partial pass); no passed strata refuses outright. */
 export function checkLoadGate({ verdict, episodeId, extraction }) {
-	if (!verdict || verdict.passed !== true) {
+	let allowedRelTypes = null;
+	if (!verdict) {
 		return { ok: false, reason: 'eval verdict is not a pass' };
+	}
+	if (verdict.passed !== true) {
+		const passedStrata = Object.entries(verdict.strata ?? {})
+			.filter(([, s]) => s && s.pass === true)
+			.map(([k]) => k);
+		const allowed = passedStrata.flatMap((k) => STRATUM_REL_TYPES[k] ?? []);
+		if (allowed.length === 0) {
+			return { ok: false, reason: 'eval verdict is not a pass' };
+		}
+		allowedRelTypes = allowed;
 	}
 	const bound = verdict.episodeHashes?.[episodeId];
 	if (!bound || !extraction?.contentHash || bound !== extraction.contentHash) {
@@ -27,7 +49,7 @@ export function checkLoadGate({ verdict, episodeId, extraction }) {
 			reason: `judgment incomplete (${(extraction.judgmentMissing ?? []).join(', ') || 'unknown'})`,
 		};
 	}
-	return { ok: true };
+	return { ok: true, allowedRelTypes };
 }
 
 /** Semantic statement plan for one episode. Executor renders SQL and runs

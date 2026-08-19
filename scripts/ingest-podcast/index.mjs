@@ -428,9 +428,16 @@ async function main() {
 					return;
 				}
 				verdict = JSON.parse(readFileSync(verdictPath, 'utf8'));
-				if (verdict.passed !== true) {
+				const anyPassed = verdict.passed === true ||
+					Object.values(verdict.strata ?? {}).some((s) => s && s.pass === true);
+				if (!anyPassed) {
 					fatal(new Error('eval verdict is not a pass — load refused'), 'prereq');
 					return;
+				}
+				if (verdict.passed !== true) {
+					log('load_partial_verdict', {
+						passed_strata: Object.entries(verdict.strata ?? {}).filter(([, s]) => s?.pass).map(([k]) => k),
+					});
 				}
 			}
 			for (const ep of episodes) {
@@ -445,6 +452,17 @@ async function main() {
 						// PW-A6/F8/F27 via the harness-pinned pure gate
 						const gate = checkLoadGate({ verdict, episodeId, extraction });
 						if (!gate.ok) throw new Error(`${gate.reason} — episode not loadable`);
+						// per-stratum admission: hold rel types whose stratum failed
+						const loadableEdges = gate.allowedRelTypes === null
+							? extraction.edges
+							: extraction.edges.filter((e) => gate.allowedRelTypes.includes(e.relType));
+						if (loadableEdges.length !== extraction.edges.length) {
+							log('edges_held_by_stratum', {
+								episode: ep.id,
+								held: extraction.edges.length - loadableEdges.length,
+								loading: loadableEdges.length,
+							});
+						}
 						// second-show review #8: the EPISODE's collection, never show.id —
 						// a five-collection show would otherwise misfile every edge
 						const cid = collectionForEpisode(show, ep).id;
@@ -452,7 +470,7 @@ async function main() {
 						const plan = buildExtractionLoadPlan({
 							episodeId,
 							collectionId: cid,
-							edges: extraction.edges,
+							edges: loadableEdges,
 							existingEdges,
 						});
 						if (opts.dryRun) {

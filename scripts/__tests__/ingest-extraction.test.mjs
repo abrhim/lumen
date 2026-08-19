@@ -988,3 +988,36 @@ test('register guards: modern-world collisions suppress, canon mentions survive'
 	assert.deepEqual(hits.map((m) => `${m.target}@${m.seq}`), ['abraham-1@1']);
 	assert.ok(out.counts.registerSuppressed >= 4);
 });
+
+test('GATE-pin: per-stratum admission — passed strata load, failed strata hold', () => {
+	const verdict = {
+		passed: false,
+		episodeHashes: { 'stick-of-joseph-x': 'abc' },
+		strata: {
+			verseChapter: { pass: true },
+			principle: { pass: true },
+			entity: { pass: false },
+		},
+	};
+	const g = checkLoadGate({
+		verdict,
+		episodeId: 'stick-of-joseph-x',
+		extraction: { contentHash: 'abc', judgmentComplete: true },
+	});
+	assert.equal(g.ok, true);
+	assert.deepEqual([...g.allowedRelTypes].sort(), ['DISCUSSES', 'TEACHES']);
+	// full pass keeps the historical shape: everything admitted
+	const full = checkLoadGate({
+		verdict: { passed: true, episodeHashes: { 'stick-of-joseph-x': 'abc' } },
+		episodeId: 'stick-of-joseph-x',
+		extraction: { contentHash: 'abc', judgmentComplete: true },
+	});
+	assert.equal(full.allowedRelTypes, null);
+	// all strata failed refuses outright — the hash check must not even matter
+	const none = checkLoadGate({
+		verdict: { passed: false, strata: { entity: { pass: false } } },
+		episodeId: 'stick-of-joseph-x',
+		extraction: { contentHash: 'abc', judgmentComplete: true },
+	});
+	assert.equal(none.ok, false);
+});
