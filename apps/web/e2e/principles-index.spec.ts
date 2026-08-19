@@ -85,6 +85,38 @@ test.describe("principles index", () => {
 		expect([...counts].sort((a, b) => b - a)).toEqual(counts);
 	});
 
+	test("a principle with connections but no verses is not called empty", async ({ page }) => {
+		await page.goto("/principles");
+		await page.waitForSelector("html[data-hydrated]");
+		const rows = page.locator("main ul li");
+
+		// The bug this replaced: every zero-verse principle printed the same
+		// em-dash, which called 55 of them empty when they carried episode
+		// mentions and entity connections.
+		//
+		// Asserted as invariants rather than as counts. Production has 23 bare
+		// and 55 connected; the local seed has neither, and a test that needs
+		// one to exist fails on the stack it actually runs against.
+		const texts = await rows.allTextContents();
+		for (const t of texts) {
+			// exactly one of the three states, never two
+			expect(/\d+ verses?/.test(t) && /\d+ connections?/.test(t)).toBe(false);
+			expect(/\d+ verses?/.test(t) && t.includes("nothing yet")).toBe(false);
+		}
+
+		// The facet publishes its own count; filtering must produce exactly that
+		// many rows, which holds whether the number is 23 or 0.
+		const facet = page.getByRole("button", { name: /^Nothing yet/ });
+		const claimed = Number((await facet.textContent())?.match(/(\d+)/)?.[1] ?? "-1");
+		expect(claimed).toBeGreaterThanOrEqual(0);
+
+		await facet.click();
+		await expect(facet).toHaveAttribute("aria-pressed", "true");
+		expect(new URL(page.url()).searchParams.get("unlinked")).toBe("1");
+		await expect(rows).toHaveCount(claimed);
+		for (const t of await rows.allTextContents()) expect(t).toContain("nothing yet");
+	});
+
 	test("a row opens its principle page", async ({ page }) => {
 		await page.goto("/principles");
 		await page.waitForSelector("html[data-hydrated]");

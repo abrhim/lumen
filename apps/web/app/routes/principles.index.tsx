@@ -30,16 +30,22 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 		context.db.execute(sql`
 			SELECT e.id, e.name, e.collection_id,
 			       e.metadata->>'category' AS category,
-			       count(v.id)::int AS verse_count
+			       -- node.tsx scopes its verse list to 'anthropic-batch'. Every
+			       -- principle edge carries that source today, so an unscoped
+			       -- count would agree by luck; scope it here too or the index
+			       -- and the detail page drift the first time another source
+			       -- writes a verse edge.
+			       (SELECT count(*)::int FROM lumen.edges g
+			          JOIN lumen.verses v ON v.id = g.from_id
+			         WHERE g.to_id = e.id AND g.source = 'anthropic-batch') AS verse_count,
+			       -- Everything else pointing at this principle: episode mentions,
+			       -- entity connections. A principle with no verses is not
+			       -- necessarily empty, and the index said it was.
+			       (SELECT count(*)::int FROM lumen.edges g
+			         WHERE g.to_id = e.id
+			           AND NOT EXISTS (SELECT 1 FROM lumen.verses v WHERE v.id = g.from_id)) AS link_count
 			FROM lumen.entities e
-			-- node.tsx scopes its verse list to 'anthropic-batch'. Every principle
-			-- edge carries that source today, so an unscoped count would agree by
-			-- luck; scope it here too or the index and the detail page drift the
-			-- first time another source writes a verse edge.
-			LEFT JOIN lumen.edges g ON g.to_id = e.id AND g.source = 'anthropic-batch'
-			LEFT JOIN lumen.verses v ON v.id = g.from_id
 			WHERE e.entity_type = 'principle'
-			GROUP BY e.id, e.name, e.collection_id, e.metadata
 			ORDER BY e.name
 		`) as unknown as Promise<
 			Array<{
@@ -48,6 +54,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 				collection_id: string | null;
 				category: string | null;
 				verse_count: number;
+				link_count: number;
 			}>
 		>,
 		getCollectionAccess(context.db, user?.id ?? null),
@@ -62,6 +69,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 			name: String(r.name),
 			category: r.category ? String(r.category) : null,
 			verses: Number(r.verse_count),
+			links: Number(r.link_count),
 		}));
 
 	return data({ principles }, { headers });
@@ -95,17 +103,24 @@ export default function PrinciplesIndex({ loaderData }: Route.ComponentProps) {
 		return m;
 	}, [principles]);
 
+	// A principle with nothing pointing at it at all — no verse, no episode, no
+	// connection. Distinct from the far larger set that simply has no verses.
+	const bare = (p: { verses: number; links: number }) => p.verses === 0 && p.links === 0;
+	const bareCount = useMemo(() => principles.filter(bare).length, [principles]);
+	const onlyBare = searchParams.get("unlinked") === "1";
+
 	const shown = useMemo(() => {
 		const needle = q.trim().toLowerCase();
 		const list = principles.filter(
 			(p) =>
 				(!category || p.category === category) &&
+				(!onlyBare || bare(p)) &&
 				(!needle || p.name.toLowerCase().includes(needle)),
 		);
 		return sort === "verses"
 			? [...list].sort((a, b) => b.verses - a.verses || a.name.localeCompare(b.name))
 			: list;
-	}, [principles, category, q, sort]);
+	}, [principles, category, q, sort, onlyBare]);
 
 	const setParam = (key: string, value: string | null) => {
 		const next = new URLSearchParams(searchParams);
@@ -139,14 +154,9 @@ export default function PrinciplesIndex({ loaderData }: Route.ComponentProps) {
 				intro="Every principle the collections teach, and how many verses stand behind each one."
 			/>
 
-			<div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2">
-				{facet(null, "All", principles.length)}
-				{Object.keys(CATEGORY_LABELS)
-					.filter((c) => counts.get(c))
-					.map((c) => facet(c, CATEGORY_LABELS[c], counts.get(c) ?? 0))}
-			</div>
-
-			<div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+			{/* Search first (Abram, 2026-08-19): typing is what a reader reaches
+			    for on a 262-row index, and the categories are the narrower move. */}
+			<div className="mt-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
 				<label className="min-w-0 flex-1">
 					<span className="sr-only">Filter principles by name</span>
 					<input
@@ -158,6 +168,17 @@ export default function PrinciplesIndex({ loaderData }: Route.ComponentProps) {
 					/>
 				</label>
 				<div className="flex items-center gap-4 font-ui text-[13px]">
+					<button
+						type="button"
+						onClick={() => setParam("unlinked", onlyBare ? null : "1")}
+						aria-pressed={onlyBare}
+						className={`transition-colors duration-150 hover:text-primary ${onlyBare ? "font-semibold text-ink" : "text-muted-foreground"}`}
+					>
+						Nothing yet <span className="tabular-nums text-faint">{bareCount}</span>
+					</button>
+					<span aria-hidden="true" className="text-faint">
+						·
+					</span>
 					<button
 						type="button"
 						onClick={() => setParam("sort", null)}
@@ -175,6 +196,13 @@ export default function PrinciplesIndex({ loaderData }: Route.ComponentProps) {
 						Most referenced
 					</button>
 				</div>
+			</div>
+
+			<div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+				{facet(null, "All", principles.length)}
+				{Object.keys(CATEGORY_LABELS)
+					.filter((c) => counts.get(c))
+					.map((c) => facet(c, CATEGORY_LABELS[c], counts.get(c) ?? 0))}
 			</div>
 
 			<p aria-live="polite" className="mt-4 font-ui text-[13px] text-faint">
@@ -196,8 +224,15 @@ export default function PrinciplesIndex({ loaderData }: Route.ComponentProps) {
 								<span className="whitespace-nowrap font-ui text-xs text-faint">
 									{label(p.category)}
 								</span>
+								{/* A principle with no verses may still carry episode
+								    mentions and entity connections; saying "—" for both
+								    called 55 of these empty when they are not. */}
 								<span className="whitespace-nowrap font-ui text-xs tabular-nums text-faint">
-									{p.verses === 0 ? "—" : `${p.verses} ${p.verses === 1 ? "verse" : "verses"}`}
+									{p.verses > 0
+										? `${p.verses} ${p.verses === 1 ? "verse" : "verses"}`
+										: p.links > 0
+											? `${p.links} ${p.links === 1 ? "connection" : "connections"}`
+											: "nothing yet"}
 								</span>
 							</RefRow>
 						</li>
