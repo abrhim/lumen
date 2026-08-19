@@ -27,6 +27,8 @@ export default [
 	route("auth/callback", "routes/auth.callback.tsx"),
 	route("logout", "routes/logout.tsx"),
 	route("admin/users", "routes/admin.users.tsx"),
+	route("admin/enrichment", "routes/admin.enrichment.tsx"),
+	route("api/enrichment-review", "routes/api.enrichment-review.tsx"),
 	route("api/search", "routes/api.search.tsx"),
 	route("api/notes-linked", "routes/api.notes-linked.tsx"),
 	route("api/highlight", "routes/api.highlight.tsx"),
