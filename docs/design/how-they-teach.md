@@ -11,6 +11,15 @@
 
 *A comparative study of Jared Halverson, Todd McLaughlin, and Andrea Woodmansee, for a writer who has to produce doctrinal essays in a voice drawn from all three.*
 
+> **Read this first.** Sections 0–6 analyze three *spoken* corpora — podcast and
+> lecture transcripts. They are accurate about how this tradition teaches aloud,
+> and they are left unrevised because the contrast is the point. But a podcast is
+> not a page, and several rules below turn out to measure the microphone rather
+> than the tradition. **Section 7 is the correction**, built from a control that
+> holds the teacher constant and changes only the medium: Mike Day, ~14.2k words
+> of own-voice written prose against 24.6k words of his own cross-talk-audited
+> speech. Where 7 contradicts 1–6, 7 governs for anything that ships as text.
+
 ---
 
 ## 0. The thesis, stated up front so you can disagree with it
@@ -230,3 +239,253 @@ Woodmansee's anomaly loop for the skeleton, McLaughlin's definition mechanics at
 6. Land on worry, a question, or a procedure. Do not dwell. Stop.
 
 The part that is hardest to keep and easiest to lose is step 3, because it looks like padding to an editor and like digression to a first-draft writer. It is neither. It is the entire mechanism by which step 4 lands as a reward rather than as information.
+
+---
+
+## 7. What changes on the page (Mike Day, written vs spoken)
+
+<!-- Added 2026-08-19. Control corpus: Mike Day, own-voice written prose
+     (~14.2k words, quoted material stripped) vs. his own cross-talk-audited
+     speech (24.6k words). Same man, same tradition, both modes. Everything the
+     two modes share is the tradition; everything only the microphone has is
+     breath. All counts in this section were recomputed directly against the
+     corpora rather than carried over from the source analysis. -->
+
+Sections 0–6 measure three people who were all talking. That design cannot tell a
+feature of the tradition apart from a feature of speech. This section holds the
+teacher constant and changes only the medium.
+
+### 7.1 What survives the transition, and is therefore the tradition
+
+Eight moves cross both modes intact, which promotes them from "how these three
+talk" to "how this tradition teaches."
+
+**The graded concession** (§1, §4 move 1). Written: *"Is the story somewhat messy,
+with gaps and problems? Yes! It is human – but it is also divine."* A fourth
+independent corpus confirms it.
+
+**The bare copular definition** (§4 move 3). Zero instances of "is defined as" or
+"the term refers to." What the corpus has instead: *"Transfiguration is the
+process of temporary glorification by which mortals can withstand the presence of
+God without being destroyed."*
+
+**Etymology cashed out immediately** (§4 move 4). *"The name 'Jubilee' comes from
+the word yovel, 'ram's horn,' so called because a ram's horn was sounded when
+Jubilee was proclaimed."*
+
+**The near-absence of logical connectives** (§1) — the strongest confirmation
+here, though not as clean as this section first claimed. A recount over the
+full 31,373 words of Day's own written prose (quotations stripped) finds
+*consequently* at literal zero, and *moreover*, *nevertheless*, and
+*furthermore* at 1, 2, and 3 occurrences respectively — six words in thirty-one
+thousand. The rule effectively survived a keyboard, so it was never a spoken
+artifact; but it survived as *vanishingly rare*, not as absent, and the earlier
+"literal zero" here was measured on a 14.2k-word sample and did not hold up.
+(Two larger leaks, quantified in 7.4; note that *therefore* is one of them, at
+the same rate as *however*.)
+
+**The trailing hedge** (§1). *"at least this is one way of reading it"* — the
+boundary-of-knowledge marker is a genre requirement, not a tic of live delivery.
+
+**The self-implicating *we*** (§1) — it survives the move to the page, but it
+does **not** rise, and an earlier draft of this section said it did. Recounted
+over the full 31,373 words: bare `we` **falls 13.0 → 7.6 per 1,000**. The real
+finding is what happens to the *other* pronoun. `you` **collapses 16.7 → 2.3**,
+a sevenfold drop, while `we` loses only 42%. So the ratio shifts hard toward
+`we` even as both decline — the second person is what the page cannot carry,
+because there is nobody in the room to point at.
+
+That is the durable rule, and it is a rule about *shape*, not frequency: a
+first-person plural that includes the writer in the problem survives any
+medium, and every *you* aimed at the reader has to justify itself.
+Written: *"We must examine our assumptions."* Spoken: *"i gotta stay in the lane
+lines with the bumpers for you people."*
+
+**The consumer analogy** (§1, §2). It does not retreat to the ancient world on the
+page. A Chik-fil-A analogy sits in the middle of a source-criticism essay:
+*"Imagine a restaurant, for example Chik-fil-A, saying that we had to only eat
+food at their establishment."* The *well* the analogy is drawn from does not have
+to change; only its load-bearing-ness matters.
+
+**The devotional landing, and nobody dwells** (§1). Every essay gives way in its
+last 60–100 words, and there is no "we have seen that…" recap anywhere.
+
+### 7.2 The headline finding: withholding is a spoken thesis
+
+§0 and §6 make **withholding** the load-bearing claim of this entire document,
+and §6 step 1 says flatly: *"No thesis."* The written control does not support it.
+
+Day's written openings are **thesis-first in roughly 12 of ~31 posts**, flat and
+declarative, with no hook: *"Monolatry is all over the text of the Old
+Testament."* / *"All of the anti-Christs in the Book of Mormon have essentially
+the same goal."* Genuine deferral happens three times, and one of those is a
+refusal to answer at all. **Not one essay opens on a scene.**
+
+The reason is mechanical. Woodmansee's estrangement opening works because a
+listener cannot skip; the tension is enforced by the medium. A reader can leave,
+and — worse for the theory — a reader who stays can simply scroll. On a page the
+withholding has to operate on the **evidence**, not on the **claim**.
+
+What generalizes from §6 is step 3, the prerequisite build. What does not is the
+suppression of the thesis. Where an anomaly does open a written essay (~5 posts,
+the second-ranked pattern), it is always an anomaly **in the text** — a gap, a
+duplication, a contradiction between two verses — never a life anomaly, never
+weather, never a person walking into a room.
+
+### 7.3 What disappears, and what stands in its place
+
+| The spoken move | The written substitute |
+|---|---|
+| **"Let's turn to" / "Turn with me."** McLaughlin heads ~49 clauses with `let's`. | The declarative paragraph-opener naming the text or source: *"For example, we can examine Psalm 95."* Roughly a quarter of body paragraphs open on `The [text/author/word]…` |
+| **The comprehension hand-back.** `Does that make sense?` / `right?` | **Zero** in writing — confirmed. Its *function* migrates to the parenthesis, which goes from **0.0 to 11.4 per 1,000 words**. Parentheses are the single most characteristic mark of the written voice, and they carry the aside, the hedge, and the citation. |
+| **The pronunciation apology.** *"I'm going to say his name wrong, Julius Wellhausen."* | Its inverse: he prints the script. *"the Hebrew verbs 'āḇaq אָבַק ('wrestle') and ḥāḇaq חָבַק ('embrace')."* Performed humility becomes accuracy the reader can check. |
+| **`stuff`** — 80 hits, the load-bearing noun for evidence, ritual, and the ancient world. | The actual noun. Words ≥8 characters rise **7.8% → 13.9%**; nominalizations **17.2 → 29.8 per 1,000**. |
+| **Ventriloquized scholarship.** *"Finkelstein… he says, listen, we have a massive population explosion…"* | Block quotation plus a plain attribution verb (*said*, *taught*, *writes*), then the restatement pattern: quote the technical definition, then render it in one plain sentence of your own. |
+| **Physical citation.** *"this is on page 41 of my book."* | Full bibliography in running prose. |
+| **Sentence-initial coordination.** 31% of spoken sentences open on *And/But/So/Because/Now*. | Between-sentence coordination dies while within-sentence coordination survives: `and` falls only 33.5 → 26.5 per 1,000, but **`but` 9.1 → 2.9, `so` 12.8 → 2.7**. The chain moves inside the period. |
+| **`yeah`, `okay`, `kind of`, `right?`** | Literal zero, all four. Contractions fall sevenfold, **51.7 → 7.3 per 1,000**. |
+
+### 7.4 Sentence economy — the rule §1 gets wrong
+
+This is the most consequential correction, because §1's distribution figures are
+quoted directly into the skill's checklist.
+
+| | Day spoken | Day written | Change |
+|---|---|---|---|
+| mean words/sentence | **11.8** | **24.6** | 2.1× |
+| median | **9** | **21** | 2.3× |
+| % under 6 words | **30.3%** | **6.6%** | one fifth |
+| % over 25 words | 9.0% | **37.9%** | 4.2× |
+
+Per-essay written means: Monolatry **18.2** · 153 Fish **22.2** · Levites **24.8**
+· Leviticus 23 **26.2**. The two densest arguments run at 2.1% and 2.3% under six
+words — the three-word beat that defines the spoken register nearly vanishes
+exactly where the reasoning is hardest.
+
+Halverson (median 12), McLaughlin (10), and Woodmansee (10) sit within two words
+of Day's *spoken* median of 9. **§1 measured talking and called it the
+tradition.**
+
+So "never two long sentences in a row" is arithmetically impossible at the
+written distribution — over a third of sentences exceed 25 words and adjacency is
+forced. But the corrected rule is not "write long." It is a **reservation rule**:
+
+> The default clause is ~20 words. Short sentences are *reserved* — deployed in
+> runs of three or four consecutively, at a paragraph's close or in a list of
+> concrete instances. Never one isolated short sentence floating in a
+> long-sentence paragraph.
+
+The staccato run at an argument's close, [9, 1, 8, 3, 3]: *"Is the story somewhat
+messy, with gaps and problems? Yes! It is human – but it is also divine. So was
+Jesus. So are you!"*
+
+And the finding that should govern the whole rule: **the mechanics of speech
+return exactly once per essay, in the last paragraph.** Sentence length drops back
+toward the spoken benchmark at the devotional landing and nowhere else. The short
+sentence is a licence spent at the end, not a rhythm maintained throughout.
+
+*How the length is built.* Not by subordination — `which` moves 2.1 → 2.5,
+`although` 0.0 → 0.2. Four mechanisms do the work: parallel `that`-complements
+hanging off one verb (the dominant engine); swallowing the citation into the
+sentence; appositive stacking of proper nouns and dates; and a short main clause
+with a long trailing hedge. That last one most sounds like him — and §3's
+"trailing dependent clauses: fine aloud, broken in print" gets it backwards.
+
+*The connective leak.* (Recounted over the full 31,373 words: `thus` 18 at 0.57
+per 1,000, `however` 10 at 0.32, `therefore` 10 at 0.32. The sampled figures
+below stand as a sample; the fuller counts are the ones the skill budgets on,
+and they add *therefore* to the group.) `however` (5) and `thus` (6) do cross over, at 0.35 and
+0.42 per 1,000. Note the source analysis characterized these as exclusively
+comma-flanked and section-closing; **that is not what the corpus shows.** Three of
+five `however` and three of six `thus` are sentence-initial and genuinely
+inferential (*"Thus, Jacob's transformative encounter becomes a temple…"*), and
+one `however` is not a connective at all (*"however dire"*). They leak. Budget
+them rather than pretending they are absent.
+
+### 7.5 What only writing can do
+
+**Adopt — simultaneity of scripts.** A listener is *told* two words share
+consonants; a reader *checks*. *"Jacob (יַעֲקֹב Yaʿăqōb) crossing the Jabbok
+(יַבֹּק Yabbōq) river and wrestling (וַיֵּאָבֵק wayyēʾābēq)."* The reader does the
+collation. Day's discipline is a two-class rule: **define the term the essay
+argues about; assume the surrounding critical vocabulary.** This means §5's
+"scholarship as name-dropping" needs a carve-out — see 7.6.
+
+**Adopt — semantic drift anchored to a dated secular usage.** The best definition
+in either corpus, and page-only because it needs the reader to hold two dates at
+once: *"'comfort' embodied the notion of 'with strength'… This interpretation
+persisted into 1787, evident when the American Constitution described treason as
+'giving aid and comfort to the enemy,' signifying not merely providing relief but
+empowering an adversary."* Word → drift flagged as the problem → older sense →
+non-scriptural corroborating usage → payoff.
+
+**Adopt with a budget — the parenthesis.** The only mark genuinely *more* written
+than spoken here. But 11.4 per 1,000 means eleven in a 1,000-word essay, which on
+an edited page reads as an unmade decision. Cap at four.
+
+**Refuse — unbounded quotation.** Day's site is closer to a commonplace book than
+an essay collection; in several posts the quoted material outruns his own five or
+ten to one. This is the capability the page grants and Lintel must decline.
+
+**Refuse — apparatus.** Footnotes, "Further Reading," attached PDFs. The failure
+mode is explicit in the corpus: one post is framing prose only, because the
+substance lives in an attached PDF. On a podcast, silence is dead air and he would
+have had to say something. **On a page, an attachment counts as delivery — so the
+page lets him publish an argument he never actually made in words.** That is the
+specific hazard of writing in this tradition.
+
+**Refuse — the enumerated catalogue.** The seven feasts, the A–E marking scheme.
+Those posts are reference documents wearing an essay's clothes.
+
+### 7.6 Corrections to specific claims in 1–6
+
+- **§1 sentence economy** — measures speech. See 7.4.
+- **§1 / §3 "accumulation, never subordination"** — backwards on the page.
+  Accumulation *is* the spoken mechanism (initial `but` 9.1 → 2.9). The written
+  long-sentence engine is stacked parallel complements, and the trailing hedge §3
+  says to cut is his signature written sentence.
+- **§1 transitions "deictic or imperative"** — the negative half is confirmed at
+  zero and should be kept loudly. The positive half is wrong: *Turn with me*,
+  *Keep reading*, and `let's` all presuppose a live audience with books open. Day
+  writes none of them. His replacements: **"In other words,"** (6×, always
+  introducing the plain restatement of a technical claim), the **interrogative
+  paragraph opener**, *"at least…"* (14×), *"To me…"* (6×), and *"suffice it to
+  say that…"*
+- **§5 "scholarship as name-dropping"** — half wrong, and the wrong half matters.
+  The technical load nearly doubles on the page. What rescues it is that **the
+  Latinate nouns sit in the noun slots while the verbs stay Anglo-Saxon and
+  sometimes deliberately low**: *"Yahweh saying that he is going to **throw down**
+  on all of the gods of the Egyptians"* / *"a lot of **mental gymnastics**."* The
+  real rule is a Latinate noun phrase governed by an Anglo-Saxon verb.
+- **§3's comprehension hand-back** — first half confirmed at zero. The second half
+  ("do not convert them into rhetorical questions") conflates two devices. Written
+  Day has **42 question marks and zero hand-backs**; the question-as-paragraph-
+  opener is his primary structural hinge, carrying the load that *moreover* carries
+  in academic prose: *"So what is the Bible?"* / *"To get to the original question:
+  Did the Levites sacrifice to idols?"*
+- **§1 / §5 "Nobody writes *we must*. Nobody writes *let us*. Neither phrase
+  appears in any of these corpora."** — **false for the written control.** `we
+  must` appears **7 times written against 0 spoken**; `let us` once. What saves the
+  underlying rule is *function, not phrase*: every instance is an analytical
+  procedure (*"we must examine who the Levites were in the first place"*), never an
+  exhortation to righteous action. Ban exhortation, not the words.
+- **§1 intensifiers** — confirmed (*amazing* 0, *incredible* 1). But `really`
+  appears 12 times, always adverbial on a verb (*"really hit me"*), never
+  intensifying an adjective. And exclamation points run at **2.0 per 1,000**,
+  doing the work a voice would otherwise do: *"Of course Israel had options!"*
+  Ban the exclamation point alongside the adjective, or the intensifier budget
+  simply relocates to punctuation.
+- **§3 free indirect speech** — unevidenced on the page. No instance of unmarked
+  first person for a scriptural character anywhere in the written corpus. The rule
+  may be right; it is not confirmed.
+
+### 7.7 One caveat on the control
+
+Day's prose is unproofed. Genuine errors survive publication (*"a multiplicity of
+diving beings"*, *"So we must then we get into the rivalry"*). It is blog-speed
+writing, not edited writing. His paragraph lengths (median 139 words in one essay,
+with a single paragraph of 374) and his longest sentence (146 words) are what an
+unrevised draft settles at, not a target.
+
+**Take the *shape* of his written distribution and the *direction* of every shift
+from speech. Do not take the amplitude.**

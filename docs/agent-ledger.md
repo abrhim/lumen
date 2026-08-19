@@ -127,3 +127,63 @@ fixable by another guard.
   for loads).
 - ASR writes "D&C", never "Doctrine and Covenants" — the alias list is
   the only reason those chapters anchor at all.
+
+## 2026-08-19 — building a text corpus from the web
+
+- **WebFetch silently returns a summary instead of the source text, and
+  it does this inconsistently.** Same tool, same prompt shape: most of
+  40 blog articles came back verbatim, three came back as third-person
+  paraphrase. Nothing in the response says which you got. A corpus
+  assembled this way looks complete and is partly a model's prose. If
+  you are measuring *how someone writes*, that is not a small
+  contaminant — it is the measurement. Detect it before analysing:
+  first-person markers per 1k chars separates them cleanly here
+  (verbatim 2.3–8.6, paraphrase 0.0–0.8). Tell fetch agents to record
+  `=== FAILED: <url> ===` rather than drop a miss, or the holes are
+  invisible too.
+- **Counts produced by a subagent need a deterministic recount before
+  they become rules.** Three numbers in an otherwise careful analysis
+  were wrong in ways that would have shipped: four connectives asserted
+  at "literal zero" were 1/2/3 occurrences; *therefore* was banned as
+  absent while appearing exactly as often as *however*; and a
+  "self-implicating *we* rises on the page" finding reversed sign on a
+  larger sample (13.0 → 7.6 per 1k, it falls — what actually collapses
+  is *you*, 16.7 → 2.3). All three were caught by a ~20-line Python
+  count over the same files. Agents sampled 14.2k of 31.4k available
+  words; their *sentence-length* figures matched an independent recount
+  to within 0.5%, so sampling was not the problem — assertions of
+  absence were. Absence is the claim a sample cannot support.
+- **Strip quoted material before measuring prose style.** These essays
+  are 17% block quotation (KJV, Nibley, Friedman). Here it barely moved
+  the result (mean 25.3 → 24.7), but that was luck, not method — and
+  one specimen the analysis attributed to the blog's author was
+  actually a scholar he was quoting.
+- **ldsscriptureteachings.org permalinks have no day segment**
+  (`/2020/03/slug/`, not `/2020/03/08/slug/`), and its category index
+  pages interleave article links with YouTube, PDF and MP3 URLs plus
+  per-episode "quotes and notes" show notes. Roughly one link in seven
+  on those pages is a real essay.
+
+## 2026-08-19 — editing a skill that has a companion file
+
+- **A skill's reference file is a second method document, and the skill
+  orders you to read it.** `principle-essay/SKILL.md` says "Read
+  `teaching-patterns.md` before drafting." Collapsing four voice
+  personas to one in SKILL.md while patching two lines of the companion
+  left six live instructions that lose to the new checklist — an
+  opening shape whose first beat was "No thesis", a ban on *therefore*
+  that a recount had already overturned, and "the three teachers are a
+  menu, not a blend." A draft built from the companion would have
+  failed the skill's own gate. If you change a rule, grep BOTH files
+  for the rule's subject, not just the file you are editing.
+- **The cheapest real test of a writing skill is to make an agent draft
+  from it and report where it got stuck** — not to review it. The
+  drafting trial is what surfaced that the four-parenthesis cap and the
+  three-to-eight-passages rule are arithmetically incompatible if
+  citations are parenthetical, and that the writer had silently guessed
+  which way to resolve it. Two reviewers reading the same file for
+  contradictions both missed it.
+- **`lumen.verses` cannot be verified against the local stack** (~162
+  rows) and the column is `reference`, not `ref`. Any instruction to
+  "check the passage against the database" has to say it reads
+  production read-only, or it quietly trains quoting from memory.

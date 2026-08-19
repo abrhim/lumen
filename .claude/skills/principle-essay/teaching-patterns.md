@@ -1,12 +1,24 @@
 # teaching-patterns
 
+> **Evidence only. Where this file and SKILL.md conflict, SKILL.md governs.**
+>
+> This file records what four teachers measurably do. It does not decide what a
+> Lintel essay does — that is SKILL.md, and in particular its seven-item voice
+> specification, its checklist, and the tic list. Entries here were written
+> against v0.2.0, when the skill cast an essay per subject among three
+> teachers. **v0.4.0 collapsed that to one voice**, and several entries below
+> still read as menus. They are kept because the underlying quotations are the
+> evidence the rules rest on; treat every "pick one" in this file as
+> superseded.
+
 Reference dictionary for the `principle-essay` skill. Every entry is attributed
 to the teacher it was measured or transcribed from. Nothing here is invented;
 if a pattern has no quote under it, it does not belong in this file.
 
 Sources: **Jared Halverson** (Unshaken), **Todd McLaughlin** (Stick of Joseph),
-**Andrea Woodmansee** (Stick of Joseph). Corpus sizes differ; Woodmansee's
-counts are over 26,800 words.
+**Andrea Woodmansee** (Stick of Joseph) — transcribed speech, ~145k words each.
+**Mike Day** (ldsscriptureteachings.org) — the written control, 31,373 words of
+own-voice prose. Woodmansee's per-word counts below are over 26,800 words.
 
 Contents:
 
@@ -23,15 +35,35 @@ Contents:
 
 ## 1. The measured baseline
 
-| | Mean sentence | Median | Share ≤5 words |
-|---|---|---|---|
-| Halverson | 14.4 | 12 | — |
-| McLaughlin | 13.4 | 10 | 25% |
-| Woodmansee | 14.1 | 10 | 25.7% |
+*Recounted 2026-08-19 by one method across all five corpora, so the rows are
+comparable to each other. Earlier editions of this table and of SKILL.md carried
+figures from two different counts and disagreed by up to 0.4 words; these
+supersede both.*
 
-Three independent corpora, three effectively identical distributions. This is
-not coincidence; it is what the shared move requires. The unit is **long
-accumulating build, short landing**.
+| | Mean sentence | Median | Under 6 words | Over 25 words |
+|---|---|---|---|---|
+| Halverson (spoken) | 14.4 | 12 | 21.9% | 14.8% |
+| McLaughlin (spoken) | 13.8 | 10 | 24.6% | 12.6% |
+| Woodmansee (spoken) | 14.1 | 10 | 25.0% | 13.4% |
+| **Day — spoken** | **11.5** | **8** | **31.7%** | **8.8%** |
+| **Day — WRITTEN** | **24.7** | **21** | **5.2%** | **37.3%** |
+
+The three spoken corpora are three effectively identical distributions — a
+0.6-word spread in the mean. That is one voice measured three times, and it is
+the evidence for the 0.4.0 collapse to a single voice.
+
+**The last two rows are the whole reason 0.3.0 and 0.4.0 exist.** Same teacher,
+same tradition, different medium: sentences more than double and short sentences
+nearly vanish. The spoken unit is **long accumulating build, short landing**.
+The written unit is not — see SKILL.md 1.10 and 1.11, both of which reverse the
+rule the spoken rows would have produced on their own. Lintel's target sits
+deliberately between the two: median 16–18, mean 20–22.
+
+*Method, so this can be reproduced or challenged:* sentences split on `[.!?]`
+followed by whitespace and a capital or opening quote; bracketed editorial
+insertions and leading verse numbers stripped; sentences of 1–120 words counted.
+Day's written figures exclude block quotations from scholars and the KJV (17% of
+paragraphs), so the rows are his prose and not theirs.
 
 Absence counts, which are the more useful measurement:
 
@@ -91,7 +123,9 @@ reading that follows.
 
 ### Move 2 — Withhold the term while you build what it needs
 
-Three routes. Pick by term type.
+Four routes, and the **term** picks the route — not the teacher. Any route is
+available for any essay. (SKILL.md 2.4 adds the fourth, semantic drift anchored
+to a dated secular usage, which is page-only.)
 
 **Prerequisite chain** — McLaughlin, for system terms. Dominion, then the
 unseen world, then agency, then veils, and only then altar. Nothing is named
@@ -129,10 +163,13 @@ Never "X is defined as."
 **Sub-rules.** If the term is abstract, choose a deliberately **generic genus
 and load the differentia** — McLaughlin's "a structure," "a practice," "a
 system or a platform." If the term is a role or an ordinance, **define by
-function**: an altar is *how you traverse a veil*. Halverson's shape is the
-paired negation, used once: "X doesn't mean A. It means B." McLaughlin's is the
-deflationary *just*, which tells the reader the definition is smaller than they
-were bracing for.
+function**: an altar is *how you traverse a veil*. The paired negation, used
+once: "X doesn't mean A. It means B."
+
+The deflationary move — telling the reader the definition is smaller than they
+were bracing for — is right, but **not the word *just***. It falls sixfold from
+speech to writing (6.2 → 0.9 per 1,000). Written substitutes: "suffice it to say
+that…", "simply stating that…", and the bare copula. See SKILL.md 1.5.
 
 ### Move 4 — Cash it out in the same breath
 
@@ -249,23 +286,19 @@ Extend a long sentence by climbing scope rather than by subordinating.
 Stem anaphora works in print at reduced repetition — two beats, not four.
 "This is why... This is why... This is how..."
 
-### The default essay shape
+### The default essay shape — MOVED
 
-Woodmansee's loop for the skeleton, McLaughlin's definition mechanics at the
-center, Halverson's landing.
+**Deleted in 0.4.0. The shape lives in SKILL.md 2.1 and nowhere else.** What
+stood here was a three-teacher composite whose first beat read "Open on the
+familiar thing made strange… **No thesis**." Both halves were overturned by the
+written control: zero of ~31 written essays open on a scene, and the claim goes
+flat in sentence one. A draft built on the old beats fails checklist 19.
 
-1. Open on the familiar thing made strange, in one concrete scene or one
-   unexplained number. No thesis.
-2. Name the standard reading and grant it a full clause.
-3. Build the prerequisite — one machine, one custom, or one etymology. This is
-   the longest stretch and it should feel like it is about something else.
-4. Define, in one short sentence, present tense, verb *is* or *means*.
-5. Cash it out, then test it on the inverse.
-6. Land on worry, a question, or a procedure. Do not dwell. Stop.
+### The three landings — evidence, not a menu
 
-### The three landings
-
-None of the three lands an application as a command.
+All three land the same way — never as a command — and the *form* is what
+transfers. Which of the three forms an essay uses is a local choice about that
+essay's last paragraph, not a choice of persona.
 
 **Worry** — Halverson: "I do worry, my friends, if there are times where we
 find ourselves wandering."
@@ -307,14 +340,22 @@ movement through material**.
 
 *However* (Halverson: 3 across the corpus, and it is his most frequent logical
 connective). *Moreover* (0). *Furthermore* (1, inside a quoted letter). *Thus*,
-*Consequently*, *In conclusion* (Woodmansee: 0 each). *Therefore* — an essay in
-this voice that reaches for it has left the register.
+*Consequently*, *In conclusion* (Woodmansee: 0 each).
+
+> **Corrected in 0.4.0 — these are SPOKEN counts, and the written control
+> overturns two of them.** Over 31,373 words of Day's own written prose:
+> *consequently* 0, but *moreover* 1, *nevertheless* 2, *furthermore* 3 — rare,
+> not absent. And *thus* (18), *however* (10) and *therefore* (10) all cross
+> into writing freely. **Therefore is not banned**; an earlier version of this
+> line banned it on a miscount, and it is exactly as frequent as *however*.
+> SKILL.md checklist 5 carries the real budget: at most one of the three per
+> essay.
 
 ### Substitution table
 
 | Instead of | Write |
 |---|---|
-| Therefore / Thus | So |
+| Therefore / Thus | So — but see the 0.4.0 correction above; one of *however / therefore / thus* per essay is legal in writing |
 | Moreover / Furthermore | Nothing. Start the sentence. |
 | However | And yet — or split into two sentences |
 | In conclusion | Nothing. Land and stop. |
@@ -373,15 +414,23 @@ boundary-of-knowledge marker — "We don't totally know" — which requires no
 biography and costs nothing in credibility.
 
 **Application written as exhortation.** *We must.* *Let us.* Neither phrase
-appears in any of these corpora. **Substitute:** worry, a question turned on
-the reader, or a procedure with the exact words supplied.
+appears in any of the three **spoken** corpora. **Substitute:** worry, a
+question turned on the reader, or a procedure with the exact words supplied.
+
+> *Corrected in 0.4.0.* `we must` appears **7 times in Day's writing**, always
+> as an analytical procedure ("we must first ask who wrote this") and never as
+> a call to righteous action. The ban is on the **exhortation**, not on the
+> words — see SKILL.md tic 16 and checklist 8, which test the function.
 
 **Register collision.** McLaughlin's altitude — *dominion, domain, covenant
 structure* — and Halverson's — *shoes, bread, hiking boots, camels* — cannot
 sit in the same paragraph. Woodmansee sits between them, Latinate only for the
 names of ancient things and glossed in the plainest possible words in the same
 breath: "they would sign the ketubah. It was like the wedding contract."
-**Substitute:** pick one register per essay and hold it.
+**Substitute** *(settled in 0.4.0):* the register is concrete — Halverson's and
+Woodmansee's altitude, measured at 0.1:1 and 0.2:1 abstract-to-concrete against
+McLaughlin's 7.7:1. Latinate words only as the names of ancient things. See
+SKILL.md 1.1.
 
 **Ignoring the length asymmetry.** Halverson runs five-hour episodes and
 defends the cost out loud: "they'll get the same parts every four years. And
@@ -443,11 +492,11 @@ the return. At 1,100 words, it usually is not.
 | The long verbatim read | Woodmansee reads the Isaiah 22 Eliakim block for ~200 words; Halverson reads the whole Exodus 35 offering list | Cut to the load-bearing clause. The commentary usually isolates it already: "So look at verse 21." |
 | Restatement for emphasis | "So all laws have a law of sacrifice that are inextricably connected to it. So all laws have sacrifices." | Give the second version its own paragraph, delete the first |
 | Elicitation from an interlocutor | "Dominion? Dominion. Okay." — McLaughlin builds the next two minutes from the word his host supplied | No prose equivalent exists. Use the voiced reader objection. |
-| The comprehension hand-back | `Does that make sense?` (McLaughlin), `right?` (Woodmansee, 49×), `Okay?` / `K?` (Halverson) | Delete. Do **not** convert to a rhetorical question — that is the tempting and wrong move. |
+| The comprehension hand-back | `Does that make sense?` (McLaughlin), `right?` (Woodmansee, 49×), `Okay?` / `K?` (Halverson) | Delete. **0.4.0: the old "do not convert to a rhetorical question" was wrong** — the written control opens paragraphs with questions 42 times and hands back zero. Delete the *hand-back*; the paragraph-opening interrogative pivot is encouraged and is the replacement for banned headings (SKILL.md tic 13, 2.12). |
 | The quiz | "okay so quiz for you guys" — presupposes people with scriptures open | The imperative, which survives: "Study that passage in Leviticus 16 with the two goats." |
 | Meta-narration of digression | "we're getting ahead of our ski tips" | If you noticed the digression, cut the digression. |
 | Housekeeping and vocatives | "my friends," "folks," "we've got 55 pages of material to cover today," "I've been battling a cold all week" | Delete. |
-| Trailing dependent clauses | — | Promote to their own sentence or cut. |
+| ~~Trailing dependent clauses~~ | — | **Struck in 0.4.0 — this was backwards.** The trailing hedge is the *written* signature, not a spoken artifact: "We don't have the whole picture, rather, we have an edited account… according to their language and culture (D&C 1.24)." Keep it (SKILL.md 1.11). |
 
 ---
 
@@ -545,7 +594,11 @@ temple theology, Philo, and the Tetragrammaton from sounding academic.
 ## 8. Where the three are incompatible
 
 Their hedging postures are three different theories of authority, and mixing
-them makes an essay's authority illegible. Pick one per essay.
+them makes an essay's authority illegible.
+
+**Settled in 0.4.0: Lintel uses Halverson's — definitions flat, inferences
+hedged.** The other two are recorded below as evidence, not as options. Both
+spend an author persona the essays do not have (SKILL.md 3.3, 3.8).
 
 **McLaughlin hedges the frame, then speaks flatly inside it.**
 
@@ -572,5 +625,9 @@ and states meanings flat.
 An essay that hedges its frame *and* grades every claim *and* asserts its
 definitions flat reads as nervous rather than careful.
 
-The same one-per-essay rule applies to register (section 5) and to the
-analogy (section 3). The three teachers are a menu, not a blend.
+The one-per-essay rule still applies to the analogy (section 3).
+
+**Struck in 0.4.0: "the three teachers are a menu, not a blend."** They are
+neither. There is one voice, specified in SKILL.md, and the teachers are the
+evidence it was measured from. Register is settled (concrete) and hedging is
+settled (definitions flat, inferences hedged); neither is chosen per essay.
