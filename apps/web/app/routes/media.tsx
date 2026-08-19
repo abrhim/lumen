@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, data, isRouteErrorResponse, redirect, useNavigate, useSearchParams } from "react-router";
 import { sql } from "drizzle-orm";
+import { HeadphonesIcon } from "lucide-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "~/components/ui/sheet";
 import { getSessionUser } from "~/lib/auth.server";
@@ -212,7 +213,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 		name: string;
 		type: string;
 		description: string | null;
-		occurrences: { t: number; seq: number }[];
+		occurrences: { t: number; seq: number; quote?: string }[];
 	} | null = null;
 	for (const e of entityEdges as any[]) {
 		const mentions = jb(e.metadata).mentions as Moment[];
@@ -231,10 +232,21 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
 				type: e.rel_type === "TEACHES" ? "principle" : String(e.entity_type),
 				description: e.description ? String(e.description) : null,
 				occurrences: [...mentions].sort((a, b) => num(a.t) - num(b.t)).map((m) => ({ t: num(m.t), seq: num(m.seq) })),
+				// filled below from the transcript rows already in hand
 			};
 		}
 	}
 	for (const p of paras) p.ents.sort((a, b) => a.t - b.t);
+
+	// each moment carries the line actually spoken there — a row that just
+	// repeats the entity's own name says nothing the heading hasn't
+	if (entityDetail) {
+		const textBySeq = new Map((transcript as any[]).map((r) => [num(r.seq), String(r.text)]));
+		entityDetail.occurrences = entityDetail.occurrences.map((o) => {
+			const raw = (textBySeq.get(o.seq) ?? "").trim();
+			return { ...o, quote: raw.length > 110 ? `${raw.slice(0, 107)}…` : raw };
+		});
+	}
 
 	// the same entity elsewhere in THIS collection — the rail's second act
 	let entityElsewhere: { id: string; name: string }[] = [];
@@ -639,9 +651,11 @@ const RAIL_TYPE_LABELS: Record<string, string> = {
 	symbol: "Symbol",
 };
 
-/** The margin chip's detail panel — the episode-page sibling of the
- * reader's verse rail: identity, then this episode's moments as quiet
- * ruled timestamp rows, then the entity elsewhere in the collection. */
+/** The margin chip's detail panel — the episode page's verse rail. The
+ * treatment is scripture.tsx's panel VERBATIM (Abram 2026-08-19: "look
+ * exactly like the scripture detail pane"): display-face heading, × close,
+ * 13px section headings, quiet ruled rows. Content only — the desktop
+ * wrapper supplies the card chrome, the sheet supplies its own. */
 function EntityRail({
 	detail,
 	elsewhere,
@@ -649,59 +663,65 @@ function EntityRail({
 	collectionName,
 	onSeek,
 }: {
-	detail: { id: string; name: string; type: string; description: string | null; occurrences: { t: number; seq: number }[] };
+	detail: { id: string; name: string; type: string; description: string | null; occurrences: { t: number; seq: number; quote?: string }[] };
 	elsewhere: { id: string; name: string }[];
 	collectionId: string;
 	collectionName: string;
 	onSeek: (t: number) => void;
 }) {
 	return (
-		<div>
+		<>
 			<div className="flex items-baseline justify-between gap-3">
-				<p className="font-ui text-[13px] font-normal text-muted-foreground">
-					{RAIL_TYPE_LABELS[detail.type] ?? detail.type}
-				</p>
+				<h2 className="font-display text-[21px] font-medium tracking-[-0.01em]">{detail.name}</h2>
 				<Link
 					to={{ search: "" }}
 					preventScrollReset
 					aria-label="Close details"
-					className="font-ui text-xs text-muted-foreground hover:text-ink"
+					className="-m-2 p-2 font-reading text-lg leading-none text-muted-foreground transition-colors duration-150 hover:text-ink"
 				>
-					Close
+					<span aria-hidden="true">×</span>
 				</Link>
 			</div>
-			<h2 className="mt-1 font-reading text-xl font-semibold text-ink">{detail.name}</h2>
+			<p className="mt-0.5 font-ui text-[11px] text-muted-foreground">
+				{RAIL_TYPE_LABELS[detail.type] ?? detail.type}
+			</p>
 			{detail.description && (
-				<p className="mt-2 font-reading text-sm leading-relaxed text-ink">{detail.description}</p>
+				<p className="mt-3 font-reading text-[14.5px] leading-[1.5] text-ink">{detail.description}</p>
 			)}
 			<Link
 				to={nodePath(detail.type, detail.id)}
-				className="mt-2 block font-ui text-sm font-semibold text-primary hover:underline"
+				className="mt-2 inline-block font-ui text-[13px] font-semibold text-primary hover:underline"
 			>
 				About {detail.name} →
 			</Link>
-			<h3 className="mt-5 font-ui text-[13px] font-normal text-muted-foreground">
-				In this episode · {detail.occurrences.length}
-			</h3>
-			<ul className="mt-1 list-none">
-				{detail.occurrences.map((o) => (
-					<li key={o.seq} className="border-t border-rule first:border-t-0">
-						<button
-							type="button"
-							onClick={() => onSeek(o.t)}
-							aria-label={`Play from ${fmt(o.t)}`}
-							className="group flex w-full items-baseline justify-between gap-3 py-2 text-left"
-						>
-							<span className="font-reading text-[14px] text-ink decoration-rule2 underline-offset-4 group-hover:underline">
-								▸ {fmt(o.t)}
-							</span>
-						</button>
-					</li>
-				))}
-			</ul>
+			<div className="mt-[18px]">
+				<h3 className="flex items-center gap-2 font-ui text-[13px] font-normal text-muted-foreground">
+					<HeadphonesIcon aria-hidden="true" strokeWidth={1.75} className="size-[13px]" />
+					In this episode
+				</h3>
+				<ul className="mt-1 list-none">
+					{detail.occurrences.map((o) => (
+						<li key={o.seq} className="border-t border-rule first:border-t-0">
+							<button
+								type="button"
+								onClick={() => onSeek(o.t)}
+								aria-label={`Play from ${fmt(o.t)}`}
+								className="group flex w-full items-baseline justify-between gap-3 py-2 text-left"
+							>
+								<span className="min-w-0 font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+									{o.quote || detail.name}
+								</span>
+								<span className="shrink-0 font-ui text-[10.5px] tabular-nums text-muted-foreground">
+									▸ {fmt(o.t)}
+								</span>
+							</button>
+						</li>
+					))}
+				</ul>
+			</div>
 			{elsewhere.length > 0 && (
-				<>
-					<h3 className="mt-5 font-ui text-[13px] font-normal text-muted-foreground">
+				<div className="mt-[18px]">
+					<h3 className="font-ui text-[13px] font-normal text-muted-foreground">
 						Also in {collectionName}
 					</h3>
 					<ul className="mt-1 list-none">
@@ -709,16 +729,18 @@ function EntityRail({
 							<li key={e.id} className="border-t border-rule first:border-t-0">
 								<Link
 									to={`/collections/${collectionId}/serial/${e.id}?entity=${encodeURIComponent(detail.id)}`}
-									className="block truncate py-2 font-reading text-[14px] text-ink decoration-rule2 underline-offset-4 hover:underline"
+									className="group block py-2"
 								>
-									{e.name}
+									<span className="block truncate font-reading text-[14.5px] leading-[1.45] text-ink underline-offset-4 group-hover:underline group-hover:decoration-rule2">
+										{e.name}
+									</span>
 								</Link>
 							</li>
 						))}
 					</ul>
-				</>
+				</div>
 			)}
-		</div>
+		</>
 	);
 }
 
@@ -753,7 +775,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	// right margin can actually hold 17rem, else the bottom sheet
 	const [railMode, setRailMode] = useState<null | "side" | "sheet">(null);
 	useEffect(() => {
-		const mq = window.matchMedia("(min-width: 1400px)");
+		const mq = window.matchMedia("(min-width: 1340px)");
 		const apply = () => setRailMode(mq.matches ? "side" : "sheet");
 		apply();
 		mq.addEventListener("change", apply);
@@ -821,7 +843,17 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 	);
 
 	return (
-		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 pb-20 pt-10 lg:pb-10">
+		<main data-plate="ledger" className="mx-auto max-w-4xl px-6 pb-20 pt-10 lg:max-w-none lg:pb-10">
+			{/* Three columns, centered as ONE unit (scripture's plate geometry):
+			    the player + chapters rail, the transcript at a FIXED 34rem so
+			    opening the detail pane never reflows the reading text (Abram
+			    2026-08-19), and the pane itself. */}
+			<div
+				className={`mx-auto max-w-4xl lg:mx-0 lg:grid lg:max-w-none lg:justify-center lg:gap-x-12 ${
+					entityDetail ? "lg:grid-cols-[16rem_34rem_380px]" : "lg:grid-cols-[16rem_34rem]"
+				}`}
+			>
+			<div className="lg:col-span-2 lg:col-start-1 lg:row-start-1">
 			{header}
 			{isMobile && hasVideo && (
 				<MobileVideoBar
@@ -837,8 +869,8 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 					onAutoScroll={setAutoScroll}
 				/>
 			)}
-			<div className="mt-8 gap-12 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
-				<nav aria-label="Chapters" className="hidden lg:block">
+			</div>
+				<nav aria-label="Chapters" className="mt-8 hidden lg:col-start-1 lg:row-start-2 lg:block">
 					{/* Same independent scroll as the References rail (Numbers has 36 chapters). */}
 					<div className="sticky top-8 -mx-3 max-h-[calc(100vh-4rem)] overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						{!isMobile && hasVideo && (
@@ -878,7 +910,7 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						)}
 					</div>
 				</nav>
-				<div>
+				<div className="mt-8 lg:col-start-2 lg:row-start-2">
 					<Transcript
 						paras={paras}
 						episodeId={episodeId}
@@ -888,25 +920,23 @@ export default function MediaDetail({ loaderData }: Route.ComponentProps) {
 						captureEpisodeId={canCapture ? episodeId : ""}
 					/>
 				</div>
+				{entityDetail && railMode === "side" && (
+					<div className="hidden lg:col-start-3 lg:row-start-1 lg:row-span-2 lg:block">
+						<section
+							aria-label={`About ${entityDetail.name}`}
+							className="h-fit rounded-xl border border-rule bg-panel px-6 pb-[18px] pt-[22px] lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto"
+						>
+							<EntityRail
+								detail={entityDetail}
+								elsewhere={entityElsewhere}
+								collectionId={collectionId}
+								collectionName={collectionName}
+								onSeek={seek}
+							/>
+						</section>
+					</div>
+				)}
 			</div>
-			{/* The rail FLOATS in the viewport's right margin (Abram 2026-08-19:
-			    it must never change the transcript body's width). Where the
-			    margin can't hold it, the bottom sheet takes over — same rule
-			    the margin chips already live by. */}
-			{entityDetail && railMode === "side" && (
-				<aside
-					aria-label={`About ${entityDetail.name}`}
-					className="fixed right-4 top-24 z-30 w-[17rem] max-h-[calc(100vh-8rem)] overflow-y-auto border-l border-rule bg-paper pl-5 pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-				>
-					<EntityRail
-						detail={entityDetail}
-						elsewhere={entityElsewhere}
-						collectionId={collectionId}
-						collectionName={collectionName}
-						onSeek={seek}
-					/>
-				</aside>
-			)}
 			{entityDetail && railMode === "sheet" && (
 				<Sheet open onOpenChange={(open) => { if (!open) navigate({ search: "" }, { preventScrollReset: true }); }}>
 					<SheetContent side="bottom" className="max-h-[75vh] overflow-y-auto px-6 pb-8">
